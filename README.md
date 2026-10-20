@@ -49,7 +49,7 @@ All screenshots use Light appearance and an empty library. They contain no game 
 
 Neither result is a full-game completion claim. Odyssey retains three known geometry-shader conversion gaps affecting thunder effects; those effects and all later scenes have not been fully checked. See the [validation record](docs/验收记录.md) (Chinese) for evidence and remaining test boundaries.
 
-The longer player gameplay result was recorded with the previous `10b33338` engine baseline. Updating the pinned engine to `4e2dcdc` does not extend that gameplay evidence or establish compatibility for other games.
+The player gameplay result was recorded with the previous `10b33338` engine baseline. With the updated `4e2dcdc` engine, Odyssey completed full preparation; Breath of the Wild's rebuild was cancelled at the player's request, and new game-startup checks were not performed. Gameplay on the updated engine has not been revalidated, and no compatibility claim is added for other games.
 
 Import the base game, the specified update, and any DLC you want to use. Title IDs and executable build IDs must match the fixed game profile; the app checks requirements before preparation.
 

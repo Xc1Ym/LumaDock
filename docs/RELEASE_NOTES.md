@@ -7,6 +7,8 @@
 - System language by default, with an immediate, persistent override in Settings and setup. Existing task records translate when displayed; game content and raw tool logs remain unchanged.
 - Localized application metadata and bundled translation resources checked during packaging.
 
+Engine validation scope: Odyssey completed preparation with `4e2dcdc`. Breath of the Wild's rebuild was cancelled at the player's request; new startup and gameplay checks were not performed. The longer player gameplay record below belongs to the previous `10b33338` baseline.
+
 ### 0.2.1 更新
 
 - 同步 nxnative `4e2dcdc`，保留 Mac 补丁；引擎更新后提示重新准备，旧的成功运行版本保留。
@@ -15,6 +17,8 @@
 - 应用、首次运行向导、输入映射、任务进度和应用错误提示支持英文及简体中文。
 - 默认跟随系统，可在设置和向导中立即切换并记住选择；已有任务记录按显示语言翻译，游戏内容与原始工具日志保持原样。
 - 打包时检查应用语言元数据和翻译资源。
+
+新版引擎的验证范围：《奥德赛》完整准备通过；《旷野之息》重建按玩家要求取消，未执行新版启动及游玩检查。较长时间的玩家游玩记录基于此前的 `10b33338`。
 
 LumaDock is a native Mac launcher built on [nxnative](https://github.com/seedds/nxnative), for Apple Silicon and macOS 26 or later.
 

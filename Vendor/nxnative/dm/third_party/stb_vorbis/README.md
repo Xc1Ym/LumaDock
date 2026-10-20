@@ -1,0 +1,2 @@
+Source: https://github.com/nothings/stb `stb_vorbis.c` at commit 1ee679c (version 1.22), unmodified. License in LICENSE (MIT or public domain, your choice; the same text ends the source file).
+Use: the host decodes the Vorbis sound tracks of the games' WebM movies with it (`dm/host/hle_movie.c` includes the file with `STB_VORBIS_NO_STDIO`, `STB_VORBIS_NO_PULLDATA_API` and `STB_VORBIS_NO_INTEGER_CONVERSION`, and feeds each raw packet in as an Ogg page of its own). First needed by Link's Awakening.

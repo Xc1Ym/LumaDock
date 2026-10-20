@@ -1,0 +1,51 @@
+# Game profile of The Legend of Zelda: Breath of the Wild (Switch, base game v0 + update 1.9.0 = v1114112). In bring-up
+# Format: see dm/games/README.md
+# Nintendo EPD's engine (sead / agl / gsys / ksys, NintendoWare G3d / Ui2d / Vfx / Atk, Havok), SDK 20.5.22, NVN; modules main + subsdk0 (NintendoSDK_movie) + sdk.
+# RomFS is almost all Yaz0 (.s* extensions) and SARC (Pack/*.pack). Shaders: Shader/*.sbfsha (BNSH) and the gsys / ksys resource packs in Pack/Bootup_Graphics.pack, the terrain resource pack in TitleBG.pack, particle effects in Effect/*.sesetlist, layouts in .sblarc
+
+# ---- Identity ----
+title_id	01007EF00011E000
+program_id	01007EF00011E000
+
+# ---- App ----
+# Game name: only a label for profile listings and the Mac window title; the iOS app name is the game name in the base NSP, and the bundle ID comes from the base game title ID (build_ipa.sh / NSP script)
+name	The Legend of Zelda: Breath of the Wild
+ipa	ZeldaBreathOfTheWild.ipa
+app_category	public.app-category.adventure-games
+# the virtual gamepad starts in the 3D layout (D-pad, right stick, L3 / R3): the right stick turns the camera
+pad_layout	full
+
+# ---- Graphics ----
+# The frame-interval controller (60 fps cuts in patch_nso.py) and dynamic resolution read the GPU time between the frame's two timestamp reports: each report takes its segment's GPU start / end
+gpu_timestamps	segment
+
+# ---- Versions ----
+# only the merged 1.9.0 copy is extracted; the base game's own build IDs are added when needed
+build	v1114112	1.9.0	main=cd57b23fa4bbad65803d9788c01821ee	subsdk0=f39f4c431234c72eb520cfdd1001bbcf	sdk=574284b40c06cf1821a44857939083be
+package	v1114112
+shader_versions	v1114112
+
+# ---- Files ----
+modules	main subsdk0 sdk
+romfs_marker	Pack/Bootup_Graphics.pack
+zip_store	.sstera:.sbactorpack:.bfstm:.sbfres:.sbmaptex:.bars:.sbitemico:.shknm2:.shktmrb:.sbeventpack:.pack:.sblwp:.sstats:.shksc:.smubin:.ssarc:.sesetlist:.webm:.jpg:.metallib
+
+# ---- Memory ----
+# The NPDM declares no system resource (META +0x14 = 0): the game uses SetHeapSize. Starts from 13 Sentinels' partition (4 GB block = 256 MB in front + 256 MB alias region + 256 MB stack region + 3.25 GB heap region) until measured
+mem_reserve	0x100000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+
+# ---- NVN driver constant segments (dmsh_build.py at packaging, nvn_mtl.m filled at run time) ----
+# Mario's values until measured over all shaders
+nvn_tex_base	0x20
+nvn_tex_slots	32
+nvn_samp_base	0x568
+nvn_img_base	0x120
+nvn_img_slots	8
+nvn_ssbo_bases	vs=0x110 ps=0x510 cs=0x310
+
+# ---- Shader split (shader_split.py) ----
+shader_groups	/Shader/=shader /Effect/=effect /Layout/=layout /System/=gsys /Terrain/=terrain
+shader_note	Breath of the Wild shaders

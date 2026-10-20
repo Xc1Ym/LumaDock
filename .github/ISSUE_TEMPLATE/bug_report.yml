@@ -1,0 +1,24 @@
+name: 错误报告
+description: 报告启动器问题，请勿上传游戏、密钥或存档。
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传 prod.keys、NSP、固件、存档或私人诊断内容。先检查并遮盖日志中的个人路径。其他游戏的适配请求不代表已获支持。
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: 应用版本、Mac 芯片、macOS 和 Xcode 版本。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤、预期和实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 已脱敏的错误摘要
+      render: text

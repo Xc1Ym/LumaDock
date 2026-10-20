@@ -1,0 +1,150 @@
+name: LumaDock CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  PYTHONNOUSERSITE: '1'
+  HOMEBREW_NO_AUTO_UPDATE: '1'
+  HOMEBREW_NO_ANALYTICS: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  macos:
+    name: Test, build and package (Apple Silicon)
+    runs-on: macos-26
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Check version and release tag
+        id: identity
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          version = json.loads(Path('product.json').read_text())['version']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'Invalid release version'
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              assert os.environ['GITHUB_REF_NAME'] == 'v' + version, 'Tag must match product.json'
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('version=' + version + '\n')
+          PY
+      - name: Prepare Xcode and build tools
+        run: |
+          test "$(uname -m)" = arm64
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+          mkdir -p work
+          brew install python@3.14 spirv-cross zstd actionlint
+      - name: Validate GitHub workflow
+        run: actionlint .github/workflows/ci.yml
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install pinned Python build dependencies
+        run: |
+          "$(brew --prefix python@3.14)/bin/python3.14" -m venv work/python-venv
+          work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt
+      - name: Worker and distribution regression tests
+        run: work/python-venv/bin/python -B -m unittest discover -s tests -v
+      - name: Import and toolchain workflow regression tests
+        run: swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
+      - name: Generate original app icons
+        run: swift scripts/make_icons.swift
+      - name: Build portable runtime
+        run: work/python-venv/bin/python -B scripts/bundle_runtime.py
+      - name: Build and sign app, then create DMG
+        run: work/python-venv/bin/python -B scripts/package.py
+      - name: Export clean source archive and verify artifacts
+        run: |
+          work/python-venv/bin/python -B scripts/source_archive.py
+          work/python-venv/bin/python -B scripts/verify_release.py
+      - name: Stage explicit public artifacts
+        run: |
+          work/python-venv/bin/python - <<'PY'
+          import json, shutil
+          from pathlib import Path
+          product = json.loads(Path('product.json').read_text())
+          stem = product['name'] + '-' + product['version']
+          output = Path('work/ci-artifacts')
+          output.mkdir()
+          files = [Path('release') / (stem + suffix) for suffix in ('-arm64.dmg', '-source.zip')]
+          files += [Path('release/SHA256SUMS'), Path('release/distribution-audit.json'), Path('Assets/LumaDock.ico'), Path('Assets/LumaDock.icns')]
+          for source in files:
+              assert source.is_file(), source
+              shutil.copy2(source, output / source.name)
+          PY
+      - name: Upload verified build artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: LumaDock-arm64
+          if-no-files-found: error
+          retention-days: 14
+          path: work/ci-artifacts/
+
+  release:
+    name: Publish verified release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: macos
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts from successful Mac job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: LumaDock-arm64
+          path: artifacts
+      - name: Verify checksums and prepare release notes
+        env:
+          RELEASE_VERSION: ${{ needs.macos.outputs.version }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd artifacts
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import os, zipfile
+          from pathlib import Path
+          version = os.environ['RELEASE_VERSION']
+          assert os.environ['RELEASE_TAG'] == 'v' + version
+          with zipfile.ZipFile('LumaDock-' + version + '-source.zip') as source:
+              notes = source.read('LumaDock/docs/RELEASE_NOTES.md')
+          Path('../release-notes.md').write_bytes(notes)
+          PY
+      - name: Publish DMG and public assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.macos.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Release is already published; use a new version"'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "LumaDock $RELEASE_VERSION" --notes-file release-notes.md
+          fi
+          gh release upload "$RELEASE_TAG" \
+            "artifacts/LumaDock-$RELEASE_VERSION-arm64.dmg" \
+            "artifacts/LumaDock-$RELEASE_VERSION-source.zip" \
+            artifacts/SHA256SUMS artifacts/distribution-audit.json \
+            artifacts/LumaDock.ico artifacts/LumaDock.icns --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

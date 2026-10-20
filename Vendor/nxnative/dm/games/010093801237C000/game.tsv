@@ -1,0 +1,52 @@
+# Game profile of Metroid Dread (Switch, base game v0 + update 2.1.0 = v327680). Bring-up has just started: the memory values are Mario's until measured
+# Format: see dm/games/README.md
+# MercurySteam's own engine, SDK 11.4.3, NVN; scripts are Lua 5.1 bytecode (.lc), audio is NintendoWare Atk. Every shader is in system/shd/*.bshdat (MSHD containers, read by shader_split.py)
+
+# ---- Identity ----
+title_id	010093801237C000
+program_id	010093801237C000
+
+# ---- App ----
+# Game name: only a label for profile listings and the Mac window title; the iOS app name is the game name in the base NSP, and the bundle ID comes from the base game title ID (build_ipa.sh / NSP script)
+name	Metroid Dread
+ipa	MetroidDread.ipa
+app_category	public.app-category.action-games
+
+# ---- Versions ----
+# only the merged 2.1.0 copy is extracted; the base game's own build IDs are added when needed
+build	v327680	2.1.0	main=646761f643afebb379edd5e6a5151af2	subsdk0=507f19d1240d09d00992248e8a0fd77e	sdk=2d369d9999e3e10e665106f840ffff9b
+package	v327680
+shader_versions	v327680
+
+# ---- Files ----
+# load order as on Horizon: main, subsdk*, sdk (subsdk0 = NintendoSDK_movie 11.4.3)
+modules	main subsdk0 sdk
+romfs_marker	system/shd
+zip_store	.bctex:.webm:.bfstm:.metallib
+
+# ---- Memory ----
+# The NPDM declares no system resource (META +0x14 = 0), so there is no virtual address memory: the game uses SetHeapSize. main's bss is about 1.8 GB (0x70cd2fa0, the engine's static heap); it is part of the module image, not of the block below.
+# Measured (DM_SVC=1): the alias region gets one page (4 KB) mapped during SDK initialization; thread stacks go into the stack region through MapMemory; the heap request is pool − used = 0x58800000 (1.38 GB, with the 1.8 GB bss counted as used).
+# So the block needs only 2.25 GB = 256 MB in front + 256 MB alias region + 256 MB stack region + 1.5 GB heap region; with main's 1.9 GB image that is about 4.3 GB, below the 5 GB proven on a phone (D2R). The application pool is still the Switch's 3285 MB
+mem_reserve	0x90000000
+mem_alias	0x10000000
+mem_stack	0x10000000
+app_pool	0xCD500000
+
+# ---- Threads ----
+# Same-core preemption approximation (hle_thread.c): the movie player's main thread (priority 44, core 0) posts "unlink the holders" to the dispatcher thread and leaves messages for the worker thread (both priority 30, core 0 only), then frees the object and builds a new one in place without waiting;
+# on hardware they preempt the main thread at once and finish first. Without the approximation about half of the runs crashed at the intro / title movie changes (SignalEvent on a null MultiWait, main+0x225338 reading a freed object); with it 12 runs in a row were clean
+core_preempt	on
+
+# ---- NVN driver constant segments (dmsh_build.py at packaging, nvn_mtl.m filled at run time) ----
+# The shader files keep the SASS disassembly: the handle immediates of every TEX / TEXS are words 0x8–0x22 (step 2), i.e. c2 bytes 0x20 + 8 r, as in Mario (the set built into the translator). The rest stay as Mario's until measured over all translated shaders
+nvn_tex_base	0x20
+nvn_tex_slots	32
+nvn_samp_base	0x568
+nvn_img_base	0x120
+nvn_img_slots	8
+nvn_ssbo_bases	vs=0x110 ps=0x510 cs=0x310
+
+# ---- Shader split (shader_split.py; MSHD containers) ----
+shader_groups	/system/shd/=shd
+shader_note	Metroid Dread shaders

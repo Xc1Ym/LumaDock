@@ -1,0 +1,144 @@
+import XCTest
+@testable import NSMac
+
+@MainActor final class ImportFlowTests: XCTestCase {
+    private func fixture(toolchainReady: Bool = true) throws -> (URL, Store) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-flow-"+UUID().uuidString)
+        let resources = root.appendingPathComponent("resources")
+        let worker = resources.appendingPathComponent("Worker")
+        try FileManager.default.createDirectory(at:worker,withIntermediateDirectories:true)
+        let python = resources.appendingPathComponent("Runtime/python/bin")
+        try FileManager.default.createDirectory(at:python,withIntermediateDirectories:true)
+        try FileManager.default.createSymbolicLink(atPath:python.appendingPathComponent("python3").path,withDestinationPath:"/usr/bin/python3")
+        // This transport fixture exercises Store's real process/event/queue handling.
+        // It never reads commercial games, keys, or invokes a compiler.
+        try #"""
+import json, pathlib, sys
+r=json.loads(pathlib.Path(sys.argv[2]).read_text())
+root=pathlib.Path(r['resources']).parent
+with (root/'operations.jsonl').open('a') as f:
+    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed')})+'\n')
+if r['operation']=='catalog':
+    result=json.loads((root/'catalog.json').read_text())
+elif r['operation']=='import':
+    result={'imports':json.loads((root/'imports.json').read_text())}
+elif r['operation']=='preflight':
+    result={'checks':[{'name':'Fixture tools','ok':json.loads((root/'tools.json').read_text()),'message':'fixture'}]}
+else:
+    result={}
+print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'completed','result':result}),flush=True)
+"""#.write(to:worker.appendingPathComponent("main.py"),atomically:true,encoding:.utf8)
+        try JSONSerialization.data(withJSONObject:toolchainReady,options:.fragmentsAllowed).write(to:root.appendingPathComponent("tools.json"))
+        let store = Store(privateRoot:root.appendingPathComponent("private"),resources:resources)
+        store.checks = [.init(name:"Fixture tools",ok:true,message:"fixture")]
+        store.preferences.library = root.appendingPathComponent("中文 游戏库").path
+        store.preferences.libraryId = "fixture-library"
+        try FileManager.default.createDirectory(at:store.privateRoot.appendingPathComponent("keys"),withIntermediateDirectories:true)
+        try Data("not-a-real-key; transport fixture only".utf8).write(to:store.privateRoot.appendingPathComponent("keys/prod.keys"))
+        return (root,store)
+    }
+    private func game(_ id:String, missing:[String]=[], ready:Bool=false) -> [String:Any] {
+        ["id":id,"name":id,"display":"1.0","packages":[],"hidden":false,"compatibility":"startup","missing":missing,"ready":ready]
+    }
+    private func configure(_ root:URL, games:[[String:Any]], imports:[[String:Any]]) throws {
+        try JSONSerialization.data(withJSONObject:["games":games,"profiles":[],"jobs":[],"keys":["ready":true,"verified":false,"message":"fixture ready"]]).write(to:root.appendingPathComponent("catalog.json"))
+        try JSONSerialization.data(withJSONObject:imports).write(to:root.appendingPathComponent("imports.json"))
+    }
+    private func operations(_ root:URL) -> [[String:Any]] {
+        guard let text=try? String(contentsOf:root.appendingPathComponent("operations.jsonl"),encoding:.utf8) else {return []}
+        return text.split(separator:"\n").compactMap { try? JSONSerialization.jsonObject(with:Data($0.utf8)) as? [String:Any] }
+    }
+    private func waitUntil(_ condition:()->Bool) async throws {
+        let deadline=Date().addingTimeInterval(8)
+        while !condition(),Date()<deadline {try await Task.sleep(nanoseconds:50_000_000)}
+        XCTAssertTrue(condition(),"Workflow did not reach expected state")
+    }
+    private func cleanup(_ root:URL,_ store:Store) async {
+        store.terminate()
+        try? await Task.sleep(nanoseconds:250_000_000)
+        try? FileManager.default.removeItem(at:root)
+    }
+    func testMissingAndDeletedKeysRouteToKeyStepBeforeImport() async throws {
+        let (root,store)=try fixture()
+        store.chooseGames()
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,2)
+        XCTAssertTrue(operations(root).isEmpty)
+        store.showOnboarding=false;store.hasImportedKeys=true
+        try FileManager.default.removeItem(at:store.privateRoot.appendingPathComponent("keys/prod.keys"))
+        store.addGames([root.appendingPathComponent("中文 游戏.nsp")])
+        XCTAssertFalse(store.hasImportedKeys);XCTAssertEqual(store.onboardingStep,2)
+        XCTAssertTrue(operations(root).isEmpty)
+        await cleanup(root,store)
+    }
+    func testImportQueuesCompleteNewGamesOnceAndDoesNotLaunch() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true
+        store.tasks=[.init(id:"queued-g1",operation:"build",state:"queued",gameId:"g1")]
+        try configure(root,games:[game("g1"),game("g2",missing:["missing update"]),game("g3"),game("g4",ready:true),game("g5")],imports:[
+            ["id":"g1","duplicate":false],["id":"g1","duplicate":false],
+            ["id":"g2","duplicate":false],["id":"g3","duplicate":true],
+            ["id":"g4","duplicate":false],["id":"g5","duplicate":false]])
+        store.addGames([root.appendingPathComponent("中文 游戏.nsp")])
+        try await waitUntil {self.operations(root).filter{$0["operation"] as? String == "build"}.count==2 && !store.executionBusy}
+        let ops=operations(root)
+        XCTAssertEqual(Set(ops.filter{$0["operation"] as? String == "build"}.compactMap{$0["gameId"] as? String}),Set(["g1","g5"]))
+        XCTAssertFalse(ops.contains{$0["operation"] as? String == "launch"})
+        XCTAssertTrue(store.hasImportedKeys)
+        await cleanup(root,store)
+    }
+    func testAutomaticPreparationCanBeDisabledAndPersists() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true;store.prepareAfterImport=false
+        try configure(root,games:[game("g1")],imports:[["id":"g1","duplicate":false]])
+        store.addGames([root.appendingPathComponent("game.nsp")])
+        try await waitUntil {store.games.count==1 && store.processes.isEmpty}
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "build"})
+        let saved=try JSONDecoder().decode(Preferences.self,from:Data(contentsOf:store.privateRoot.appendingPathComponent("preferences.json")))
+        XCTAssertEqual(saved.prepareAfterImport,false)
+        await cleanup(root,store)
+    }
+    func testMissingToolchainKeepsImportedGameWithoutBuilding() async throws {
+        let (root,store)=try fixture(toolchainReady:false);store.hasImportedKeys=true
+        try configure(root,games:[game("g1")],imports:[["id":"g1","duplicate":false]])
+        store.addGames([root.appendingPathComponent("game.nsp")])
+        try await waitUntil {store.selection=="settings"}
+        XCTAssertEqual(store.games.count,1)
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "build"})
+        await cleanup(root,store)
+    }
+    func testLegacyPreferencesRemainReadable() throws {
+        let data=Data(#"{"library":"/volume/games","libraryId":"old-id","developerDir":"/Applications/Xcode.app/Contents/Developer","onboardingComplete":true}"#.utf8)
+        let prefs=try JSONDecoder().decode(Preferences.self,from:data)
+        XCTAssertEqual(prefs.libraryId,"old-id");XCTAssertTrue(prefs.onboardingComplete)
+        XCTAssertNil(prefs.prepareAfterImport)
+    }
+    func testEnvironmentMustPassBeforeAnyGameImport() async throws {
+        let (root,store)=try fixture(toolchainReady:false);store.hasImportedKeys=true
+        try configure(root,games:[],imports:[])
+        store.checks=[]
+        store.addGames([root.appendingPathComponent("game.nsp")])
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,0)
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String == "preflight"}}
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "import"})
+        await cleanup(root,store)
+    }
+    func testMetalRemovalIsBlockedWhileBusyAndRechecksAfterMockRemoval() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[],imports:[])
+        store.checks=[.init(name:"Xcode",ok:true,message:"fixture"),.init(name:"Metal 编译组件",ok:true,message:"fixture")]
+        store.canUninstallMetal=true;store.executionTask="active-game"
+        store.manageMetal(remove:true)
+        XCTAssertNotNil(store.error);XCTAssertTrue(operations(root).isEmpty)
+        store.executionTask=nil;store.queue=["pending-game"];store.error=nil
+        store.manageMetal(remove:true)
+        XCTAssertNotNil(store.error);XCTAssertTrue(operations(root).isEmpty)
+        store.queue=[];store.error=nil;store.canUninstallMetal=false
+        store.manageMetal(remove:true)
+        XCTAssertNotNil(store.error);XCTAssertTrue(operations(root).isEmpty)
+        store.error=nil;store.canUninstallMetal=true
+        store.manageMetal(remove:true)
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String == "preflight"} && store.processes.isEmpty}
+        let removal=operations(root).filter{$0["operation"] as? String == "uninstallMetal"}
+        XCTAssertEqual(removal.count,1);XCTAssertEqual(removal.first?["confirmed"] as? Bool,true)
+        XCTAssertNil(store.executionTask)
+        await cleanup(root,store)
+    }
+}

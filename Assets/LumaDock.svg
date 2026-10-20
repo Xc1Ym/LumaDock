@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="LumaDock: a glass dock and play facet">
+  <!-- Original LumaDock artwork, MIT. No Nintendo marks or game assets. -->
+  <defs>
+    <linearGradient id="tile" x1=".8" y1=".1" x2=".2" y2=".95"><stop stop-color="#1c4a87"/><stop offset=".5" stop-color="#059ea6"/><stop offset="1" stop-color="#70e3d9"/></linearGradient>
+    <linearGradient id="glass" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#a1f2ff" stop-opacity=".72"/><stop offset="1" stop-color="white" stop-opacity=".98"/></linearGradient>
+    <linearGradient id="play" x1="1" y1="0" x2="0" y2="1"><stop stop-color="#9ee0ff" stop-opacity=".65"/><stop offset="1" stop-color="white" stop-opacity=".95"/></linearGradient>
+  </defs>
+  <g transform="translate(0 1024) scale(1 -1)" stroke-linejoin="round">
+    <rect x="80" y="80" width="864" height="864" rx="190" fill="url(#tile)" stroke="white" stroke-opacity=".32" stroke-width="3"/>
+    <path d="M302 730 414 784V414H726L672 302H302Z" fill="url(#glass)" stroke="white" stroke-opacity=".75" stroke-width="4"/>
+    <path d="M507 504V713Q507 739 530 725L706 623Q732 610 706 596L530 494Q507 480 507 504Z" fill="url(#play)" stroke="white" stroke-opacity=".85" stroke-width="4"/>
+  </g>
+</svg>

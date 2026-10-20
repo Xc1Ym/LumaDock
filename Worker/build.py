@@ -1,0 +1,294 @@
+"""Build macOS runtime files directly using supported game profiles."""
+from __future__ import annotations
+import importlib.util, json, os, re, shutil, subprocess, sys, time
+from pathlib import Path
+from core import *
+from library import requirements, inspect
+
+class ShaderProgress:
+    """Count only finished reflection/library pairs; do not infer progress from queue order."""
+    def __init__(self,g,cache):
+        self.keys=set()
+        for line in g.table('shader_map.tsv').read_text().splitlines():
+            columns=line.split('\t')
+            if len(columns)>4 and (columns[0].endswith('.bin') or columns[0].startswith('main.rodata@')):self.keys.add(columns[3])
+        chain=re.search(r'#define DMSH_CHAIN "(.*?)"',g.table('dmsh_chain.h').read_text())[1]
+        self.path=Path(cache)/('b-'+chain)
+    def __call__(self):
+        names=set(os.listdir(self.path)) if self.path.is_dir() else set()
+        done=sum(k+'_b.json' in names and k+'_b.metallib' in names for k in self.keys)
+        return {'done':done,'total':len(self.keys),'unit':'shaders','step':'编译并验证 Metal 库'}
+
+class Stages:
+    def __init__(self,c,root): self.c=c; self.root=root; self.file=root/'checkpoints.json'; self.saved=read(self.file,{})
+    def snapshot(self,paths):
+        out={}
+        for path in paths:
+            path=Path(path)
+            files=sorted(path.rglob('*')) if path.is_dir() else [path]
+            for p in files:
+                self.c.check()
+                if p.is_file(): out[str(p.relative_to(self.root))]=[p.stat().st_size,digest(p)]
+        if not out: raise Failure('阶段没有生成完整产物，未记录成功缓存。')
+        return out
+    def run(self,name,paths,fn):
+        self.c.begin(name)
+        old=self.saved.get(name)
+        if old and all((self.root/p).is_file() and (self.root/p).stat().st_size==v[0] and digest(self.root/p)==v[1] for p,v in old.items()):
+            self.c.emit('cache','已验证并复用完成阶段',done=1,total=1); return
+        for p in paths:
+            if Path(p).is_dir(): shutil.rmtree(p)
+            elif Path(p).exists(): Path(p).unlink()
+        fn(); self.c.check(); self.saved[name]=self.snapshot(paths); atomic(self.file,self.saved)
+        self.c.emit('stageComplete','阶段完成',done=1,total=1)
+
+def tools(c):
+    env=c.env(); result={}
+    for key,args in [('clang',['xcrun','clang','--version']),('metal',['xcrun','-sdk','macosx','metal','--version'])]:
+        p=subprocess.run(args,env=env,capture_output=True,text=True)
+        if p.returncode or (key=='metal' and 'Apple metal version' not in p.stdout): raise Failure('Apple 工具链不完整，请在设置中安装 Xcode 和 Metal 编译组件。')
+        result[key]=p.stdout.strip()
+    sc=shutil.which('spirv-cross',path=env['PATH'])
+    if not sc: raise Failure('着色器转换组件缺失，请重新安装完整应用。')
+    result['spirv-cross']=digest(sc)
+    # Every application-controlled source is part of the cache identity, including input runtime changes.
+    h=hashlib.sha256()
+    for p in sorted(c.engine.rglob('*')):
+        if p.is_file() and not any(x in p.parts for x in ('bin','obj','gen','__pycache__','.git')):
+            h.update(str(p.relative_to(c.engine)).encode()); h.update(bytes.fromhex(digest(p)))
+    result['engineSource']=h.hexdigest(); result['engine']=ENGINE_REV
+    return result
+
+def reuse_frontend_cache(c,root,identity):
+    """A frontend-only patch can reuse checked artifacts; the host must be rebuilt."""
+    if (root/'checkpoints.json').exists():return
+    allowed={'dm/host/front_mac.m','dm/host/input_config_mac.h','dm/host/mouse_mac.h','dm/host/Makefile'}
+    def sources(repo):
+        result={}
+        for p in repo.rglob('*'):
+            rel=p.relative_to(repo)
+            if not p.is_file() or any(x in rel.parts for x in ('bin','obj','gen','__pycache__','.git')) or p.name=='.source-ready':continue
+            if str(rel)=='dm/gfx/tools/dmsh_chain.lock' or (p.name=='dmsh_chain.h' and rel.parts[:2]==('dm','games')):continue
+            result[str(rel)]=digest(p)
+        return result
+    current=None
+    for old in sorted(root.parent.iterdir(),key=lambda p:p.stat().st_mtime,reverse=True):
+        if old==root or not (old/'checkpoints.json').exists():continue
+        prev=read(old/'identity.json',{})
+        if prev.get('sources')!=identity['sources'] or prev.get('game')!=identity['game']:continue
+        before={k:v for k,v in prev.get('tools',{}).items() if k!='engineSource'}
+        after={k:v for k,v in identity['tools'].items() if k!='engineSource'}
+        if before!=after:continue
+        if current is None:current=sources(c.engine)
+        prior=sources(old/'engine');changed={k for k in current.keys()|prior.keys() if current.get(k)!=prior.get(k)}
+        if not changed<=allowed:continue
+        stages={k:v for k,v in read(old/'checkpoints.json',{}).items() if k!='编译 Mac 主程序'}
+        if not stages:continue
+        components={Path(p).parts[0] for files in stages.values() for p in files}
+        if any(p not in ('extract','aoc','shader') and not p.startswith('patched_') for p in components):continue
+        c.emit('message','检测到仅输入前端更新，迁移已有阶段后逐项验证；主程序重新编译。')
+        for name in sorted(components):
+            dest=root/name
+            if dest.exists():shutil.rmtree(dest)
+            clone_tree(old/name,dest,c.progress)
+        atomic(root/'checkpoints.json',stages);return
+
+def prepare(c,g):
+    ps=profiles(c.engine); profile=ps.get(g['id']); missing=requirements(g,profile)
+    if missing: raise Failure('；'.join(missing))
+    tc=tools(c); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'schema':1}
+    key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()[:24]
+    root=c.library/'cache'/g['id']/key; root.mkdir(parents=True,exist_ok=True)
+    reuse_frontend_cache(c,root,identity)
+    repo=root/'engine'
+    if not (repo/'.source-ready').exists():
+        tmp=root/'engine.partial'; shutil.rmtree(tmp,ignore_errors=True)
+        shutil.copytree(c.engine,tmp,ignore=shutil.ignore_patterns('bin','obj','gen','__pycache__','.git','dmhost'))
+        (tmp/'.source-ready').write_text(tc['engineSource'])
+        if repo.exists(): shutil.rmtree(repo)
+        tmp.rename(repo)
+    env=c.env(g['id'],root); env['MACOSX_DEPLOYMENT_TARGET']='26.0'; env['J']=str(min(os.cpu_count() or 4,8))
+    # Tool changes produce a new private lock, chain, shader output, c1 table and host together.
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--update-lock'],root/'logs/toolchain.log',env)
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--header'],root/'logs/toolchain.log',env)
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--check-tools'],root/'logs/toolchain.log',env)
+    if 'missing' in (repo/'dm/gfx/tools/dmsh_chain.lock').read_text(): raise Failure('Metal 工具链不可用，无法创建一致的着色器链。')
+    atomic(root/'identity.json',identity)
+    spec=importlib.util.spec_from_file_location('nsmac_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
+    sys.path.insert(0,str(repo/'dm/games')); import game
+    game.HERE=repo/'dm/games'; gp=game.load(g['id'])
+    class Bridge(up.Progress):
+        def __init__(self): super().__init__('off')
+        def stage(self,name,poll=None,**kw):
+            super().stage(name,poll=poll,**kw)
+        def _out(self,text): pass
+        def set(self,**kw):
+            super().set(**kw)
+            if self.cur:
+                st=self.cur
+                # Estimated totals are intentionally indeterminate in the UI.
+                c.emit(message=st.step,done=st.done,total=None if st.est else st.total,unit=st.unit)
+        def say(self,msg): c.emit('message',msg)
+    up.PROG=Bridge(); up.run=c.run
+    return root,repo,env,up,gp,key
+
+def compile_host(c,up,repo,env,root,gp):
+    host=up.build_mac_host(repo,root/'tools/dmhost',env,root/'logs',gp)
+    c.run(['codesign','--force','--sign','-',host],root/'logs/sign.log',env)
+    c.run(['codesign','--verify','--strict',host],root/'logs/sign.log',env)
+    return host
+
+def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
+    dst=c.library/'games'/gp.id; releases=dst/'releases'; releases.mkdir(parents=True,exist_ok=True)
+    stage=dst/'install.partial'; shutil.rmtree(stage,ignore_errors=True); stage.mkdir()
+    def cp(src,name):
+        if src and Path(src).exists(): clone_tree(src,stage/name,c.progress)
+    cp(romfs,'romfs'); cp(modules,'modules'); cp(shader,'shaders'); cp(aoc,'aoc')
+    clone(host,stage/'dmhost'); os.chmod(stage/'dmhost',0o755)
+    (stage/'profile').mkdir()
+    for name in ['shader_map.tsv','pso_manifest.tsv']:
+        if gp.table(name).exists(): clone(gp.table(name),stage/'profile'/name)
+    chain=re.search(r'#define DMSH_CHAIN "(.*?)"',gp.table('dmsh_chain.h').read_text())[1]
+    if gp.get('graphics','nvn')!='vulkan':
+        c.run([sys.executable,Path(__file__).parent/'c1_generate.py',repo/'dm/gfx/tools/c1_guard.py',stage/'shaders'/('b-'+chain),stage/'profile/c1_full.tsv'],root/'logs/c1.log',c.env(gp.id,root))
+        if not (stage/'profile/c1_full.tsv').read_text().startswith('# chain b-'+chain+' '): raise Failure('着色器常量表版本不一致。')
+    if font: cp(font,'font')
+    else:
+        (stage/'font').mkdir()
+        fontpath=next((p for p in [Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'),Path('/System/Library/Fonts/Helvetica.ttc')] if p.exists()),None)
+        if not fontpath: raise Failure('找不到本机系统字体。')
+        clone(fontpath,stage/'font/standard.ttf')
+        c.run([sys.executable,repo/'dm/tools/make_ext_font.py',stage/'font/nintendo_ext.ttf'],root/'logs/font.log',c.env(gp.id,root))
+    manifest={'schema':1,'gameId':gp.id,'engine':ENGINE_REV,'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'created':time.time()}
+    atomic(stage/'manifest.json',manifest)
+    validate_runtime(stage,gp)
+    # A symlink switch is atomic; the old successful release remains intact on every failure.
+    target=releases/(key+'-'+str(time.time_ns())); stage.rename(target)
+    link=dst/'current.next'; link.unlink(missing_ok=True); link.symlink_to(target.relative_to(dst),target_is_directory=True); os.replace(link,dst/'current')
+    return {'path':str(target),'cacheKey':key,'version':manifest['version']}
+
+def validate_runtime(path,gp=None):
+    path=Path(path); m=read(path/'manifest.json',{})
+    if not (path/'dmhost').is_file() or not (path/'romfs').is_dir(): raise Failure('运行目录不完整。')
+    mods=gp.words('modules') if gp else [p.name.split('.')[0] for p in (path/'modules').glob('*.patched.bin')]
+    if not mods: raise Failure('运行目录缺少代码模块。')
+    for mod in mods:
+        for ext in ('patched.bin','fixups.tsv','gates.tsv'):
+            if not (path/'modules'/f'{mod}.{ext}').is_file(): raise Failure('重写代码模块不完整。')
+    if gp and not (path/'romfs'/gp.get('romfs_marker')).exists(): raise Failure('游戏资源缺少配置指定的文件。')
+    if m.get('graphics')=='vulkan':
+        if not (path/'shaders/vk/vk_shaders.metallib').is_file(): raise Failure('Vulkan 着色器库缺失。')
+    else:
+        b=path/'shaders'/('b-'+m['chain']); reflected=list(b.glob('*_b.json'))
+        if not reflected: raise Failure('Metal 着色器缓存缺失。')
+        for p in reflected:
+            r=read(p,{})
+            if r.get('chain')!=m['chain'] or not p.with_suffix('.metallib').is_file(): raise Failure('Metal 着色器缓存不完整或版本不一致。')
+
+def build(c):
+    with c.lock('execution'):
+        g=c.game(); c.begin('验证游戏、工具链与缓存',1,10)
+        root,repo,env,up,gp,key=prepare(c,g); logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
+        versions=list(dict.fromkeys(gp.words('shader_versions',gp.get('package'))+[gp.get('package')]))
+        capture_gl=gp.get('shader_glslc_capture','off')=='on'; capture_vk=gp.get('shader_vk_capture','off')=='on'; vk=gp.get('graphics','nvn')=='vulkan'
+        c.count=1+len(versions)+1+1+int(capture_gl)+int(capture_vk)+(1 if vk else 2)+1+1
+        base=next(x for x in g['packages'] if x['type']=='base' and x['version']==0)
+        for x in g['packages']:
+            c.check(); p=c.library/x['path']
+            if not p.is_file() or digest(p)!=x['sha256']: raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
+        needed=sum(x['size'] for x in g['packages'])*2+3*2**30
+        if shutil.disk_usage(c.library).free<needed and not st.saved: raise Failure(f'准备游戏需要约 {needed/2**30:.0f} GB 可用空间。')
+        dirs={}
+        for ver in versions:
+            upd=next((c.library/x['path'] for x in g['packages'] if x['type']=='update' and f"v{x['version']}"==ver),None)
+            d=root/'extract'/ver; dirs[ver]=d
+            st.run('解包与合并 '+ver,[d],lambda ver=ver,upd=upd: up.extract(c.nx(),c.keys,root/'extract',ver,c.library/base['path'],upd,None,logs,gp))
+        aoc=root/'aoc'; dlcs=[(int(x['titleId'],16),x['version'],c.library/x['path']) for x in g['packages'] if x['type']=='dlc']
+        def dlc():
+            if dlcs: up.extract_aoc(c.nx(),c.keys,root,int(gp.id,16),{'dlc':dlcs},logs)
+            else: aoc.mkdir(); (aoc/'.empty').write_text('no DLC')
+        st.run('处理 DLC',[aoc],dlc)
+        patched=root/('patched_'+gp.get('package')); selected=dirs[gp.get('package')]
+        st.run('重写原生代码',[patched],lambda:up.rewrite(sys.executable,repo,selected/'ExeFS',patched,env,logs,gp))
+        if capture_gl: st.run('采集运行时 GLSLC 着色器',[selected/'glslc_capture'],lambda:up.capture_glslc(repo,dirs,gp.get('package'),patched,root,env,logs,gp))
+        if capture_vk: st.run('采集运行时 Vulkan 着色器',[selected/'vk_capture'],lambda:up.capture_vk(repo,selected,patched,root,env,logs,gp))
+        sh=root/'shader'; sh.mkdir(exist_ok=True)
+        if vk:
+            roots=[selected/'RomFS']+([selected/'vk_capture'] if capture_vk else [])
+            st.run('转换并编译 Vulkan 着色器',[sh/'vk'],lambda:c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh],logs/'vk_shaders.log',env))
+        else:
+            st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp))
+            def shaders():
+                up.PROG.stage('Mac shaders',poll=ShaderProgress(gp,sh/'cache'))
+                try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',env)
+                finally: up.PROG.watch(None)
+            st.run('转换并编译 Metal 着色器',[sh/'cache'],shaders)
+        st.run('编译 Mac 主程序',[root/'tools/dmhost'],lambda:compile_host(c,up,repo,env,root,gp))
+        c.begin('检查并安装运行版本')
+        return install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if vk else sh/'cache',aoc)
+
+def migrate(c):
+    with c.lock('execution'):
+        g=c.game()
+        if g['id']!='01007EF00011E000': raise Failure('首版迁移仅支持已有《旷野之息》Mac 构建目录。')
+        c.begin('验证迁移来源',1,4); root,repo,env,up,gp,key=prepare(c,g)
+        src=Path(c.r['path']).resolve(); app=src/'ZeldaBreathOfTheWild.app/Contents/Resources'
+        old=src/(g['id']+'_build'); m=read(src/'mac-work/build-manifest.json',{})
+        chain=re.search(r'#define DMSH_CHAIN "(.*?)"',gp.table('dmsh_chain.h').read_text())[1]
+        oldchain=m.get('shader_chain','')
+        if m.get('game')!=g['id'] or not re.fullmatch('[0-9a-f]{12}',oldchain): raise Failure('迁移来源没有有效的游戏与着色器构建记录。')
+        patched=old/('patched_'+gp.get('package')); shader=old/'shader/cache'
+        if not (app/'romfs'/gp.get('romfs_marker')).exists(): raise Failure('迁移目录缺少完整 Mac 游戏资源。')
+        for mod,bid in gp.builds()[gp.get('package')].items():
+            if mod=='display': continue
+            f=patched/(mod+'.fixups.tsv')
+            if not f.is_file() or bid not in f.read_text()[:4096]: raise Failure('迁移代码模块构建标识不匹配。')
+        testmanifest={'chain':oldchain,'graphics':'nvn'}
+        # Validate reflection, modules and resources before accepting the legacy cache.
+        check=root/'migration-check'; shutil.rmtree(check,ignore_errors=True); check.mkdir()
+        for name,p in [('dmhost',src/'ZeldaBreathOfTheWild.app/Contents/MacOS/dmhost'),('romfs',app/'romfs'),('modules',patched),('shaders',shader)]: (check/name).symlink_to(p)
+        atomic(check/'manifest.json',testmanifest); validate_runtime(check,gp)
+        if up.data_rows((app/'profile/shader_map.tsv').read_bytes()) != up.data_rows(gp.table('shader_map.tsv').read_bytes()): raise Failure('迁移来源的着色器映射表与当前配置不同。')
+        if oldchain != chain:
+            c.begin('为当前工具链更新着色器缓存',2,5)
+            current=c.library/'games'/g['id']/'current'
+            if read(current/'manifest.json',{}).get('chain')==chain:
+                validate_runtime(current,gp);shader=current/'shaders'
+            else:
+                pkg=old/'shader/pkg'
+                if not pkg.is_dir(): raise Failure('工具链已变化且迁移目录没有着色器包，请执行正常准备流程。')
+                out=root/'migration-shader';out.mkdir(exist_ok=True)
+                up.PROG.stage('migrate shaders',poll=ShaderProgress(gp,out))
+                try:c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',pkg,out],root/'logs/migration-shaders.log',dict(env,DMSH_PREFILL=str(shader)))
+                finally:up.PROG.watch(None)
+                shader=out
+        c.begin('复用已验证资源',2,4)
+        c.emit('message','源目录保持原样；运行版本使用克隆副本。')
+        c.begin('重新编译配置化 Mac 主程序',3,4); host=compile_host(c,up,repo,env,root,gp)
+        c.begin('安装独立运行版本',4,4)
+        return install(c,root,repo,gp,key,host,app/'romfs',patched,shader,app/'aoc',app/'font')
+
+def launch(c):
+    with c.lock('execution'):
+        g=c.game(); runtime=c.library/'games'/g['id']/'current'; validate_runtime(runtime)
+        c.begin('游戏运行中',1,1)
+        save=c.library/'saves'/g['id']; temp=c.library/'temp'/g['id']; pso=c.library/'games'/g['id']/'pso_user/pipelines.tsv'
+        for p in (save,temp,pso.parent): p.mkdir(parents=True,exist_ok=True)
+        config=c.r.get('inputConfig') or read(c.library/'mappings'/f"{g['id']}.json") or read(c.private/'default-input.json')
+        if config:
+            from input_config import validate
+            validate(config); cfg=c.private/'runtime-input'/f'{g["id"]}.json'; atomic(cfg,config)
+        else: cfg=None
+        env=c.env(g['id'],temp); env.update(DM_WINDOW='1',DM_AUDIO='1',DM_LANG='zhHans',DM_ROMFS=str(runtime/'romfs'),DM_SAVE=str(save),DM_TEMP=str(temp),DM_AOC_DIR=str(runtime/'aoc'),DM_FONT_DIR=str(runtime/'font'),DM_MSL_DIR=str(runtime/'shaders'),DM_NVN_SHMAP=str(runtime/'profile/shader_map.tsv'),DM_PSO_USER=str(pso))
+        if cfg: env['DM_INPUT_CONFIG']=str(cfg)
+        log=c.private/'logs'/f'game-{g["id"]}.log'
+        try: c.run([runtime/'dmhost',runtime/'modules'],log,env,cwd=temp)
+        except Failure:
+            with log.open('rb') as f:
+                f.seek(max(0,log.stat().st_size-16384)); tail=f.read().decode(errors='replace')
+            summary='游戏进程异常退出，启动器仍可使用。请查看日志或重试。'
+            if 'no Metal device' in tail: summary='系统未提供可用的 Metal 设备。请确认使用 Apple Silicon 并在本机图形会话中启动。'
+            elif 'chain' in tail and ('mismatch' in tail or 'expected' in tail): summary='运行时着色器链不一致，请重新准备游戏。'
+            elif 'unimplemented' in tail or '[RED]' in tail: summary='游戏运行遇到引擎兼容问题。请查看日志；实验性配置可能尚不能正常运行。'
+            raise Failure(summary)
+        return {'gameId':g['id']}

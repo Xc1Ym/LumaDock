@@ -13,7 +13,8 @@ Do this before touching the host. Every item answers "what will break, and how m
 - RomFS folders, header magics and extensions;
 - the `insn_census.py` counts per module;
 - `nso_syms.py` imports vs. host hooks;
-- a short list of what that means for a port.
+- a short list of what that means for a port;
+- the provisional profile keys `dm/games/profile_guess.py` reads off these facts, each with its reason.
 
 Fire Emblem Engage, for example, came out as:
 - Unity 2020.3 IL2CPP on SDK 12.3.7 with NVN;

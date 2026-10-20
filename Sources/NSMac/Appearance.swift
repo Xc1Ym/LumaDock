@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum Brand {
-    static let name = "璃游"
+    static var name: String { L("璃游") }
     static let latinName = "LumaDock"
     static let accent = Color(red:0.02,green:0.53,blue:0.57)
 }

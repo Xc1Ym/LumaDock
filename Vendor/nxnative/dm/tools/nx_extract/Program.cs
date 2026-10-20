@@ -5,6 +5,7 @@
 //   --allow-damaged writes those files as read instead and only lists them (Super Mario Galaxy's base NSP with 147 MB zeroed: its two prologue WebM movies).
 // Add-on content: nx_extract <prod.keys> --aoc <DLC NSP> <output dir> writes the RomFS of the DLC's data NCA to <output dir> (the packing script puts it at aoc/<index>/, the host mounts it through DM_AOC_DIR).
 // Title keys come from the common tickets (.tik) inside the NSPs, so only prod.keys is needed; key values are never printed.
+// The base game may also be a cartridge dump (.xci, Monster Hunter Rise): its secure partition holds the NCAs, which carry their keys in the key area (no ticket).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -125,10 +126,17 @@ static class P {
         return 0;
     }
 
-    // Open an NSP (PFS0), import its common tickets, list all NCAs
+    // Open an NSP (PFS0) or the secure partition of an XCI, import the common tickets, list all NCAs
     static List<Nca> OpenNsp(KeySet ks, string path) {
-        var pfs = new PartitionFileSystem();
-        pfs.Initialize(new LocalStorage(path, FileAccess.Read)).ThrowIfFailure();
+        IFileSystem pfs; var st0 = new LocalStorage(path, FileAccess.Read);
+        byte[] magic = new byte[4]; st0.Read(0x100, magic).ThrowIfFailure();
+        if (System.Text.Encoding.ASCII.GetString(magic) == "HEAD") {   // XCI: the card header's magic at 0x100
+            var xci = new Xci(ks, st0);
+            if (!xci.HasPartition(XciPartitionType.Secure)) throw new Exception($"no secure partition in {path}");
+            pfs = xci.OpenPartition(XciPartitionType.Secure);
+        } else {
+            var p = new PartitionFileSystem(); p.Initialize(st0).ThrowIfFailure(); pfs = p;
+        }
         var ncas = new List<Nca>();
         foreach (DirectoryEntryEx e in pfs.EnumerateEntries("*", SearchOptions.Default)) {
             using var f = new UniqueRef<IFile>();

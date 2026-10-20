@@ -20,6 +20,11 @@ void dm_uiscreen_res_reread(void) {}
 void dm_audio_suspend(int on) { (void)on; }   // stubs for the bg item of DM_OE_SCRIPT (hle_audio.c / hle_os.c / hle_nvn.c)
 void guest_clock_freeze_for(int reason, int on) { (void)reason; (void)on; }
 void dm_gfx_suspend(int on) { (void)on; }
+// The notification event (hle_thread.c binds a kernel event): the unit test only tracks whether it is signalled
+static int ev_bound, ev_sig;
+void hle_bind_system_event(void *g, int autoclear) { (void)g; (void)autoclear; ev_bound = 1; }
+void hle_signal_system_event(void *g) { (void)g; ev_sig = 1; }
+void hle_clear_system_event(void *g) { (void)g; ev_sig = 0; }
 static int checks, fails;
 #define CHECK(c, s) do { checks++; int ok = !!(c); fails += !ok; printf("%s %s\n", ok ? "✓" : "✗", s); } while (0)
 static void reset(void) { g_mqh = g_mqn = 0; g_focus = 1; g_opmode = 1; g_ntf_opmode = g_ntf_perfmode = 0; }
@@ -165,5 +170,18 @@ int main(void) {
     dm_focus_set(1); dm_set_opmode(0); dm_focus_set(3); dm_set_opmode(1);
     CHECK(pop_is(15) && pop_is(30) && pop_is(31) && empty(), "after wrapping across 32 slots still deduplicated by 15,30,31 in first-seen order");
     CHECK(child_burst(3), "new change after the consumer pops and before it queries: the new resume is not missed, final focus 1 / mode 0");
+    // The notification event follows the queue, as the am service's does: signalled while a message is queued, cleared when the last one is popped. Monster Hunter Rise's
+    // MessageSuperviseThread (main+0x6bc8fc4) waits on it with WaitAny, which does not clear it, then pops until the queue is empty: a signal left behind made it spin on a core
+    reset(); g_ntf_opmode = g_ntf_perfmode = 1;
+    h_oe_GetMsgEv();
+    CHECK(ev_bound && !ev_sig, "notification event: bound on first use, not signalled while the queue is empty");
+    dm_focus_set(2);
+    CHECK(ev_sig, "notification event: signalled when a notification is queued");
+    CHECK(pop_is(15) && !ev_sig, "notification event: cleared when the last notification is popped");
+    dm_focus_set(1); dm_set_opmode(0);
+    CHECK(pop_is(15) && ev_sig, "notification event: still signalled after a pop that leaves notifications queued");
+    CHECK(pop_is(30) && ev_sig && pop_is(31) && !ev_sig, "notification event: cleared only when the queue is empty");
+    ev_sig = 1;
+    CHECK(empty() && !ev_sig, "notification event: a pop from an empty queue clears a signal left behind");
     printf("== oe %d checks, %d failed ==\n", checks, fails); return fails != 0;
 }

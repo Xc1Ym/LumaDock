@@ -7,6 +7,8 @@
 #   · Shader (class 48): the compressedBlob of platform platforms[i] is LZ4-compressed in segments offsets[i][s] / compressedLengths[i][s] / decompressedLengths[i][s] (2019.3 and later);
 #     inside a decompressed segment: u32 subprogram count, then 12-byte entries {offset, length, segment}. Before 2019.3 each platform has one segment (offsets[i] is a number) and the entries are
 #     8 bytes {offset, length}. A subprogram = version, program type, stats, keywords, program code bytes, ...
+#     From Unity 2021.2 (subprogram version 202012090) the local keyword list is gone; Unity 2022 also keeps each program's parameters in the blob as entries of their own (the parsed form's
+#     m_ParameterBlobIndices), and the code entries are the m_BlobIndex of m_PlayerSubPrograms (Ace Attorney Investigations Collection, Unity 2022.3.17f1)
 #   The pre-2019.3 layouts were found by armyja on Cuphead (Unity 2017.4.9f1, serialized format 17), GitHub pull request #2
 # Only depends on lz4 (the same package shader_split uses for NSOs)
 import lzma, struct
@@ -159,8 +161,8 @@ def is_serialized(d):
     else: msz, fsz, _, doff = struct.unpack_from('>IIII', d, 0)
     return fsz == len(d) and 0 < msz < fsz and doff <= fsz
 
-def shader_programs(sh):
-    """Shader object → yields (platform, subprogram index, subprogram bytes)"""
+def shader_programs(sh, only=None):
+    """Shader object → yields (platform, subprogram index, subprogram bytes); only = the subprogram indices to yield (None: all)"""
     blob = sh['compressedBlob']
     for i, plat in enumerate(sh['platforms']):
         offs, clen, dlen = sh['offsets'][i], sh['compressedLengths'][i], sh['decompressedLengths'][i]
@@ -168,14 +170,14 @@ def shader_programs(sh):
             s0 = _lz4(blob[offs:offs + clen], dlen); n = struct.unpack_from('<I', s0, 0)[0]
             for k in range(n):
                 off, ln = struct.unpack_from('<II', s0, 4 + 8 * k)
-                yield plat, k, s0[off:off + ln]
+                if only is None or k in only: yield plat, k, s0[off:off + ln]
             continue
         segs = [_lz4(blob[o:o + c], u) for o, c, u in zip(offs, clen, dlen)]
         if not segs: continue
         s0 = segs[0]; n = struct.unpack_from('<I', s0, 0)[0]
         for k in range(n):
             off, ln, seg = struct.unpack_from('<III', s0, 4 + 12 * k)
-            yield plat, k, segs[seg][off:off + ln]
+            if only is None or k in only: yield plat, k, segs[seg][off:off + ln]
 
 def subprogram(b):
     """subprogram header → (version, program type, keywords, local keywords, program code, offset after the code)"""
@@ -187,6 +189,6 @@ def subprogram(b):
         for _ in range(r.u('i')):
             ln = r.u('i'); out.append(b[r.p:r.p + ln].decode('utf-8', 'replace')); r.p += ln; r.align()
         return out
-    kw = strs(); lkw = strs() if ver >= 201806140 else []
+    kw = strs(); lkw = strs() if 201806140 <= ver < 202012090 else []   # subprogram version 202012090 (Unity 2021.2 on) has no local keyword list (Ace Attorney Investigations Collection, Unity 2022.3)
     ln = r.u('i'); code = b[r.p:r.p + ln]; r.p += ln; r.align()
     return ver, ptype, kw, lkw, code, r.p

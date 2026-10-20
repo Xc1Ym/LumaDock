@@ -359,17 +359,49 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             {
                 // If we have a phi, let's check if all inputs are effectively the same value.
                 // If so, we can "see through" the phi and pick any of the inputs (since they are all the same).
+                // nxnative: the inputs are gathered through the phis they come from, as a loop makes (a handle kept in a loop variable
+                // reaches the phi from the loop's own phi). Upstream compared the phi's direct inputs only and gave up on such handles.
 
-                Operand firstSrc = phi.GetSource(0);
+                Operand firstSrc = null;
+                HashSet<PhiNode> visited = new();
+                Stack<PhiNode> pending = new();
+                pending.Push(phi);
 
-                for (int index = 1; index < phi.SourcesCount; index++)
+                while (pending.Count > 0)
                 {
-                    if (!IsSameOperand(firstSrc, phi.GetSource(index)))
-                    {
-                        outOperation = null;
+                    PhiNode current = pending.Pop();
 
-                        return false;
+                    if (!visited.Add(current))
+                    {
+                        continue;
                     }
+
+                    for (int index = 0; index < current.SourcesCount; index++)
+                    {
+                        Operand src = current.GetSource(index);
+
+                        if (src.AsgOp is PhiNode srcPhi)
+                        {
+                            pending.Push(srcPhi);
+                        }
+                        else if (firstSrc == null)
+                        {
+                            firstSrc = src;
+                        }
+                        else if (!IsSameOperand(firstSrc, src))
+                        {
+                            outOperation = null;
+
+                            return false;
+                        }
+                    }
+                }
+
+                if (firstSrc == null)
+                {
+                    outOperation = null;
+
+                    return false;
                 }
 
                 asgOp = firstSrc.AsgOp;
@@ -389,14 +421,20 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
         private static bool IsSameOperand(Operand x, Operand y)
         {
+            if (x == y)
+            {
+                return true;
+            }
+
             if (x.Type == y.Type && x.Type == OperandType.LocalVariable)
             {
+                // nxnative: the second source may also be the same constant (a constant sampler ORed into a texture handle).
                 return x.AsgOp is Operation xOp &&
                     y.AsgOp is Operation yOp &&
                     xOp.Inst == Instruction.BitwiseOr &&
                     yOp.Inst == Instruction.BitwiseOr &&
                     AreBothEqualConstantBuffers(xOp.GetSource(0), yOp.GetSource(0)) &&
-                    AreBothEqualConstantBuffers(xOp.GetSource(1), yOp.GetSource(1));
+                    (AreBothEqualConstantBuffers(xOp.GetSource(1), yOp.GetSource(1)) || AreBothEqualConstants(xOp.GetSource(1), yOp.GetSource(1)));
             }
 
             return false;
@@ -405,6 +443,11 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
         private static bool AreBothEqualConstantBuffers(Operand x, Operand y)
         {
             return x.Type == y.Type && x.Value == y.Value && x.Type == OperandType.ConstantBuffer;
+        }
+
+        private static bool AreBothEqualConstants(Operand x, Operand y)
+        {
+            return x.Type == y.Type && x.Value == y.Value && x.Type == OperandType.Constant;
         }
 
         private static Operand GetSourceForMaskedHandle(Operation asgOp, uint mask)

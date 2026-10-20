@@ -43,6 +43,9 @@ def mac_compile(msl, air, lib):   # same interface as ios_metal.compile
 #   This game uses only combined handles (nvnCommandBufferBindTexture), with no separate samplers; the image handle table is still at 0x120 + 8 r (8 slots, right after the texture table; measured 0x120 / 0x128 / 0x130 on agl's 10 compute shaders, the same address as D2R).
 TEX_BASE, TEX_SLOTS, SAMP_BASE, IMG_BASE, IMG_SLOTS = (GAME.int(k) for k in ('nvn_tex_base', 'nvn_tex_slots', 'nvn_samp_base', 'nvn_img_base', 'nvn_img_slots'))
 SSBO = {k: int(v, 0) for k, v in GAME.pairs('nvn_ssbo_bases')}   # c0 storage buffer table bases (per stage)
+# A separate texture table of its own (Monster Hunter Rise: bound / combined handles at 0x20 + 8 r, separate texture binds at 0x168 + 8 r, both in use): its slots are reported as 128 + r, where
+# the replay keeps the separate binds of such a profile (hle_nvn.c SEPTEX_SLOT0). Profiles without the key have one texture table (nvn_tex_base) for both kinds of bind
+SEPTEX_BASE, SEPTEX_SLOTS = (GAME.int('nvn_septex_base'), GAME.int('nvn_septex_slots')) if GAME.get('nvn_septex_base', '') else (None, 0)
 # The translator (dmsh_xlate/Program.cs) has the texture / sampler handle table bases built in, used only to turn a handle into a slot and look up that slot's texture / image type in the answer table (TexSlot); the bindings' slots are decoded by this script from the profile (decode_tex).
 #   So the profile's bases must equal the translator's only when the answer table has per-slot texture / image facts (otherwise the wrong slot is looked up); Engage (0x168 / 0x568) has no such facts, so the translator needs no change
 _xb = re.search(r'const int TexBase = (0x[0-9a-fA-F]+), SampBase = (0x[0-9a-fA-F]+);', open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dmsh_xlate/Program.cs')).read())
@@ -82,14 +85,20 @@ def tool_fingerprint():
             '\0xlate\0' + dmsh_chain.xlate_source_sha() + '\0spirv-cross\0' + sc.stdout + sc.stderr +
             '\0xc\0' + repr(XC) + '\0mac\0' + MAC_RECORD + '\0ios\0' + (ios_metal.RECORD if IOSOUT else ''))
 
+# The profile keys that change how a shader is built (nvn_*, shader_*), as dmsh_chain.version takes them: part of every shader's cache key
+PROFILE_ROWS = ''.join(f'{k}\t{chr(9).join(v)}\n' for k, v in GAME.rows if k.startswith(('nvn_', 'shader_'))).encode()
 def shader_key(key, name, rec):
+    """The per-shader cache key. It covers the profile's build keys and the shader's pairs; a vertex shader with pairs also takes its pixel shaders' keys (pair_keyed), since vs_pad reads their
+    MSL. Before, these were only in the chain version, so a build after changing only them hit the old entries and filed them under the new version (with an empty DMSH_CAS as the workaround)"""
     pc = dmsh_facts.row(key, FACTS[key]).encode() if key in FACTS else 'missing'.encode()
     map_row = MAP_ROWS.get(key, 'missing'.encode()) + MAP_CONFLICT_ROWS.get(key, b'')
     embedded = rec if name.startswith('main.rodata@') else b''
     payload = (b'record\0' + rec + b'\0map\0' + map_row + b'\0pc\0' + pc + b'\0embedded\0' + embedded +
                b'\0tools\0' + TOOL_FP + b'\0code\0' + CODE_FP.encode() +
-               b'\0rule\0' + shader_rule_source(name))
+               b'\0rule\0' + shader_rule_source(name) + b'\0profile\0' + PROFILE_ROWS + b'\0pairs\0' + ','.join(sorted(PAIRS.get(key, ()))).encode())
     return hashlib.sha256(payload).hexdigest()
+def pair_keyed(digest, pixel_digests):   # a vertex shader's key with its pixel shaders' keys (vs_pad)
+    return hashlib.sha256((digest + '\0' + ','.join(pixel_digests)).encode()).hexdigest()
 
 def cache_meta_path(key): return os.path.join(CAS, 'index', key + '.json')
 def cache_path(digest): return os.path.join(CAS, 'shader', digest)
@@ -303,7 +312,8 @@ def raster_facts(stage, src):
     return {'pos_attr': attr[m0[0]], 'pos_w': w, 'uv_from_attr': uv, 'uv_affine': aff}
 
 def decode_tex(name):
-    """fp_t_cb{slots}_{handle} / fp_t_tcb_{handle}: texture slot, sampler slot (Ryujinx TextureHandle encoding; c[2] handle table)"""
+    """fp_t_cb{slots}_{handle} / fp_t_tcb_{handle}: texture slot, sampler slot (Ryujinx TextureHandle encoding; c[2] handle table). Handle type 3 (SeparateConstantSamplerHandle) carries a constant
+    sampler ID instead of a second offset, so only the first offset can name the texture (const_sampler gives the ID)"""
     m = re.match(r'[a-z]+_[ti]\w*?_(?:cb(\d+)|tcb)_([0-9A-F]+)', name)
     if not m: return None
     slots = int(m.group(1)) if m.group(1) else -1; h = int(m.group(2), 16)
@@ -313,20 +323,31 @@ def decode_tex(name):
     words = [o0] + ([o1] if ty else [])
     if re.match(r'[a-z]+_i', name):   # image
         return next((slot(x, IMG_BASE, tb) for x in words if IMG_BASE <= x * 4 < IMG_BASE + 8 * IMG_SLOTS and slot(x, IMG_BASE, tb) is not None), None), None, ty
-    t = next((slot(x, TEX_BASE, tb) for x in words if slot(x, TEX_BASE, tb) is not None and x * 4 < TEX_BASE + 8 * TEX_SLOTS), None)
-    s = next((slot(x, SAMP_BASE, sb) for x in words if x * 4 >= SAMP_BASE and slot(x, SAMP_BASE, sb) is not None), None)
+    tw = [o0] if ty == 3 else words
+    t = next((slot(x, TEX_BASE, tb) for x in tw if slot(x, TEX_BASE, tb) is not None and x * 4 < TEX_BASE + 8 * TEX_SLOTS), None)
+    if t is None and SEPTEX_BASE is not None:
+        t = next((128 + slot(x, SEPTEX_BASE, tb) for x in tw if slot(x, SEPTEX_BASE, tb) is not None and x * 4 < SEPTEX_BASE + 8 * SEPTEX_SLOTS), None)
+    s = next((slot(x, SAMP_BASE, sb) for x in words if x * 4 >= SAMP_BASE and slot(x, SAMP_BASE, sb) is not None), None) if ty != 3 else None
     return t, s, ty
+
+def const_sampler(name):
+    """The constant sampler ID of a type-3 handle (fp_t_cb65538_3041005C: the texture handle at c2 word 0x5C ORed with sampler 0x104), or None"""
+    m = re.match(r'[a-z]+_t\w*?_(?:cb(\d+)|tcb)_([0-9A-F]+)', name)
+    if not m: return None
+    h = int(m.group(2), 16)
+    return (h >> 14) & 0x3fff if h >> 28 == 3 else None
 
 def decode_ubo_tex(name):
     """Bindless texture: the handle is written by the game into its own uniform buffer (fp_t_cb7_2A = c[7] word 0x2A). Returns (texture: (uniform slot, byte offset), sampler: (slot, offset));
-    handle type 0 = combined handle (one 32-bit word: low 20 bits texture ID, high 12 bits sampler ID), 1 = the sampler handle is in another word (its slot is the high 16 bits of slots − 1). This game's whole library uses only type 0 (1850 shaders)"""
+    handle type 0 = combined handle (one 32-bit word: low 20 bits texture ID, high 12 bits sampler ID), 1 = the sampler handle is in another word (its slot is the high 16 bits of slots − 1). This game's whole library uses only type 0 (1850 shaders)
+    Type 3: the sampler is a constant ID (Monster Hunter Rise: a texture handle at c[5] word 0x28 with sampler 0x104); the sampler part is then ('id', ID)"""
     m = re.match(r'[a-z]+_t\w*?_cb(\d+)_([0-9A-F]+)', name)
     if not m: return None
     slots, h = int(m.group(1)), int(m.group(2), 16)
     tb = slots & 0xffff; sb = (slots >> 16) - 1 if slots >> 16 else tb
     o0, o1, ty = h & 0x3fff, (h >> 14) & 0x3fff, h >> 28
-    if not 3 <= tb <= 16 or ty not in (0, 1) or (ty and not 3 <= sb <= 16): return None
-    return (tb - 3, o0 * 4), ((sb - 3, o1 * 4) if ty else (tb - 3, o0 * 4))
+    if not 3 <= tb <= 16 or ty not in (0, 1, 3) or (ty == 1 and not 3 <= sb <= 16): return None
+    return (tb - 3, o0 * 4), (('id', o1) if ty == 3 else (sb - 3, o1 * 4) if ty else (tb - 3, o0 * 4))
 
 def reflect(key, stage, msl, res):
     """MSL argument buffer struct member → replay reflection: kind (same as nvn_refl.h) + NVN slot number + argument buffer member index"""
@@ -344,11 +365,11 @@ def reflect(key, stage, msl, res):
             e.update(kind='sbuf', index=int(re.fullmatch(r'[a-z]+_s(\d+)', nm).group(1)))
         elif decode_ubo_tex(nm[:-5] if nm.endswith('Smplr') else nm):   # bindless: the handle is in a uniform buffer (reg = uniform slot, off = byte offset)
             ut, us = decode_ubo_tex(nm[:-5] if nm.endswith('Smplr') else nm)
-            if nm.endswith('Smplr'): e.update(kind='samp_ubo', reg=us[0], off=us[1])
+            if nm.endswith('Smplr'): e.update(kind='samp_id', reg=us[1]) if us[0] == 'id' else e.update(kind='samp_ubo', reg=us[0], off=us[1])
             elif 'texture_buffer' in ty: e.update(kind='?')   # bindless typed buffer: not implemented in the replay layer
             else: e.update(kind='tex_ubo', reg=ut[0], off=ut[1])
         elif nm.endswith('Smplr'):   # handle type 0 = texture and sampler combined in one handle: the sampler index is taken from the high bits of that texture slot's handle
-            t, s, ty = decode_tex(nm[:-5]); e.update(kind='samp', reg=s) if ty else e.update(kind='samp_tex', reg=t)
+            t, s, ty = decode_tex(nm[:-5]); e.update(kind='samp_id', reg=const_sampler(nm[:-5])) if ty == 3 else e.update(kind='samp', reg=s) if ty else e.update(kind='samp_tex', reg=t)
         else:
             d = decode_tex(nm)
             if not d: e.update(kind='?')
@@ -363,12 +384,14 @@ def reflect(key, stage, msl, res):
             off = b['cb_offset'] * 4 if b and b['cb_slot'] == 0 else None
             if stage == 'cs' and off is not None and 0x210 <= off < 0x310 and (off - 0x210) % 16 == 0:
                 e.update(kind='ubo_ptr', reg=(off - 0x210) // 16)   # compute-stage uniform slot r: address at c0[0x210 + 0x10 r], read through global memory (checked against cs_lut_combine_c reading cb10[66])
+            elif b and b['cb_slot'] >= 3:   # the address is in the game's own uniform buffer c[n] = uniform slot n - 3 (Monster Hunter Rise's compute shaders: c3 + 0x38); the replay reads it there
+                e.update(kind='sbuf_ubo', reg=b['cb_slot'] - 3, off=b['cb_offset'] * 4)
             else: e['reg'] = (off - base) // 16 if off is not None and base is not None and 0 <= off - base < 0x100 and (off - base) % 16 == 0 else None
             e['rw'] = bool(b and b['flags'] & 2)
     return binds
 
 DRV_FILL = {0: [(b, b + 0x100) for b in sorted(SSBO.values())],   # c0: storage buffer address tables (vertex / compute / pixel, 16 slots × 0x10 each)
-            2: [(TEX_BASE, TEX_BASE + 8 * TEX_SLOTS), (IMG_BASE, IMG_BASE + 8 * IMG_SLOTS), (SAMP_BASE, SAMP_BASE + 8 * 128)]}
+            2: [(TEX_BASE, TEX_BASE + 8 * TEX_SLOTS), (IMG_BASE, IMG_BASE + 8 * IMG_SLOTS), (SAMP_BASE, SAMP_BASE + 8 * 128)] + ([(SEPTEX_BASE, SEPTEX_BASE + 8 * SEPTEX_SLOTS)] if SEPTEX_BASE is not None else [])}
 # c2: texture handle table (Mario 0x20 + 8 r, 32 slots; Engage 0x168 + 8 r, 128 slots), image handle table (0x120 + 8 r, 8 slots), separate sampler handle table (0x568 + 8 r, 128 slots; the replay layer fills them all)
 
 def drv_reads(src):
@@ -469,9 +492,59 @@ def vs_depth(src):
     single = src[:m.start()] + gl
     return single, single + '\n' + re.sub(r'\bmain0\s*\(', 'main0_z(', body, count=1)
 
+SG_OPS = {333: 'true', 334: 'pred', 335: 'pred', 336: 'true', 337: 'value', 338: 'value', 339: 'ballot', 345: 'value', 346: 'value', 347: 'value', 348: 'value'}   # OpGroupNonUniform* → its one-lane value
+SG_BUILTINS = {36: 'one', 41: 'zero', 4416: 'one4', 4417: 'one4', 4418: 'zero4', 4419: 'one4', 4420: 'zero4'}   # SubgroupSize, SubgroupLocalInvocationId, Eq / Ge / Gt / Le / Lt masks
+def spv_single_lane(path):
+    """Metal has no SIMD-group functions in vertex functions, and SPIRV-Cross's subgroup emulation covers only Elect. Monster Hunter Rise's vertex shaders (about 4%) scalarize uniform loads:
+    ballot the active lanes, shuffle the first lane's value to all, and take a fast path when all agree. With a subgroup of one lane that is exact: the ballot is the lane's own bit, shuffles and
+    broadcasts return the lane's own value, all / any are the predicate, all-equal and elect are true, the lane ID is 0, the size 1 and the masks follow. The SPIR-V is rewritten that way
+    (the builtin variables, their decorations and the subgroup capabilities removed). → True when rewritten, False when there is nothing to do or an operation it does not cover"""
+    d = open(path, 'rb').read(); words = list(struct.unpack(f'<{len(d) // 4}I', d)); hdr, ins, i = words[:5], [], 5
+    while i < len(words): n = words[i] >> 16; ins.append(words[i:i + n]); i += n
+    op = lambda x: x[0] & 0xffff
+    if not any(op(x) in SG_OPS or (op(x) == 71 and len(x) > 3 and x[2] == 11 and x[3] in SG_BUILTINS) for x in ins): return False
+    if any(340 <= op(x) <= 366 and op(x) not in SG_OPS for x in ins): return False   # other subgroup operations (bit counts, arithmetic): not covered
+    bvar = {x[1]: SG_BUILTINS[x[3]] for x in ins if op(x) == 71 and len(x) > 3 and x[2] == 11 and x[3] in SG_BUILTINS}
+    uint = next((x[1] for x in ins if op(x) == 21 and x[2:4] == [32, 0]), None); boolt = next((x[1] for x in ins if op(x) == 20), None)
+    uvec4 = next((x[1] for x in ins if op(x) == 23 and x[2] == uint and x[3] == 4), None)
+    if uint is None or boolt is None or uvec4 is None: return False
+    bound = hdr[3]; c = {}
+    for nm in ('zero', 'one', 'zero4', 'one4', 'true'): c[nm] = bound; bound += 1
+    consts = [[43 | 4 << 16, uint, c['zero'], 0], [43 | 4 << 16, uint, c['one'], 1], [44 | 7 << 16, uvec4, c['zero4'], c['zero'], c['zero'], c['zero'], c['zero']],
+              [44 | 7 << 16, uvec4, c['one4'], c['one'], c['zero'], c['zero'], c['zero']], [41 | 3 << 16, boolt, c['true']]]
+    out, placed = [], False
+    for x in ins:
+        o = op(x)
+        if o == 17 and x[1] in (61, 62, 63, 64, 65, 66, 67, 68, 4423, 4431): continue   # GroupNonUniform* / SubgroupBallotKHR / SubgroupVoteKHR capabilities
+        if o == 10 and (b'ballot' in struct.pack(f'<{len(x) - 1}I', *x[1:]) or b'subgroup' in struct.pack(f'<{len(x) - 1}I', *x[1:])): continue
+        if o in (71, 5) and x[1] in bvar: continue   # the builtin's decoration and name
+        if o == 59 and x[2] in bvar: continue        # the builtin variable itself
+        if o == 15: x = _ep_drop(x, bvar)
+        if o == 54 and not placed: out += consts; placed = True
+        if o == 61 and x[3] in bvar: out.append([83 | 4 << 16, x[1], x[2], c[bvar[x[3]]]]); continue   # a load of a builtin → its constant
+        if o in SG_OPS:
+            kind = SG_OPS[o]
+            if kind == 'ballot': out.append([169 | 6 << 16, x[1], x[2], x[4], c['one4'], c['zero4']]); continue   # OpSelect(pred, own bit, 0)
+            out.append([83 | 4 << 16, x[1], x[2], c['true'] if kind == 'true' else x[4]]); continue
+        out.append(x)
+    if not placed: return False
+    if any(op(x) == 65 and len(x) > 3 and x[3] in bvar for x in out): return False   # reached through an access chain: not covered
+    hdr[3] = bound
+    flat = hdr + [v for x in out for v in x]; open(path, 'wb').write(struct.pack(f'<{len(flat)}I', *flat))
+    return True
+def _ep_drop(x, ids):   # OpEntryPoint without the given interface IDs: model, function, the name (a nul-terminated string in whole words), then the interface list
+    k = 3
+    while k < len(x):
+        k += 1
+        if any((x[k - 1] >> (8 * b)) & 0xff == 0 for b in range(4)): break   # the word holding the string's nul ends the name
+    y = x[:k] + [v for v in x[k:] if v not in ids]
+    y[0] = len(y) << 16 | (x[0] & 0xffff)
+    return y
+
 def finish(key, w, j, c1):
     name, k = loc[key]
     msl = os.path.join(w, key + '.metal'); lib = os.path.join(out, key + '_b.metallib')
+    if j['stage'] == 'vs': spv_single_lane(os.path.join(w, key + '.spv'))   # one-lane subgroups (see spv_single_lane)
     r = subprocess.run(['spirv-cross', *XC, os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
     if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
     src = open(msl).read()
@@ -481,6 +554,7 @@ def finish(key, w, j, c1):
             j['attr'].update(extra); jp = os.path.join(w, f'job1_{key}.json'); json.dump([j], open(jp, 'w'))
             rx = subprocess.run([XLATE, jp, w], capture_output=True, text=True)
             if rx.returncode or not os.path.exists(os.path.join(w, key + '.spv')): return 'translation failed', ('integer-input retranslation: ' + rx.stderr.strip())[:160], None
+            spv_single_lane(os.path.join(w, key + '.spv'))
             r = subprocess.run(['spirv-cross', *XC, os.path.join(w, key + '.spv'), '--output', msl], capture_output=True, text=True)
             if r.returncode: return 'MSL failed', r.stderr.strip()[:160], None
             src = open(msl).read()
@@ -526,7 +600,7 @@ for _spec in [cache_root + ('=' + os.path.dirname(IOSOUT) if IOSOUT else '')] + 
             for _ln in MTL.fill(os.path.join(_mac, _b), os.path.join(_ios, _b) if _ios else None): print(_ln, flush=True)
 packs, jobs, c1s = {}, {}, {}
 digests, rule_fps, cache_reasons, cache_hits = {}, {}, {}, set()
-for key in keys:
+def rec_of(key):   # → (package name, the shader's record)
     name, k = loc[key]
     if name.startswith('main.rodata@'):
         if 'main' not in packs:
@@ -539,7 +613,16 @@ for key in keys:
     else:
         if name not in packs: packs[name] = records(open(os.path.join(dm_dir, name), 'rb').read())
         rec = packs[name][k]
-    digests[key] = shader_key(key, name, rec)
+    return name, rec
+recs = {}
+for key in keys: recs[key] = rec_of(key); digests[key] = shader_key(key, *recs[key])
+def plain_digest(k):   # a paired pixel shader's key, also when it is not built this time
+    if k in digests: return digests[k]
+    return shader_key(k, *rec_of(k)) if k in loc else 'missing'
+for key in keys:
+    if PAIRS.get(key): digests[key] = pair_keyed(digests[key], [plain_digest(p) for p in sorted(PAIRS[key])])
+for key in keys:
+    name, rec = recs[key]
     rule_fps[key] = hashlib.sha256(shader_rule_source(name) + ','.join(sorted(PAIRS.get(key, ()))).encode()).hexdigest()   # the vertex shader must be rebuilt when its pairs change (vs_pad)
     hit, cache_reasons[key] = cache_lookup(key, digests[key], rule_fps[key], CODE_FP)
     if hit: cache_hits.add(key)
@@ -580,7 +663,7 @@ ok = [r[3] for r in res if r[1] == 'ok']
 rd = [x for x in ok if x['drv_reads']]
 print(f'shaders reading driver segments at run time {len(rd)} (c0 {sum("0" in x["drv_reads"] for x in rd)}, c2 {sum("2" in x["drv_reads"] for x in rd)}); reading what the replay layer cannot fill {sum(bool(x["drv_unfillable"]) for x in ok)}')
 for e, n in collections.Counter(u for x in ok for u in x['drv_unfillable']).most_common(15): print(f'  cannot fill {n:5d}  {e}')
-SLOTK = {'cbuf', 'samp', 'samp_tex', 'tex', 'img', 'tbuf', 'sbuf', 'ubo_ptr', 'tex_ubo', 'samp_ubo'}
+SLOTK = {'cbuf', 'samp', 'samp_tex', 'tex', 'img', 'tbuf', 'sbuf', 'ubo_ptr', 'sbuf_ubo', 'tex_ubo', 'samp_ubo', 'samp_id'}
 noreg = [x for x in ok if any(b['kind'] in SLOTK and b.get('reg') is None for b in x['bindings'])]
 unk = [x for x in ok if any(b['kind'] == '?' for b in x['bindings'])]
 print(f'shaders with a binding whose slot was not decoded {len(noreg)}, with an unrecognized binding kind {len(unk)} (loading them at run time prints [RED] lines)')

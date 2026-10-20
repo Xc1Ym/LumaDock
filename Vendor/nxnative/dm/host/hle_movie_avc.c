@@ -5,6 +5,7 @@
 // in presentation order, so pictures wait in a queue sorted by presentation time and leave it once more than `depth` are queued (4 when the profile has B-frames, 0 for Baseline), or all at the end of the stream
 #include "hle.h"
 #include <VideoToolbox/VideoToolbox.h>
+#include <arm_neon.h>
 #include "hle_movie_avc.h"
 
 #define QMAX 16
@@ -13,7 +14,7 @@ struct mavc {
     CMVideoFormatDescriptionRef fd; VTDecompressionSessionRef vs;
     struct { CVPixelBufferRef pb; int64_t pts; } q[QMAX]; int nq, depth;
     uint8_t *au; size_t aucap;   // length-prefixed copy of the access unit being decoded
-    int red;
+    int red, rgba;               // rgba: pictures as 4-byte RGBA (native texture mode, Monster Hunter Rise) instead of NV12
 };
 
 mavc *mavc_new(void) { mavc *a = calloc(1, sizeof *a); if (!a) die("movie: AVC decoder allocation failed"); return a; }
@@ -76,7 +77,7 @@ static int open_session(mavc *a) {
     const uint8_t *ps[2] = {a->sps, a->pps}; size_t sz[2] = {(size_t)a->nsps, (size_t)a->npps};
     OSStatus st = CMVideoFormatDescriptionCreateFromH264ParameterSets(NULL, 2, ps, sz, 4, &a->fd);
     if (st) { if (!a->red++) LOG("[RED] movie: AVC parameter sets give no format description (%d), outputting black frames", (int)st); return 0; }
-    int32_t pf = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;   // NV12, video range: what the SDK's decoder hands out
+    int32_t pf = a->rgba ? kCVPixelFormatType_32BGRA : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;   // NV12, video range: what the SDK's decoder hands out; BGRA (converted by VideoToolbox with the stream's colour matrix) for RGBA output
     CFNumberRef n = CFNumberCreate(NULL, kCFNumberSInt32Type, &pf);
     const void *k[] = {kCVPixelBufferPixelFormatTypeKey}, *v[] = {n};
     CFDictionaryRef attrs = CFDictionaryCreate(NULL, k, v, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks); CFRelease(n);
@@ -110,11 +111,24 @@ int mavc_decode(mavc *a, const uint8_t *p, int n, int64_t pts_us) {
     if (st) { if (!a->red++) LOG("[RED] movie: AVC decode submission failed (%d, first case)", (int)st); return -1; }
     return 0;
 }
+void mavc_set_rgba(mavc *a) { if (!a->rgba) { a->rgba = 1; a->dirty = 1; } }
+// BGRA picture → RGBA rows of w pixels (stride w * 4); a smaller picture is padded with opaque black, a larger one cropped
+static void take_rgba(CVPixelBufferRef pb, uint8_t *dst, int w, int h) {
+    int pw = (int)CVPixelBufferGetWidth(pb), ph = (int)CVPixelBufferGetHeight(pb), cw = pw < w ? pw : w, chh = ph < h ? ph : h;
+    const uint8_t *src = CVPixelBufferGetBaseAddress(pb); size_t ss = CVPixelBufferGetBytesPerRow(pb);
+    if (cw < w || chh < h) for (size_t i = 0; i < (size_t)w * h; i++) ((uint32_t *)dst)[i] = 0xff000000u;
+    for (int r = 0; r < chh; r++) {
+        const uint8_t *s = src + r * ss; uint8_t *o = dst + (size_t)r * w * 4; int x = 0;
+        for (; x + 16 <= cw; x += 16) { uint8x16x4_t v = vld4q_u8(s + 4 * x); uint8x16_t t = v.val[0]; v.val[0] = v.val[2]; v.val[2] = t; vst4q_u8(o + 4 * x, v); }
+        for (; x < cw; x++) { o[4 * x] = s[4 * x + 2]; o[4 * x + 1] = s[4 * x + 1]; o[4 * x + 2] = s[4 * x]; o[4 * x + 3] = 255; }
+    }
+}
 int mavc_take(mavc *a, int flush, uint8_t *dst, int w, int h, int64_t *pts_us) {
     if (!a->nq || (!flush && a->nq <= a->depth)) return 0;
     CVPixelBufferRef pb = a->q[0].pb; if (pts_us) *pts_us = a->q[0].pts;
     memmove(a->q, a->q + 1, --a->nq * sizeof a->q[0]);
     CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+    if (a->rgba) { take_rgba(pb, dst, w, h); CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly); CVPixelBufferRelease(pb); return 1; }
     int pw = (int)CVPixelBufferGetWidthOfPlane(pb, 0), ph = (int)CVPixelBufferGetHeightOfPlane(pb, 0);
     const uint8_t *y = CVPixelBufferGetBaseAddressOfPlane(pb, 0), *uv = CVPixelBufferGetBaseAddressOfPlane(pb, 1);
     size_t ys = CVPixelBufferGetBytesPerRowOfPlane(pb, 0), uvs = CVPixelBufferGetBytesPerRowOfPlane(pb, 1);

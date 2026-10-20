@@ -39,7 +39,7 @@ class WorkerTests(unittest.TestCase):
         self.ctx.r['libraryId']='not-this-disk'
         with self.assertRaises(Failure):self.ctx.check()
     def test_05_profiles_and_missing_version(self):
-        ps=profiles(self.ctx.engine);self.assertEqual(len(ps),13)
+        ps=profiles(self.ctx.engine);self.assertGreaterEqual(len(ps),15);self.assertIn('01007EF00011E000',ps);self.assertIn('0100000000010000',ps)
         missing=library.requirements({'packages':[{'type':'base','version':0,'builds':{}}]},ps['01007EF00011E000'])
         self.assertTrue(any('v1114112' in s for s in missing))
         self.assertEqual(library.requirements({'packages':[]},None),['此游戏尚无原生适配配置'])
@@ -186,5 +186,19 @@ class WorkerTests(unittest.TestCase):
         with self.ctx.toolchain_lock(exclusive=True):
             with self.assertRaises(Failure):
                 with self.ctx.toolchain_lock():pass
+
+
+    def test_24_engine_upgrade_marks_reprepare_but_keeps_working_runtime(self):
+        tid='01007EF00011E000'
+        self.ctx.save_catalog({'games':[{'id':tid,'name':'fixture','display':'1.9.0','packages':[],'hidden':False}]})
+        runtime=self.ctx.library/'games'/tid/'current';runtime.mkdir(parents=True)
+        (runtime/'sentinel').write_text('last successful version')
+        manifest={'engine':'previous-engine','sourceHashes':[]}
+        atomic(runtime/'manifest.json',manifest)
+        game=self.quiet(library.catalog,self.ctx)['games'][0]
+        self.assertTrue(game['ready']);self.assertTrue(game['needsPreparation'])
+        atomic(runtime/'manifest.json',dict(manifest,engine=ENGINE_REV))
+        self.assertFalse(self.quiet(library.catalog,self.ctx)['games'][0]['needsPreparation'])
+        self.assertEqual((runtime/'sentinel').read_text(),'last successful version')
 
 if __name__=='__main__':unittest.main(verbosity=2)

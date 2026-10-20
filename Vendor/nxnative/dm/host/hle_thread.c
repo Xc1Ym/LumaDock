@@ -564,8 +564,8 @@ void svc_thread_dump(void) {
 // on hardware the dispatcher / worker preempt the main thread as soon as it signals and finish first, while on the host, without the wait, old holders got re-initialized and the worker read freed objects (crashes in SignalEvent on a null MultiWait and at main+0x225338).
 // On per the game profile's core_preempt (off by default: Mario's loader threads would wait for busy high-priority decompression threads, pushing its first frame from 0.6 s to 2.9 s); DM_PREEMPT=0 / 1 overrides the profile. Counts are in the thread state dump
 static int svc_thread_impl(int num, uint64_t *regs);
-// Yield back-off: on the Switch a yield with nothing else runnable costs nothing, but a guest loop that polls the tick and yields (Three Houses' frame limiter main+0x5be430 waits out each 33 ms frame this way:
-// 228,105 yields per frame on an iPhone, a P-core at full clock) becomes a host busy spin. A run of yields with no other SVC between them is let through as plain sched_yield for its first 2 ms;
+// Yield back-off: on the Switch a yield with nothing else runnable costs nothing, but a guest loop that polls the tick and yields (Three Houses' frame limiter main+0x5be430 waited out each 33 ms frame this way:
+// 228,105 yields per frame on an iPhone, a P-core at full clock; a per-build cut in patch_nso.py now makes it sleep) becomes a host busy spin. A run of yields with no other SVC between them is let through as plain sched_yield for its first 2 ms;
 // after that each yield sleeps an eighth of the run so far, between 10 and 250 µs (a 23 ms limiter wait: about 90 sleeps instead of 200k yields, ending at most 250 µs late; idle workers polling for jobs the same).
 // The back-off used to start after 200 µs: that also caught Tears of the Kingdom's main thread waiting for its ModuleSystem workers (about 350 yields a frame, runs of a few hundred µs on the
 // frame's critical path). A sleep that overran the moment the workers finished pushed frames past 33 ms, and the game then drops itself to present interval 3 (20 fps) for a while:
@@ -702,7 +702,8 @@ static int svc_thread_impl(int num, uint64_t *regs) {
             if (t->mask && (t->core < 0 || !(t->mask >> t->core & 1))) t->core = __builtin_ctzll(t->mask); }
         regs[0] = t ? 0 : R_BAD_HANDLE; return 1;
     }
-    case 0x10: { int c = cur()->core; regs[0] = (uint64_t)(uint32_t)(c >= 0 ? c : 0); return 1; }   // The current core number is always 0..2 (never negative)
+    case 0x10: { thr_t *t = cur(); int c = t->core;   // The current core number is always 0..2 (never negative); a thread with no ideal core reports the lowest core its mask allows, not core 0 outside it
+                 regs[0] = (uint64_t)(uint32_t)(c >= 0 ? c : t->mask ? __builtin_ctzll(t->mask) : 0); return 1; }
     case 0x32: {  // SetThreadActivity(w0 thread, w1 0 runnable / 1 paused): see "Pausing threads" above
         thr_t *me = cur(); int act = (int)regs[1];
         pthread_mutex_lock(&G);
@@ -921,4 +922,14 @@ void hle_signal_system_event(void *ev) {   // An unbound one is bound on the spo
         if (bound) die("SystemEvent %p still not found after binding", ev);
         hle_bind_system_event(ev, 0);   // guest code (SVCs take G): outside the lock
     }
+}
+void hle_clear_system_event(void *ev) {   // Clear a bound service-layer SystemEvent (any thread), as the service does when its condition ends; an unbound one has nothing to clear
+    pthread_mutex_lock(&G);
+    pthread_mutex_lock(&g_se_lock); uint32_t wh = se_find(ev); pthread_mutex_unlock(&g_se_lock);
+    if (wh) {
+        event_t *e = h_get(wh, O_EVENT_W);
+        if (!e) die("SystemEvent write-end handle invalid %#x", wh);
+        e->signaled = 0;
+    }
+    pthread_mutex_unlock(&G);
 }

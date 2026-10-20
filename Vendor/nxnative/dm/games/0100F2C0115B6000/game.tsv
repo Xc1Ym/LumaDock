@@ -40,6 +40,10 @@ app_pool	0xCD500000
 tex_flush_upload	on
 render_cond	on
 tex_dirty_upload	on
+# 60 fps (30 on the Switch): the host decides each frame's step in whole vsyncs and holds the frame that long (rewriter stubs at FPSLocker's sites, patch_nso.py FRAME_STEP);
+# 30 when 60 does not hold, game time = real time. DM_FPS_TARGET=30 (Documents/env.txt on the iPhone) saves power, 0 = the game's own step; DM_FRAME_STEP=legacy steps by the measured
+# frame time instead (the method before, iPhone-tested at 60)
+fps_target	60
 
 # ---- NVN driver constant segments (Breath of the Wild's values, the same NVN build) ----
 nvn_tex_base	0x20

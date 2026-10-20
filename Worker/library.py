@@ -132,7 +132,7 @@ def catalog(c):
         manifest=read(c.library/'games'/g['id']/'current/manifest.json',{})
         cover=c.library/'games'/g['id']/'cover.jpg'; g['cover']=str(cover) if cover.exists() else ''
         g['ready']=bool(manifest)
-        g['needsPreparation']=bool(manifest) and manifest.get('sourceHashes') != sorted(x['sha256'] for x in g['packages'])
+        g['needsPreparation']=bool(manifest) and (manifest.get('engine') != ENGINE_REV or manifest.get('sourceHashes') != sorted(x['sha256'] for x in g['packages']))
     cat['profiles']=[{'id':x['id'],'name':x['name'],'compatibility':x['compatibility'],'version':x['builds'].get(x['package'],{}).get('display','')} for x in ps.values()]
     cat['jobs']=[read(p) for p in (c.private/'jobs').glob('*.json') if p!=c.jobpath]
     cat['keys']=key_status(c)

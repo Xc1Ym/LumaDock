@@ -30,7 +30,7 @@ def verify_icons():
 
 
 def verify_source(path):
-    from source_archive import EXCLUDED,SOURCE_DIRS,SOURCE_FILES
+    from source_archive import EXCLUDED,SOURCE_DIRS,SOURCE_FILES,SOURCE_ARTWORK
     banned = {'.keys', '.nsp', '.xci', '.nsz', '.ipa', '.metallib', '.pyc'}
     with zipfile.ZipFile(path) as archive:
         assert archive.testzip() is None
@@ -43,7 +43,7 @@ def verify_source(path):
             assert not (set(rel.parts[1:]) & EXCLUDED), f'Private build directory: {name}'
             assert rel.suffix.lower() not in banned and rel.name not in ('prod.keys', 'catalog.json', 'preferences.json')
             if rel.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg'):
-                assert '/'.join(rel.parts[1:]) in {f'Assets/LumaDock{x}' for x in ('.png','.svg','.icns','.ico')}, f'Unexpected artwork: {name}'
+                assert '/'.join(rel.parts[1:]) in SOURCE_ARTWORK, f'Unexpected artwork: {name}'
             assert archive.getinfo(name).file_size < 100*1024*1024, f'File exceeds GitHub size limit: {name}'
         for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaDock.ico', 'Vendor/nxnative/LICENSE'):
             assert PRODUCT['name']+'/'+required in names, f'Missing source file: {required}'
@@ -59,6 +59,14 @@ def main():
     assert (app/'Contents/Resources'/info['CFBundleIconFile']).is_file()
     for name in ('README.md','README.zh-CN.md'):
         assert (app/'Contents/Resources'/name).read_bytes() == (ROOT/name).read_bytes(), f'Packaged documentation is stale: {name}'
+    assert info['CFBundleDevelopmentRegion'] == 'en'
+    assert info['CFBundleLocalizations'] == ['en','zh-Hans']
+    bundle = app/'Contents/Resources/NSMac_NSMac.bundle'
+    strings = next((p for p in (bundle/'Contents/Resources/Localizable.json',bundle/'Localizable.json') if p.is_file()),None)
+    assert strings is not None, 'Missing packaged localization catalog'
+    assert len(json.loads(strings.read_text())) > 350
+    for language in ('en','zh-Hans'):
+        assert (app/'Contents/Resources'/(language+'.lproj')/'InfoPlist.strings').is_file()
     files = audit(app)
     report = json.loads((RELEASE/'distribution-audit.json').read_text())
     assert report['privateData'] is False and report['fileCount'] == len(files)

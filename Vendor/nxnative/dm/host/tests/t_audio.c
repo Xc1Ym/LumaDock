@@ -11,6 +11,7 @@ static _Atomic int g_sig;
 void hle_signal_system_event(void *g) { (void)g; atomic_fetch_add_explicit(&g_sig, 1, memory_order_seq_cst); }
 void hle_bind_system_event(void *g, int autoclear) { (void)g; (void)autoclear; }   // the real implementation needs a guest thread + SDK kernel event; the unit test only counts triggers
 module_t *module_of(const void *p) { (void)p; return NULL; }   // call sites in the log: no guest modules in the unit test
+void dm_host_helper_qos(qos_class_t q) { (void)q; }   // hle_thread.c: the helper threads keep the default class in the unit test
 int main(void) {
     char out[64], ev[64]; uint8_t prm[16]; gbuf b[3]; static int16_t pcm[3][4800 * 2];
     h_au_InitParam(prm);
@@ -53,5 +54,29 @@ int main(void) {
     int sig2 = atomic_load_explicit(&g_sig, memory_order_acquire);
     int ok2 = got2 == 6 && order_ok && sig2 == 6 && total > 520;
     printf("suspend / resume: released %d/6 in order=%d events %d (expected 6), total duration lower bound 520 ms, got %.0f ms %s\n", got2, order_ok, sig2, total, ok2 ? "✓" : "✗");
-    return !ok2;
+    if (!ok2) return 1;
+
+    // Scenario 3: the device stops calling back while the output plays (iOS does this when another audio session takes over, without telling the AudioUnit). 20 blocks of 100 ms; at 150 ms the AudioUnit is stopped behind the host's back.
+    // Expected: the watchdog sees no callback for 200 ms, the silent sink takes over (all 20 blocks still released in order, about 2 s plus the 200-250 ms gap), and the AudioUnit is restarted 1 s later and calls back again
+    char out3[64]; gbuf b3[20]; static int16_t pcm3[20][4800 * 2]; g_sig = 0;
+    if (h_au_Open(out3, ev, NULL, prm)) return 1;
+    for (int i = 0; i < 20; i++) h_au_SetBuf(&b3[i], pcm3[i], sizeof pcm3[i], sizeof pcm3[i]);
+    int app3 = 0; for (; app3 < 20 && h_au_Append(out3, &b3[app3]); app3++) ;
+    aout *a3 = ao(out3); t0 = now_ns(); h_au_Start(out3);
+    int got3 = 0, order3 = 1, cut = 0; uint64_t cb_restart = 0;
+    while (got3 < 20 && now_ns() - t0 < 10000000000ull) {
+        uint64_t ms = (now_ns() - t0) / 1000000;
+        if (!cut && ms >= 150) { AudioOutputUnitStop(a3->au); cut = 1; }
+        pthread_mutex_lock(&g_aos_lock); if (cut && !cb_restart && a3->backend == BK_AU && ms > 400) cb_restart = atomic_load(&a3->cb_n); pthread_mutex_unlock(&g_aos_lock);
+        gbuf *r = h_au_Released(out3);
+        if (!r) { usleep(1000); continue; }
+        order3 &= r == &b3[got3]; got3++;
+        if (app3 < 20) h_au_Append(out3, &b3[app3++]);
+    }
+    double total3 = (now_ns() - t0) / 1e6; usleep(100000);
+    pthread_mutex_lock(&g_aos_lock); int back = a3->backend == BK_AU && !a3->stalled; uint64_t cb_end = atomic_load(&a3->cb_n); pthread_mutex_unlock(&g_aos_lock);
+    h_au_Close(out3);
+    int ok3 = got3 == 20 && order3 && total3 > 1900 && total3 < 2600 && back && cb_restart && cb_end > cb_restart;
+    printf("device stall: released %d/20 in order=%d in %.0f ms (expected 2000-2600), AudioUnit restarted and calling back again=%d %s\n", got3, order3, total3, back && cb_restart && cb_end > cb_restart, ok3 ? "✓" : "✗");
+    return !ok3;
 }

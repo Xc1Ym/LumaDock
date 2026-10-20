@@ -54,6 +54,25 @@ final class WorkerOutput: @unchecked Sendable {
         get { preferences.prepareAfterImport ?? true }
         set { preferences.prepareAfterImport = newValue; savePreferences() }
     }
+    var appearance: AppAppearance {
+        get { AppAppearance(rawValue:preferences.appearance ?? "system") ?? .system }
+        set { preferences.appearance = newValue.rawValue; applyAppearance(); savePreferences() }
+    }
+    func applyAppearance() {
+        switch appearance {
+        case .system: NSApp?.appearance = nil
+        case .light: NSApp?.appearance = NSAppearance(named:.aqua)
+        case .dark: NSApp?.appearance = NSAppearance(named:.darkAqua)
+        }
+    }
+    var language: AppLanguage {
+        get { AppLanguage(rawValue:preferences.language ?? "system") ?? .system }
+        set {
+            Localization.preference = newValue
+            preferences.language = newValue.rawValue
+            savePreferences()
+        }
+    }
     var selected: Game? { games.first { $0.id == selectedGame } }
     init(privateRoot overrideRoot: URL? = nil, resources overrideResources: URL? = nil) {
         let args = CommandLine.arguments
@@ -66,6 +85,14 @@ final class WorkerOutput: @unchecked Sendable {
         try? FileManager.default.createDirectory(at:privateRoot,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         if let data = try? Data(contentsOf:privateRoot.appendingPathComponent("preferences.json")), let p = try? JSONDecoder().decode(Preferences.self,from:data) { preferences = p }
         if let data = try? Data(contentsOf:privateRoot.appendingPathComponent("default-input.json")), let p = try? JSONDecoder().decode(InputConfig.self,from:data) { globalInput = p }
+        if let i = args.firstIndex(of:"--language"), args.count > i+1, let language = AppLanguage(rawValue:args[i+1]) {
+            preferences.language = language.rawValue
+        }
+        Localization.preference = language
+        if let i = args.firstIndex(of:"--appearance"), args.count > i+1, let appearance = AppAppearance(rawValue:args[i+1]) {
+            preferences.appearance = appearance.rawValue
+        }
+        applyAppearance()
         recoverTasks()
         showOnboarding = !preferences.onboardingComplete
         if !preferences.library.isEmpty { refresh() }
@@ -82,7 +109,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func savePreferences() { if let d = try? JSONEncoder().encode(preferences) { try? d.write(to:privateRoot.appendingPathComponent("preferences.json"),options:.atomic) } }
     func chooseLibrary() {
-        let panel = NSOpenPanel(); panel.title = "选择游戏库（首次请选择空文件夹）"; panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true
+        let panel = NSOpenPanel(); panel.title = L("选择游戏库（首次请选择空文件夹）"); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = L("选择")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         worker("setup",extra:["library":url.path,"libraryId":""]) { result in
             self.preferences.library = result["library"] as? String ?? url.path; self.preferences.libraryId = result["libraryId"] as? String ?? ""; self.savePreferences(); self.refresh(); self.checkEnvironment()
@@ -133,13 +160,13 @@ final class WorkerOutput: @unchecked Sendable {
         guard environmentReady else { onboardingStep = 0; showOnboarding = true; checkEnvironment(); return }
         guard !preferences.library.isEmpty else { onboardingStep = 1; showOnboarding = true; return }
         guard !importingKeys else { return }
-        let p = NSOpenPanel(); p.title = "导入玩家自己的 prod.keys"; p.allowsMultipleSelection = false
+        let p = NSOpenPanel(); p.title = L("导入玩家自己的 prod.keys"); p.allowsMultipleSelection = false
         guard p.runModal() == .OK, let url = p.url else { return }
         worker("keys",extra:["path":url.path]) { r in self.hasImportedKeys = true; self.keyStatus = r["message"] as? String ?? "已导入"; self.refresh() }
     }
     func chooseGames() {
         guard importPrerequisitesReady() else { return }
-        let p = NSOpenPanel(); p.title = "添加 NSP 文件或扫描文件夹"; p.allowsMultipleSelection = true; p.canChooseDirectories = true; p.canChooseFiles = true
+        let p = NSOpenPanel(); p.title = L("添加 NSP 文件或扫描文件夹"); p.allowsMultipleSelection = true; p.canChooseDirectories = true; p.canChooseFiles = true
         if p.runModal() == .OK { addGames(p.urls) }
     }
     func addGames(_ urls: [URL]) {
@@ -277,7 +304,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func migrate(_ game: Game) {
         guard !executionBusy else { return }
-        let p = NSOpenPanel(); p.title = "选择原 BreathOfTheWild 构建文件夹"; p.canChooseDirectories = true; p.canChooseFiles = false
+        let p = NSOpenPanel(); p.title = L("选择原 BreathOfTheWild 构建文件夹"); p.canChooseDirectories = true; p.canChooseFiles = false
         guard p.runModal() == .OK, let url = p.url else { return }
         selection = "tasks"; executionTask = worker("migrate",extra:["gameId":game.id,"path":url.path])
     }
@@ -293,7 +320,7 @@ final class WorkerOutput: @unchecked Sendable {
     func clean(_ game: Game, kind: String) { worker("clean",extra:["gameId":game.id,"kind":kind]) { _ in self.refresh() } }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     func exportDiagnostics() {
-        let p = NSSavePanel(); p.nameFieldStringValue = "NSMac-诊断.zip"; guard p.runModal() == .OK, let url = p.url else { return }
+        let p = NSSavePanel(); p.prompt = L("保存"); p.nameFieldStringValue = L("NSMac-诊断.zip"); guard p.runModal() == .OK, let url = p.url else { return }
         worker("diagnostics",extra:["path":url.path]) { _ in self.reveal(url) }
     }
     func input(for game: Game?) -> InputConfig {

@@ -16,6 +16,7 @@ int front_ios_boot_ok(void);
 
 static CAMetalLayer *g_layer;
 static void front_ios_power_watch(void);
+static void front_ios_audio_watch(void);
 
 @interface DmGameView : UIView
 @end
@@ -53,6 +54,7 @@ static void front_ios_power_watch(void);
         lb.text = @"Game files not found.\nPut the RomFS folder into this App's Documents as \"romfs\" (Files app), then restart.";
         [self.view addSubview:lb]; return;
     }
+    front_ios_audio_watch();
     self.game = [[DmGameView alloc] initWithFrame:self.view.bounds];
     [self.view addSubview:self.game];
     g_layer = (CAMetalLayer *)self.game.layer;
@@ -67,7 +69,7 @@ static void front_ios_power_watch(void);
     if (w / h > 16.0 / 9.0) w = h * 16.0 / 9.0; else h = w * 9.0 / 16.0;
     self.game.frame = CGRectMake(floor((b.size.width - w) / 2), floor((b.size.height - h) / 2), w, h);
 }
-- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; front_ios_boot(); }
+- (void)viewDidAppear:(BOOL)a { [super viewDidAppear:a]; UIApplication.sharedApplication.idleTimerDisabled = YES; front_ios_boot(); }
 - (BOOL)prefersHomeIndicatorAutoHidden { return YES; }
 - (UIRectEdge)preferredScreenEdgesDeferringSystemGestures { return UIRectEdgeAll; }   // Edge gestures need two swipes, to avoid accidental exits
 - (BOOL)prefersStatusBarHidden { return YES; }
@@ -76,7 +78,7 @@ static void front_ios_power_watch(void);
 UIViewController *front_ios_root(void) { return [DmRootVC new]; }
 
 // Thermal state and screen brightness for the power and present rows every 300 frames (hle_nvn.c; its weak defaults return -1 on the Mac). thermalState: 0 nominal, 1 fair, 2 serious, 3 critical.
-// Brightness is read on the main thread at start and on each change; every change of the thermal state is logged with the time since launch
+// Brightness is read on the main thread at start and on each change; every change of the thermal state and of Low Power Mode (which lowers the CPU clock) is logged with the time since launch
 static _Atomic double g_brightness = -1;
 int dm_thermal_now(void) { return (int)NSProcessInfo.processInfo.thermalState; }
 double dm_brightness_now(void) { return g_brightness; }
@@ -85,7 +87,9 @@ static void front_ios_power_watch(void) {
     [NSNotificationCenter.defaultCenter addObserverForName:UIScreenBrightnessDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) { (void)n; g_brightness = UIScreen.mainScreen.brightness; }];
     [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *n) {
         (void)n; LOG("front end: thermal state → %d (%.0f s after launch)", dm_thermal_now(), (now_ns() - g_t0_ns) / 1e9); }];
-    LOG("front end: thermal state %d, brightness %.2f", dm_thermal_now(), g_brightness);
+    [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoPowerStateDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *n) {
+        (void)n; LOG("front end: Low Power Mode → %s (%.0f s after launch)", NSProcessInfo.processInfo.lowPowerModeEnabled ? "on" : "off", (now_ns() - g_t0_ns) / 1e9); }];
+    LOG("front end: thermal state %d, brightness %.2f, Low Power Mode %s", dm_thermal_now(), g_brightness, NSProcessInfo.processInfo.lowPowerModeEnabled ? "on" : "off");
 }
 
 void *front_metal_layer(void) { return (__bridge void *)g_layer; }
@@ -138,22 +142,51 @@ void front_save_failed(int err) {
 // Audio session: the frames RemoteIO asks for in each callback follow the I/O buffer duration, about 21 ms by default on iOS (1024 frames at 48 kHz). The game keeps only 4 blocks × 5 ms = 20 ms in flight,
 // so every callback came up 1.3 ms short and was zero-filled, about 47 gaps per second (crackling; reproducible on the Mac by forcing 1024-frame callbacks: 1999 underruns in 2000 callbacks). Ask for 5 ms and the system picks the nearest it supports;
 // the category stays the default SoloAmbient (silent switch and interrupting other apps' audio behave as before). Set once at boot and again on return to the foreground (the system may reset it after an interruption)
+static int g_session_off;   // the last activation failed (another app or a call still held the session): tried again when the app becomes active
 void front_ios_audio_session(void) {
     AVAudioSession *s = AVAudioSession.sharedInstance; NSError *e = nil;
     if (![s setCategory:AVAudioSessionCategorySoloAmbient error:&e]) LOG("[RED] audio session category could not be set: %s", e.localizedDescription.UTF8String);
     [s setPreferredSampleRate:48000 error:nil];
     if (![s setPreferredIOBufferDuration:0.005 error:&e]) LOG("[RED] audio session I/O buffer duration could not be set: %s", e.localizedDescription.UTF8String);
-    if (![s setActive:YES error:&e]) LOG("[RED] audio session activation failed: %s", e.localizedDescription.UTF8String);
+    g_session_off = ![s setActive:YES error:&e];
+    if (g_session_off) LOG("[RED] audio session activation failed: %s", e.localizedDescription.UTF8String);
     LOG("audio session: sample rate %.0f Hz, I/O buffer %.2f ms (asked for 5 ms)", s.sampleRate, s.IOBufferDuration * 1000);
 }
 
-// Scene lifecycle (called by SceneDelegate in main.m): 0 resign active, 1 enter background, 2 return to foreground, 3 become active. On entering background, freeze the guest clock and suspend after in-flight GPU work completes (submitting GPU work in background gets the process killed)
+// Real audio output is suspended (the silent sink paces the game) while the app is in the background or another audio session has interrupted ours (Siri, an alarm, a call).
+// Without the interruption observer the AudioUnits stayed "started" while iOS no longer called them, and a game waiting for its buffers back lost its sound until restart.
+// All of this runs on the main queue, like the scene callbacks
+static int g_audio_bg, g_audio_intr;
+static void front_ios_audio_apply(void) { dm_audio_suspend(g_audio_bg || g_audio_intr); }
+static void front_ios_audio_watch(void) {
+    NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+    [nc addObserverForName:AVAudioSessionInterruptionNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+        NSUInteger type = [n.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue], reason = [n.userInfo[AVAudioSessionInterruptionReasonKey] unsignedIntegerValue];
+        if (type == AVAudioSessionInterruptionTypeBegan) { LOG("audio session: interrupted (reason %lu)", (unsigned long)reason); g_audio_intr = 1; }
+        else {
+            LOG("audio session: interruption ended"); g_audio_intr = 0;
+            if (!g_audio_bg) front_ios_audio_session();
+        }
+        front_ios_audio_apply();
+    }];
+    [nc addObserverForName:AVAudioSessionMediaServicesWereResetNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+        (void)n; LOG("audio session: the media services were reset; setting the session and the outputs up again");
+        front_ios_audio_session(); dm_audio_reset();
+    }];
+}
+
+// Scene lifecycle (called by SceneDelegate in main.m): 0 resign active, 1 enter background, 2 return to foreground, 3 become active. On entering background, freeze the guest clock and suspend after in-flight GPU work completes (submitting GPU work in background gets the process killed).
+// The screen stays on while the game is active: only touches reset the idle timer, so with a controller (or during a cutscene) the screen dimmed and locked mid-game
 void front_ios_focus_event(int ev) {
     if (!g_layer) return;
     switch (ev) {
         case 0: dm_gamepad_reset(); dm_focus_set(2); break;
-        case 1: dm_focus_set(3); dm_audio_suspend(1); guest_clock_freeze_for(1, 1); dm_gfx_suspend(1); break;
-        case 2: dm_gfx_suspend(0); guest_clock_freeze_for(1, 0); front_ios_audio_session(); dm_audio_suspend(0); dm_focus_set(2); break;
-        case 3: dm_focus_set(1); break;
+        case 1: UIApplication.sharedApplication.idleTimerDisabled = NO; dm_focus_set(3); g_audio_bg = 1; front_ios_audio_apply(); guest_clock_freeze_for(1, 1); dm_gfx_suspend(1); break;
+        case 2: dm_gfx_suspend(0); guest_clock_freeze_for(1, 0); front_ios_audio_session(); g_audio_bg = 0; front_ios_audio_apply(); dm_focus_set(2); break;
+        case 3:   // Becoming active again also ends an interruption whose "ended" never came (not every one sends it), and retries a session that would not activate on the way back
+            UIApplication.sharedApplication.idleTimerDisabled = YES;
+            if (g_audio_intr) { LOG("audio session: active again with no interruption-ended notice; resuming"); g_audio_intr = 0; g_session_off = 1; }
+            if (g_session_off) front_ios_audio_session();
+            front_ios_audio_apply(); dm_focus_set(1); break;
     }
 }

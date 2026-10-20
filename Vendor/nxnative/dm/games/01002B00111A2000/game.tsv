@@ -45,6 +45,15 @@ mem_used	0x4800000
 # nvnMemoryPoolFlushMappedRange; without the upload the intro movie stayed black under its "+ Skip" prompt
 tex_flush_upload	on
 
+# ---- Presentation ----
+# The Switch version shows 30 fps: nnMain sets KTGL's device up with present interval 2 (device frame rate 59.94 / 2), and a KIDS task waits out 1/30 s per frame (fps 30 from
+# engine data). Two rewriter cuts on 1.3.0 main (patch_nso.py) make them 1 and 1/60 s. The task steps the game by the time that really passed, so it runs at normal speed:
+# the opening scenes at frame 2N at 60 fps match the original's frame N at 30. The game then asks for interval 1 itself, and game mode gives 60 fps
+present_interval	game
+# KTGL binds whole mesh pools (up to ~590,000 vertices) and its soldiers' Half2 / Short2 attributes feed integer shader inputs, which the replay converts on the CPU:
+# over the bound ranges that was millions of vertices a frame in battle (26 fps at any target on the Mac); only over the vertices each draw reads
+vconv_range	on
+
 # ---- NVN driver constant segments (Mario's values, the translator's built-in layout) ----
 nvn_tex_base	0x20
 nvn_tex_slots	32

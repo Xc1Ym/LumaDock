@@ -36,13 +36,18 @@ def main():
     if APP.exists():shutil.rmtree(APP)
     contents=APP/'Contents';resources=contents/'Resources';(contents/'MacOS').mkdir(parents=True);resources.mkdir()
     shutil.copy2(pathlib.Path(result)/PRODUCT['executable'],contents/'MacOS'/PRODUCT['executable'])
-    info={'CFBundleName':'璃游','CFBundleDisplayName':PRODUCT['displayName'],'CFBundleIdentifier':PRODUCT['bundleIdentifier'],'CFBundleExecutable':PRODUCT['executable'],'CFBundlePackageType':'APPL','CFBundleShortVersionString':PRODUCT['version'],'CFBundleVersion':PRODUCT['build'],'CFBundleIconFile':'LumaDock.icns','LSMinimumSystemVersion':PRODUCT['minimumSystemVersion'],'LSApplicationCategoryType':'public.app-category.games','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','NSGameControllerUsageDescription':'在输入配置和游戏中使用玩家连接的手柄。'}
+    info={'CFBundleName':PRODUCT['name'],'CFBundleDisplayName':PRODUCT['name'],'CFBundleIdentifier':PRODUCT['bundleIdentifier'],'CFBundleExecutable':PRODUCT['executable'],'CFBundlePackageType':'APPL','CFBundleShortVersionString':PRODUCT['version'],'CFBundleVersion':PRODUCT['build'],'CFBundleIconFile':'LumaDock.icns','LSMinimumSystemVersion':PRODUCT['minimumSystemVersion'],'LSApplicationCategoryType':'public.app-category.games','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':['en','zh-Hans'],'NSGameControllerUsageDescription':'Use connected controllers for input configuration and gameplay.'}
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     ignore=shutil.ignore_patterns('__pycache__','*.pyc','.git','gen','bin','obj','dmhost')
     shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
     shutil.copytree(ROOT/'Vendor/nxnative',resources/'Vendor/nxnative',ignore=ignore)
     shutil.copytree(ROOT/'work/Runtime',resources/'Runtime',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
-    shutil.copytree(ROOT/'docs',resources/'docs')
+    shutil.copytree(ROOT/'docs',resources/'docs',ignore=shutil.ignore_patterns('screenshots'))
+    shutil.copytree(pathlib.Path(result)/'NSMac_NSMac.bundle',resources/'NSMac_NSMac.bundle')
+    for language,display in [('en','LumaDock'),('zh-Hans','璃游 LumaDock')]:
+        folder=resources/(language+'.lproj');folder.mkdir()
+        usage='Use connected controllers for input configuration and gameplay.' if language=='en' else '在输入配置和游戏中使用玩家连接的手柄。'
+        (folder/'InfoPlist.strings').write_text('"NSGameControllerUsageDescription" = "'+usage+'";\n"CFBundleName" = "'+display+'";\n"CFBundleDisplayName" = "'+display+'";\n')
     shutil.copy2(ROOT/'Assets/LumaDock.icns',resources/'LumaDock.icns')
     for name in ('LICENSE','README.md','README.zh-CN.md','product.json'):shutil.copy2(ROOT/name,resources/name)
     # Sign every nested native executable/library before sealing the outer app.
@@ -61,6 +66,7 @@ def main():
     stage=ROOT/'work/dmg-stage';shutil.rmtree(stage,ignore_errors=True);stage.mkdir()
     run(['cp','-cR',APP,stage/APP.name]);(stage/'Applications').symlink_to('/Applications')
     shutil.copy2(ROOT/'docs/使用说明.md',stage/'使用说明.md');shutil.copy2(ROOT/'docs/第三方许可.md',stage/'第三方许可.md')
+    shutil.copy2(ROOT/'docs/Getting-started.md',stage/'Getting-started.md');shutil.copy2(ROOT/'docs/Third-party-licenses.md',stage/'Third-party-licenses.md')
     dmg=RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-arm64.dmg";dmg.unlink(missing_ok=True)
     run(['hdiutil','create','-volname',PRODUCT['displayName'],'-srcfolder',stage,'-ov','-format','UDZO',dmg])
     run(['hdiutil','verify',dmg]);checksums()

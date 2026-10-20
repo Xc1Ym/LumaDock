@@ -6,9 +6,10 @@ ifneq ($(filter-out clean,$(MAKECMDGOALS)),)
 $(error GAME is not set: make GAME=<base game title ID>: $(shell python3 ../games/game.py list | awk -F'\t' '{printf "%s (%s)  ", $$1, $$3}'))
 endif
 endif
-# A profile outside the repository (DM_GAMES_DIR, e.g. the NSP script's provisional profile) is reached through the symlink gen/<id>/profile: make cannot take paths with spaces
+# A profile outside the repository (DM_GAMES_DIR, e.g. the NSP script's provisional profile) is reached through the symlink gen/<id>/profile: make cannot take paths with spaces.
+# DM_GAMES_FIRST=1 (the NSP script's --provisional) takes it even when dm/games has the game
 ifneq ($(strip $(GAME)),)
-GAME_DIR := $(if $(wildcard ../games/$(GAME)/game.tsv),../games/$(GAME),$(shell python3 ../games/game.py link $(GAME) gen/$(GAME)/profile >&2 && echo gen/$(GAME)/profile))
+GAME_DIR := $(if $(and $(wildcard ../games/$(GAME)/game.tsv),$(if $(DM_GAMES_FIRST),,1)),../games/$(GAME),$(shell python3 ../games/game.py link $(GAME) gen/$(GAME)/profile >&2 && echo gen/$(GAME)/profile))
 ifeq ($(GAME_DIR),)
 $(error no game profile $(GAME) (neither in dm/games nor in DM_GAMES_DIR))
 endif
@@ -49,8 +50,9 @@ dm_bright_levels.inc: ../tools/gen_bright_levels.py ../ios/tools/touch_layout.py
 	python3 ../tools/gen_bright_levels.py "$(ROMFS)" > $@.tmp && mv $@.tmp $@
 .PHONY: game_profile
 game_profile: $(GAME_H)
-$(GAME_H): $(GAME_DIR)/game.tsv ../games/game.py
-	python3 ../games/game.py header $(GAME) $@
+# Regenerated on every make (FORCE): the same GAME can come from another profile folder (DM_GAMES_FIRST), whose game.tsv may be older than the header; game.py writes it only when it changes
+$(GAME_H): $(GAME_DIR)/game.tsv ../games/game.py FORCE
+	@python3 ../games/game.py header $(GAME) $@
 # Records which game the host was built for: changing GAME changes the stamp's content and rebuilds the host (otherwise make sees dmhost as newer than both headers and keeps the other game's host)
 GAME_STAMP = gen/game.stamp
 $(GAME_STAMP): FORCE

@@ -161,6 +161,8 @@ static void read_layout(module_t *m, const char *dir) {
         else if (!strcmp(key, "TEXT_END")) m->text_end = v;
         else if (!strcmp(key, "RO_OFF")) m->ro_off = v;
         else if (!strcmp(key, "DATA_OFF")) m->data_off = v;
+        else if (!strcmp(key, "FPS_STATE_OFF")) m->fps_state_off = v;
+        else if (!strcmp(key, "FPS_LEGACY_ELAPSED")) m->fps_legacy_elapsed = (int)v;
         else if (!strcmp(key, "BUILD_ID")) sscanf(line, "# %*s %32s", m->build_id);
         else for (int k = 0; k < 8; k++) {
             size_t n = strlen(kn[k]);
@@ -176,6 +178,30 @@ static void read_layout(module_t *m, const char *dir) {
         die("%s: patch area before the base, but IMAGE_SIZE / FILE_IMAGE_LEN missing or wrong", path);
 }
 
+// Frame step state (the page after the key page, read-write; layout in patch_nso.py FRAME_STEP): the rewriter's stubs step the game by the host's whole vsyncs capped at this
+// target, 0 = the game's own interval logic. The profile's fps_target, overridden by DM_FPS_TARGET (0, 30 or 60); the graphics layer decides the steps and paces presents
+// (hle_nvn.c fstep_tick). Mode +0x28: the profile's frame_step, overridden by DM_FRAME_STEP (ticks / legacy); legacy is each game's earlier method: Tears of the Kingdom's
+// elapsed-time step, or for a build whose legacy is not one (FPS_LEGACY_ELAPSED 0, Breath of the Wild) target 0, so its own interval controller runs
+uint8_t *dm_fps_state;
+static void install_fps_state(module_t *m) {
+    if (m->fps_state_off + 0x40 > m->size || m->fps_state_off < m->key_page_off + m->key_page_size) die("%s: frame step state page out of range", m->name);
+    const char *e = getenv("DM_FPS_TARGET"); int t = e ? atoi(e) : DM_GAME_FPS_TARGET;
+    if (t != 0 && t != 30 && t != 60) { LOG("[RED] DM_FPS_TARGET=%s: must be 0, 30 or 60; using the game's own frame step", e); t = 0; }
+    const char *fe = getenv("DM_FRAME_STEP"); int legacy = DM_GAME_FRAME_STEP_LEGACY;
+    if (fe) { if (!strcmp(fe, "legacy")) legacy = 1; else if (!strcmp(fe, "ticks")) legacy = 0; else LOG("[RED] DM_FRAME_STEP=%s: must be ticks or legacy; keeping the profile's frame_step", fe); }
+    if (legacy && !m->fps_legacy_elapsed) t = 0;
+    float f = (float)t; dm_fps_state = m->base + m->fps_state_off; memcpy(dm_fps_state, &f, sizeof f);
+    uint32_t mode = (uint32_t)legacy; memcpy(dm_fps_state + 0x28, &mode, sizeof mode);
+    // Render scale of the 3D views (the stubs at Tears of the Kingdom's main+0xd5cc0, Breath of the Wild's main+0x1266880): 1.0 keeps the game's own size and dynamic resolution;
+    // another factor fixes the size at that fraction (DM_RENDER_SCALE, 0.5 to 1.0). Independent of the frame step: written in legacy mode and at target 0 too
+    const char *rs = getenv("DM_RENDER_SCALE"); float sc = 1.0f;
+    if (rs) { char *end; sc = strtof(rs, &end); if (end == rs || *end || !(sc >= 0.5f && sc <= 1.0f)) { LOG("[RED] DM_RENDER_SCALE=%s: must be 0.5 to 1.0; keeping the game's size", rs); sc = 1.0f; } else LOG("%s: 3D views rendered at %.2f of the game's size (DM_RENDER_SCALE)", m->name, sc); }
+    memcpy(dm_fps_state + 0x10, &sc, sizeof sc);
+    char cap[32]; snprintf(cap, sizeof cap, ", capped at %d fps", t);
+    if (legacy && !m->fps_legacy_elapsed) LOG("%s: frame step as the game sets it (legacy: %s)", m->name, fe ? "DM_FRAME_STEP" : "game profile frame_step");
+    else LOG("%s: frame step %s%s (%s; %s)", m->name, !t ? "as the game sets it" : legacy ? "by elapsed time (legacy)" : "in whole vsyncs decided by the host", t ? cap : "",
+             e ? "DM_FPS_TARGET" : "game profile fps_target", fe ? "DM_FRAME_STEP" : "game profile frame_step");
+}
 static void install_key_page(module_t *m) {
     if (m->key_page_off + m->key_page_size > m->size) die("%s: key page out of range", m->name);
     uint64_t *page = (uint64_t *)(m->base + m->key_page_off);
@@ -185,6 +211,7 @@ static void install_key_page(module_t *m) {
     page[m->key_idx[KEY_KASPECT]] = (uint64_t)g_keyaspect * 8; page[m->key_idx[KEY_KASPECTUI]] = (uint64_t)g_keyaspectui * 8;
     for (int k = 0; k < 8; k++) if (!page[m->key_idx[k]]) die("%s: key page entry %d is 0 (host key not created) -- the game would read TSD slot 0", m->name, k);
     if (mprotect(m->base + m->key_page_off, m->key_page_size, PROT_READ)) die("%s key page mprotect", m->name);
+    if (m->fps_state_off) install_fps_state(m);
 }
 
 static void register_gates(module_t *m, const char *dir) {

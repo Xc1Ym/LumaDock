@@ -9,7 +9,7 @@ It is not an emulator: the game's own code runs directly on the Apple chip, with
 This project is built on other people's work:
 
 - **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** (MIT) developed this native-execution approach, for Diablo II: Resurrected. nxnative (first called smbw-mobile) started as a copy of its generic parts: the NSO rewriter, the host that stands in for Horizon, the NVN-on-Metal layer and the iOS app shell. Fixes go both ways.
-- **Ryujinx** (MIT): its shader translator (`Ryujinx.Graphics.Shader`, `Ryujinx.Common` and `Spv.Generator` 1.3.2, unmodified in `dm/third_party/ryujinx`) turns the games' Maxwell shaders into SPIR-V. Its emulation of the kernel and system services is also a reference when the host's behaviour is in doubt.
+- **Ryujinx** (MIT): its shader translator (`Ryujinx.Graphics.Shader`, `Ryujinx.Common` and `Spv.Generator` 1.3.2, in `dm/third_party/ryujinx` with a few fixes listed in [its README](dm/third_party/ryujinx/README.md)) turns the games' Maxwell shaders into SPIR-V. Its emulation of the kernel and system services is also a reference when the host's behaviour is in doubt.
 - **[Atmosphère](https://github.com/Atmosphere-NX/Atmosphere)**: its kernel, mesosphère, is the reference for Horizon's synchronization semantics (address arbiter, condition variables).
 - **yuzu**: Maxwell instruction encodings for the shader reference tool, and a cross-check for kernel behaviour.
 - **[LibHac](https://github.com/Thealexbarney/LibHac)**: reads NSPs and layers updates over the base game in `dm/tools/nx_extract`. **hactool** did the first extractions.
@@ -33,12 +33,12 @@ All of these are tested on an iPhone and playable:
 | The&nbsp;Legend&nbsp;of&nbsp;Zelda:&nbsp;Link's&nbsp;Awakening | ~6&nbsp;GB | |
 | Super&nbsp;Mario&nbsp;Odyssey | ~6&nbsp;GB | |
 | Hades | ~4&nbsp;GB | |
-| Hyrule&nbsp;Warriors:&nbsp;Age&nbsp;of&nbsp;Calamity | ~15&nbsp;GB | |
-| Fire&nbsp;Emblem:&nbsp;Three&nbsp;Houses | ~13&nbsp;GB | While packing, the script starts the game on the Mac for a few seconds to collect the shaders it builds as it runs |
-
-Being ported:
-
-- The Legend of Zelda: Tears of the Kingdom (base game + update 1.4.3): its opening cave renders on the Mac; it doesn't fit in an iPhone's memory yet.
+| Hyrule&nbsp;Warriors:&nbsp;Age&nbsp;of&nbsp;Calamity | ~15&nbsp;GB | Upgraded to 60 fps (30 fps on Switch) |
+| Fire&nbsp;Emblem:&nbsp;Three&nbsp;Houses | ~13&nbsp;GB | Upgraded to 60 fps (30 fps on Switch) |
+| Super&nbsp;Mario&nbsp;Galaxy | ~3&nbsp;GB | |
+| The&nbsp;Legend&nbsp;of&nbsp;Zelda:&nbsp;Tears&nbsp;of&nbsp;the&nbsp;Kingdom | ~17&nbsp;GB | Upgraded to 60 fps (30 fps on Switch) |
+| Monster&nbsp;Hunter&nbsp;Rise | ~22&nbsp;GB | Upgraded to 60 fps (30 fps on Switch) |
+| Ace&nbsp;Attorney&nbsp;Investigations&nbsp;Collection | ~7&nbsp;GB | |
 
 | | |
 |:---:|:---:|
@@ -47,7 +47,9 @@ Being ported:
 | ![Super Mario 3D World + Bowser's Fury](docs/images/super-mario-3d-world.jpg)<br>Super Mario 3D World + Bowser's Fury | ![The Legend of Zelda: Breath of the Wild](docs/images/zelda-breath-of-the-wild.jpg)<br>The Legend of Zelda: Breath of the Wild |
 | ![The Legend of Zelda: Link's Awakening](docs/images/zelda-links-awakening.jpg)<br>The Legend of Zelda: Link's Awakening | ![Super Mario Odyssey](docs/images/super-mario-odyssey.jpg)<br>Super Mario Odyssey |
 | ![Hades](docs/images/hades.jpg)<br>Hades | ![Hyrule Warriors: Age of Calamity](docs/images/hyrule-warriors-age-of-calamity.jpg)<br>Hyrule Warriors: Age of Calamity |
-| ![Fire Emblem: Three Houses](docs/images/fire-emblem-three-houses.jpg)<br>Fire Emblem: Three Houses | |
+| ![Fire Emblem: Three Houses](docs/images/fire-emblem-three-houses.jpg)<br>Fire Emblem: Three Houses | ![Super Mario Galaxy](docs/images/super-mario-galaxy.jpg)<br>Super Mario Galaxy |
+| ![The Legend of Zelda: Tears of the Kingdom](docs/images/zelda-tears-of-the-kingdom.jpg)<br>The Legend of Zelda: Tears of the Kingdom | ![Monster Hunter Rise](docs/images/monster-hunter-rise.jpg)<br>Monster Hunter Rise |
+| ![Ace Attorney Investigations Collection](docs/images/ace-attorney-investigations.jpg)<br>Ace Attorney Investigations Collection | |
 
 Needs iOS / iPadOS 26 or later on an iPhone 15 Pro or newer (A17 Pro chip or later) or an iPad with an M1 chip or later: the games' textures are BC-compressed, and older iPhones can't read that format. Other games aren't supported yet. For them the script writes a survey and still tries its best to pack an IPA, guessing the game's settings; such an IPA may not start.
 
@@ -62,7 +64,7 @@ brew install --cask dotnet-sdk
 python3 -m pip install lz4 capstone fonttools
 ```
 
-**2. Put one game's NSPs in a folder**, base game and update (and any DLC):
+**2. Put one game's NSPs in a folder**, base game (an NSP, or an XCI cartridge dump) and update (and any DLC):
 
 ```
 ~/Games/MarioWonder/
@@ -82,20 +84,21 @@ The IPA appears in the same folder (here `~/Games/MarioWonder/SMBWMobile.ipa`). 
 
 ## Play
 
-**Touch controls.** Tap **2D** / **3D** at the top to switch layouts; the app remembers your choice. 3D World, Breath of the Wild, Odyssey, Hades, Age of Calamity and Three Houses start in 3D, the other games in 2D.
+**Touch controls.** Tap **2D** / **3D** at the top to switch layouts; the app remembers your choice. Wonder, Engage, Dread, 13 Sentinels and Link's Awakening start in 2D, the other games in 3D. In Super Mario Galaxy, touches outside the controls move the pointer.
 A connected game controller hides the touch controls and keeps every button.
 
 - **Game language** is English by default. For Chinese, add the line `DM_LANG=zh-Hans` to `Documents/env.txt`.
 - **Saves and logs** are in the Files app, under the app's name: `save/` and `log.txt`. When something goes wrong, send `log.txt` (the previous run is `log.prev.txt`).
 - **Short stutters** the first time a new scene appears are normal: the app compiles graphics for it once and remembers them for the next launch.
 - **Reinstalling:** some sideloading tools give a reinstalled app a new data folder. Copy `save/` and `pso_user.tsv` over from the old one to keep your progress.
-- **Settings without rebuilding:** put lines like `DM_OPMODE=0` (handheld mode: lower resolution, higher frame rate) in `Documents/env.txt`.
+- **Settings without rebuilding:** put lines like `DM_OPMODE=0` (handheld mode: lower resolution, higher frame rate) in `Documents/env.txt`. `DM_FPS_TARGET=30` keeps Breath of the Wild and Tears of the Kingdom at their original 30 fps, which saves battery.
 
 ## Known issues
 
 - No amiibo and no online features.
 - Fire Emblem Engage: after switching away from the app and back, some sounds may stay silent until you restart it.
 - Fire Emblem: Three Houses: small square patches on the ground where decals land.
+- Super Mario Galaxy: effects drawn as points or lines come out one pixel wide.
 
 ## For developers
 

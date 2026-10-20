@@ -1,0 +1,1546 @@
+[
+  {
+    "source": "未连接手柄",
+    "en": "No controller connected"
+  },
+  {
+    "source": "等待输入",
+    "en": "Waiting for input"
+  },
+  {
+    "source": "所有输入已清空",
+    "en": "All inputs cleared"
+  },
+  {
+    "source": "已连接手柄",
+    "en": "Controller connected"
+  },
+  {
+    "source": "左摇杆 %.2f, %.2f · 右摇杆 %.2f, %.2f · L2 %.2f · R2 %.2f",
+    "en": "Left stick %.2f, %.2f · Right stick %.2f, %.2f · L2 %.2f · R2 %.2f"
+  },
+  {
+    "source": "点击“开始输入测试”后按键或移动鼠标",
+    "en": "Enable “Start input test”, then press a key or move the mouse"
+  },
+  {
+    "source": "全局输入映射",
+    "en": "Global input mapping"
+  },
+  {
+    "source": "{0} · 输入映射",
+    "en": "{0} · Input mapping"
+  },
+  {
+    "source": "保存后在下次启动游戏时生效，无需重新编译。",
+    "en": "Changes apply the next time you launch a game. No rebuild needed."
+  },
+  {
+    "source": "关闭",
+    "en": "Close"
+  },
+  {
+    "source": "配置",
+    "en": "Configuration"
+  },
+  {
+    "source": "按键映射",
+    "en": "Button mapping"
+  },
+  {
+    "source": "鼠标与摇杆",
+    "en": "Mouse & sticks"
+  },
+  {
+    "source": "输入测试",
+    "en": "Input test"
+  },
+  {
+    "source": "恢复默认",
+    "en": "Restore defaults"
+  },
+  {
+    "source": "复制全局配置",
+    "en": "Copy global settings"
+  },
+  {
+    "source": "保存配置",
+    "en": "Save mapping"
+  },
+  {
+    "source": "输入测试已结束",
+    "en": "Input test ended"
+  },
+  {
+    "source": "键盘：{0}",
+    "en": "Keyboard: {0}"
+  },
+  {
+    "source": "Switch 输入",
+    "en": "Switch input"
+  },
+  {
+    "source": "键盘（点击录入）",
+    "en": "Keyboard (click to record)"
+  },
+  {
+    "source": "鼠标",
+    "en": "Mouse"
+  },
+  {
+    "source": "手柄物理位置",
+    "en": "Controller position"
+  },
+  {
+    "source": "请按键…（Esc 取消）",
+    "en": "Press a key… (Esc cancels)"
+  },
+  {
+    "source": "未绑定",
+    "en": "Unbound"
+  },
+  {
+    "source": "左键",
+    "en": "Left button"
+  },
+  {
+    "source": "右键",
+    "en": "Right button"
+  },
+  {
+    "source": "中键",
+    "en": "Middle button"
+  },
+  {
+    "source": "侧键 1",
+    "en": "Side button 1"
+  },
+  {
+    "source": "侧键 2",
+    "en": "Side button 2"
+  },
+  {
+    "source": "模式",
+    "en": "Mode"
+  },
+  {
+    "source": "转动视角（Esc 切换捕获）",
+    "en": "Camera (Esc toggles capture)"
+  },
+  {
+    "source": "触屏指针",
+    "en": "Touch pointer"
+  },
+  {
+    "source": "横向灵敏度",
+    "en": "Horizontal sensitivity"
+  },
+  {
+    "source": "纵向灵敏度",
+    "en": "Vertical sensitivity"
+  },
+  {
+    "source": "横向反转",
+    "en": "Invert horizontal"
+  },
+  {
+    "source": "纵向反转",
+    "en": "Invert vertical"
+  },
+  {
+    "source": "停止移动后摇杆回中",
+    "en": "Center stick when mouse stops"
+  },
+  {
+    "source": "失焦、最小化或系统输入框出现时会释放鼠标并清空输入。",
+    "en": "The mouse is released and inputs are cleared when focus is lost, the window is minimized, or a system text field appears."
+  },
+  {
+    "source": "手柄",
+    "en": "Controller"
+  },
+  {
+    "source": "摇杆死区",
+    "en": "Stick dead zone"
+  },
+  {
+    "source": "来源",
+    "en": "Source"
+  },
+  {
+    "source": "反转",
+    "en": "Invert"
+  },
+  {
+    "source": "默认按 Switch 物理位置映射；单玩家。断开手柄立即清空该设备输入。",
+    "en": "Defaults follow the Switch physical layout. One player supported. Disconnecting a controller clears its inputs immediately."
+  },
+  {
+    "source": "开始输入测试",
+    "en": "Start input test"
+  },
+  {
+    "source": "测试只在此窗口接收输入，不会启动游戏。Esc 结束键盘测试。",
+    "en": "This window only tests input; it does not launch a game. Press Esc to end the keyboard test."
+  },
+  {
+    "source": "鼠标位移：%.1f, %.1f",
+    "en": "Mouse movement: %.1f, %.1f"
+  },
+  {
+    "source": "鼠标按钮：{0}",
+    "en": "Mouse button: {0}"
+  },
+  {
+    "source": "键盘已松开：{0}",
+    "en": "Key released: {0}"
+  },
+  {
+    "source": "修饰键已松开",
+    "en": "Modifier key released"
+  },
+  {
+    "source": "本体",
+    "en": "Base game"
+  },
+  {
+    "source": "更新",
+    "en": "Update"
+  },
+  {
+    "source": "未知内容",
+    "en": "Unknown content"
+  },
+  {
+    "source": "仅验证启动",
+    "en": "Startup tested"
+  },
+  {
+    "source": "Mac 已验证",
+    "en": "Mac tested"
+  },
+  {
+    "source": "实验性",
+    "en": "Experimental"
+  },
+  {
+    "source": "暂不支持",
+    "en": "Unsupported"
+  },
+  {
+    "source": "排队",
+    "en": "Queued"
+  },
+  {
+    "source": "运行中",
+    "en": "Running"
+  },
+  {
+    "source": "取消中",
+    "en": "Cancelling"
+  },
+  {
+    "source": "已取消",
+    "en": "Cancelled"
+  },
+  {
+    "source": "失败",
+    "en": "Failed"
+  },
+  {
+    "source": "中断",
+    "en": "Interrupted"
+  },
+  {
+    "source": "完成",
+    "en": "Completed"
+  },
+  {
+    "source": "导入游戏",
+    "en": "Import games"
+  },
+  {
+    "source": "准备游戏",
+    "en": "Prepare game"
+  },
+  {
+    "source": "迁移构建",
+    "en": "Migrate build"
+  },
+  {
+    "source": "运行游戏",
+    "en": "Run game"
+  },
+  {
+    "source": "导入密钥",
+    "en": "Import keys"
+  },
+  {
+    "source": "环境检查",
+    "en": "Environment check"
+  },
+  {
+    "source": "安装 Metal 编译组件",
+    "en": "Install Metal compiler"
+  },
+  {
+    "source": "卸载 Metal 编译组件",
+    "en": "Uninstall Metal compiler"
+  },
+  {
+    "source": "键盘：{0} 与 {1} 重复",
+    "en": "Keyboard: {0} and {1} share a binding"
+  },
+  {
+    "source": "鼠标：{0} 与 {1} 重复",
+    "en": "Mouse: {0} and {1} share a binding"
+  },
+  {
+    "source": "手柄：{0} 与 {1} 重复",
+    "en": "Controller: {0} and {1} share a binding"
+  },
+  {
+    "source": "手柄轴：{0} 与 {1} 重复",
+    "en": "Controller axis: {0} and {1} share a binding"
+  },
+  {
+    "source": "空格",
+    "en": "Space"
+  },
+  {
+    "source": "删除",
+    "en": "Delete"
+  },
+  {
+    "source": "键码 {0}",
+    "en": "Key code {0}"
+  },
+  {
+    "source": "左摇杆按下",
+    "en": "Left stick click"
+  },
+  {
+    "source": "右摇杆按下",
+    "en": "Right stick click"
+  },
+  {
+    "source": "十字键左",
+    "en": "D-pad left"
+  },
+  {
+    "source": "十字键上",
+    "en": "D-pad up"
+  },
+  {
+    "source": "十字键右",
+    "en": "D-pad right"
+  },
+  {
+    "source": "十字键下",
+    "en": "D-pad down"
+  },
+  {
+    "source": "左摇杆上",
+    "en": "Left stick up"
+  },
+  {
+    "source": "左摇杆下",
+    "en": "Left stick down"
+  },
+  {
+    "source": "左摇杆左",
+    "en": "Left stick left"
+  },
+  {
+    "source": "左摇杆右",
+    "en": "Left stick right"
+  },
+  {
+    "source": "右摇杆上",
+    "en": "Right stick up"
+  },
+  {
+    "source": "右摇杆下",
+    "en": "Right stick down"
+  },
+  {
+    "source": "右摇杆左",
+    "en": "Right stick left"
+  },
+  {
+    "source": "右摇杆右",
+    "en": "Right stick right"
+  },
+  {
+    "source": "右侧按钮",
+    "en": "East button"
+  },
+  {
+    "source": "下侧按钮",
+    "en": "South button"
+  },
+  {
+    "source": "上侧按钮",
+    "en": "North button"
+  },
+  {
+    "source": "左侧按钮",
+    "en": "West button"
+  },
+  {
+    "source": "左肩键",
+    "en": "Left shoulder"
+  },
+  {
+    "source": "右肩键",
+    "en": "Right shoulder"
+  },
+  {
+    "source": "左扳机",
+    "en": "Left trigger"
+  },
+  {
+    "source": "右扳机",
+    "en": "Right trigger"
+  },
+  {
+    "source": "菜单（＋）",
+    "en": "Menu (+)"
+  },
+  {
+    "source": "选项（－）",
+    "en": "Options (−)"
+  },
+  {
+    "source": "方向键左",
+    "en": "D-pad left"
+  },
+  {
+    "source": "方向键上",
+    "en": "D-pad up"
+  },
+  {
+    "source": "方向键右",
+    "en": "D-pad right"
+  },
+  {
+    "source": "方向键下",
+    "en": "D-pad down"
+  },
+  {
+    "source": "左摇杆横向",
+    "en": "Left stick horizontal"
+  },
+  {
+    "source": "左摇杆纵向",
+    "en": "Left stick vertical"
+  },
+  {
+    "source": "右摇杆横向",
+    "en": "Right stick horizontal"
+  },
+  {
+    "source": "右摇杆纵向",
+    "en": "Right stick vertical"
+  },
+  {
+    "source": "尚未导入密钥",
+    "en": "No keys imported"
+  },
+  {
+    "source": "Metal 编译组件",
+    "en": "Metal compiler"
+  },
+  {
+    "source": "准备环境",
+    "en": "Set up environment"
+  },
+  {
+    "source": "添加游戏",
+    "en": "Add games"
+  },
+  {
+    "source": "开始导入",
+    "en": "Get started"
+  },
+  {
+    "source": "上次运行被中断，可验证已有阶段后重试。",
+    "en": "The previous run was interrupted. Retry to validate and reuse completed stages."
+  },
+  {
+    "source": "选择游戏库（首次请选择空文件夹）",
+    "en": "Choose a game library (use an empty folder for a new library)"
+  },
+  {
+    "source": "请等待游戏、准备队列和工具链任务结束后再管理组件。",
+    "en": "Wait for the game, preparation queue, and toolchain tasks to finish before managing components."
+  },
+  {
+    "source": "请先安装完整 Xcode 并通过环境检查。",
+    "en": "Install the full Xcode app and pass the environment check first."
+  },
+  {
+    "source": "未检测到可卸载的 Metal 组件，或当前 Xcode 不支持卸载。",
+    "en": "No removable Metal component was found, or this Xcode version does not support removal."
+  },
+  {
+    "source": "Metal 编译组件已卸载，可随时重新安装。",
+    "en": "Metal compiler uninstalled. You can reinstall it at any time."
+  },
+  {
+    "source": "Metal 编译组件已安装。",
+    "en": "Metal compiler installed."
+  },
+  {
+    "source": "请先导入 prod.keys，再添加游戏",
+    "en": "Import prod.keys before adding games"
+  },
+  {
+    "source": "导入玩家自己的 prod.keys",
+    "en": "Import your own prod.keys"
+  },
+  {
+    "source": "已导入",
+    "en": "Imported"
+  },
+  {
+    "source": "添加 NSP 文件或扫描文件夹",
+    "en": "Add NSP files or scan folders"
+  },
+  {
+    "source": "导入完成，源文件保持原样。",
+    "en": "Import completed. Original files are unchanged."
+  },
+  {
+    "source": "游戏已导入，请完成工具链检查后准备运行文件。",
+    "en": "Games imported. Finish the toolchain check before preparing them."
+  },
+  {
+    "source": "导入完成，文件齐全的游戏已加入准备队列；完成后可启动。",
+    "en": "Import completed. Games with all required files are queued for preparation; launch them when ready."
+  },
+  {
+    "source": "尚未导入 prod.keys",
+    "en": "No prod.keys imported"
+  },
+  {
+    "source": "工作进程已退出。可重试并验证完成阶段。",
+    "en": "The worker exited. Retry to validate completed stages."
+  },
+  {
+    "source": "无法启动本地组件：{0}",
+    "en": "Unable to start a local component: {0}"
+  },
+  {
+    "source": "操作失败，请查看任务日志。",
+    "en": "The operation failed. Check the task log."
+  },
+  {
+    "source": "已从队列移除",
+    "en": "Removed from queue"
+  },
+  {
+    "source": "游戏已准备完成，可以启动。",
+    "en": "Game preparation completed. Ready to launch."
+  },
+  {
+    "source": "构建与游戏运行互斥，请等待当前任务结束。",
+    "en": "Preparation and gameplay cannot run together. Wait for the current task to finish."
+  },
+  {
+    "source": "选择原 BreathOfTheWild 构建文件夹",
+    "en": "Choose the original BreathOfTheWild build folder"
+  },
+  {
+    "source": "NSMac-诊断.zip",
+    "en": "LumaDock-Diagnostics.zip"
+  },
+  {
+    "source": "映射已保存，下次启动游戏时生效，无需重新编译。",
+    "en": "Mapping saved. Changes apply on the next game launch without rebuilding."
+  },
+  {
+    "source": "游戏库",
+    "en": "Library"
+  },
+  {
+    "source": "准备任务",
+    "en": "Tasks"
+  },
+  {
+    "source": "设置",
+    "en": "Settings"
+  },
+  {
+    "source": "任务进行中",
+    "en": "Task in progress"
+  },
+  {
+    "source": "本地运行",
+    "en": "Runs locally"
+  },
+  {
+    "source": "游戏与密钥由玩家自行导入",
+    "en": "Import your own games and keys"
+  },
+  {
+    "source": "先检查环境、选择游戏库并导入 prod.keys，再添加 NSP（⌘O）",
+    "en": "Set up the environment, choose a library, and import prod.keys before adding NSP files (⌘O)"
+  },
+  {
+    "source": "输入映射",
+    "en": "Input mapping"
+  },
+  {
+    "source": "设置全局键鼠与手柄映射",
+    "en": "Configure global keyboard, mouse, and controller mappings"
+  },
+  {
+    "source": "操作未完成",
+    "en": "Operation incomplete"
+  },
+  {
+    "source": "知道了",
+    "en": "OK"
+  },
+  {
+    "source": "打开日志",
+    "en": "Open logs"
+  },
+  {
+    "source": "关闭提示",
+    "en": "Dismiss notification"
+  },
+  {
+    "source": "随时，开启下一段旅程。",
+    "en": "Your next adventure awaits."
+  },
+  {
+    "source": "让喜爱的游戏，在 Mac 上继续。",
+    "en": "Keep your favorite games going on Mac."
+  },
+  {
+    "source": "款游戏",
+    "en": "Games"
+  },
+  {
+    "source": "可启动",
+    "en": "Ready to play"
+  },
+  {
+    "source": "搜索游戏或 Title ID",
+    "en": "Search games or Title ID"
+  },
+  {
+    "source": "搜索游戏",
+    "en": "Search games"
+  },
+  {
+    "source": "收藏你的第一段旅程",
+    "en": "Add your first adventure"
+  },
+  {
+    "source": "先检查系统、Xcode 与 Metal 组件，\n再选择游戏库、导入密钥和游戏。",
+    "en": "Check macOS, Xcode, and Metal first.\nThen choose a library and import keys and games."
+  },
+  {
+    "source": "密钥已就绪，添加支持版本的 NSP。\n文件齐全后自动准备，完成后点击启动。",
+    "en": "Keys are ready. Add supported NSP versions.\nGames prepare automatically; launch them when ready."
+  },
+  {
+    "source": "先选择游戏库并导入 prod.keys，\n再添加游戏、准备运行文件。",
+    "en": "Choose a library and import prod.keys first.\nThen add games and prepare their runtime files."
+  },
+  {
+    "source": "游戏、密钥与固件均需自行提供",
+    "en": "Provide your own games, keys, and firmware"
+  },
+  {
+    "source": "版本待识别",
+    "en": "Version not identified"
+  },
+  {
+    "source": "环境",
+    "en": "Environment"
+  },
+  {
+    "source": "密钥",
+    "en": "Keys"
+  },
+  {
+    "source": "游戏",
+    "en": "Games"
+  },
+  {
+    "source": "准备",
+    "en": "Prepare"
+  },
+  {
+    "source": "启动",
+    "en": "Launch"
+  },
+  {
+    "source": "先导入 prod.keys，才能读取和添加游戏。",
+    "en": "Import prod.keys before reading and adding games."
+  },
+  {
+    "source": "先完成环境检查和安装，再导入玩家内容。",
+    "en": "Check and install the environment before importing player content."
+  },
+  {
+    "source": "继续设置",
+    "en": "Continue setup"
+  },
+  {
+    "source": "已验证启动；完整游戏流程仍需玩家验证。",
+    "en": "Startup tested. Full gameplay still needs player testing."
+  },
+  {
+    "source": "已有引擎配置，尚未完成 Mac 实机验收。",
+    "en": "An engine profile exists; Mac hardware testing is still pending."
+  },
+  {
+    "source": "新增内容或引擎更新尚未准备；启动将使用上次成功版本。",
+    "en": "New content or engine updates are not prepared yet. Launch uses the last successful version."
+  },
+  {
+    "source": "启动游戏",
+    "en": "Launch game"
+  },
+  {
+    "source": "重新检查并准备",
+    "en": "Check & prepare again"
+  },
+  {
+    "source": "准备运行文件",
+    "en": "Prepare game"
+  },
+  {
+    "source": "键鼠与手柄映射",
+    "en": "Keyboard, mouse & controller"
+  },
+  {
+    "source": "准备条件未满足",
+    "en": "Requirements not met"
+  },
+  {
+    "source": "导入内容",
+    "en": "Imported content"
+  },
+  {
+    "source": "在访达中查看存档",
+    "en": "Show saves in Finder"
+  },
+  {
+    "source": "管理游戏",
+    "en": "Manage game"
+  },
+  {
+    "source": "迁移已有旷野之息构建…",
+    "en": "Migrate existing Breath of the Wild build…"
+  },
+  {
+    "source": "移出游戏库（保留文件与存档）",
+    "en": "Remove from library (keep files & saves)"
+  },
+  {
+    "source": "清理构建缓存…",
+    "en": "Clear build cache…"
+  },
+  {
+    "source": "删除托管 NSP 副本…",
+    "en": "Delete managed NSP copies…"
+  },
+  {
+    "source": "删除托管 NSP 副本？",
+    "en": "Delete managed NSP copies?"
+  },
+  {
+    "source": "清理构建缓存？",
+    "en": "Clear build cache?"
+  },
+  {
+    "source": "取消",
+    "en": "Cancel"
+  },
+  {
+    "source": "确认清理",
+    "en": "Confirm cleanup"
+  },
+  {
+    "source": "仅处理托管副本；原始文件、存档和上次成功的运行版本保留。",
+    "en": "Only managed copies are affected. Original files, saves, and the last successful runtime version are kept."
+  },
+  {
+    "source": "准备队列串行执行；准备游戏时可以继续导入文件和修改映射。",
+    "en": "Preparation tasks run one at a time. You can still import files and edit mappings during preparation."
+  },
+  {
+    "source": "暂无任务",
+    "en": "No tasks yet"
+  },
+  {
+    "source": "导入后，文件齐全的游戏会自动加入准备队列；也可在详情中手动准备。",
+    "en": "Imported games with all required files are queued automatically. You can also prepare them from game details."
+  },
+  {
+    "source": "排队 {0}：{1}",
+    "en": "Queue {0}: {1}"
+  },
+  {
+    "source": "移出队列",
+    "en": "Remove from queue"
+  },
+  {
+    "source": "整体阶段 {0}/{1}",
+    "en": "Overall stage {0}/{1}"
+  },
+  {
+    "source": "预计剩余 {0} 秒",
+    "en": "About {0} seconds remaining"
+  },
+  {
+    "source": "处理中，总量暂不可确定",
+    "en": "Working; total is not available yet"
+  },
+  {
+    "source": "{0} 秒",
+    "en": "{0} seconds"
+  },
+  {
+    "source": "结束游戏",
+    "en": "End game"
+  },
+  {
+    "source": "取消任务",
+    "en": "Cancel task"
+  },
+  {
+    "source": "重试",
+    "en": "Retry"
+  },
+  {
+    "source": "游戏库与玩家数据",
+    "en": "Library & player data"
+  },
+  {
+    "source": "存储位置",
+    "en": "Storage location"
+  },
+  {
+    "source": "未选择",
+    "en": "Not selected"
+  },
+  {
+    "source": "选择或切换游戏库…",
+    "en": "Choose or switch library…"
+  },
+  {
+    "source": "玩家密钥",
+    "en": "Player keys"
+  },
+  {
+    "source": "导入 prod.keys…",
+    "en": "Import prod.keys…"
+  },
+  {
+    "source": "先准备环境，再选择游戏库、导入密钥和游戏。密钥通常只需导入一次，可供多款游戏共用；仅保存在本机私有目录，不随诊断包导出。",
+    "en": "Set up the environment, choose a library, then import keys and games. Usually one key import serves multiple games. Keys stay in private local storage and are excluded from diagnostics."
+  },
+  {
+    "source": "导入后自动准备支持的游戏",
+    "en": "Automatically prepare supported games after import"
+  },
+  {
+    "source": "仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。",
+    "en": "Only games with matching base files, required updates, and build IDs are queued. Click Launch when preparation finishes."
+  },
+  {
+    "source": "Apple 工具链",
+    "en": "Apple toolchain"
+  },
+  {
+    "source": "Xcode Developer 目录",
+    "en": "Xcode Developer directory"
+  },
+  {
+    "source": "首次安装需完整 Xcode。打开 Xcode 并完成许可及初始组件安装，再安装 Metal 编译组件。",
+    "en": "The full Xcode app is required. Open it and complete license acceptance and initial component setup, then install the Metal compiler."
+  },
+  {
+    "source": "控制与诊断",
+    "en": "Controls & diagnostics"
+  },
+  {
+    "source": "导出诊断包…",
+    "en": "Export diagnostics…"
+  },
+  {
+    "source": "重新打开首次运行向导",
+    "en": "Reopen setup assistant"
+  },
+  {
+    "source": "关于璃游",
+    "en": "About LumaDock"
+  },
+  {
+    "source": "璃游 LumaDock",
+    "en": "LumaDock"
+  },
+  {
+    "source": "开发版本",
+    "en": "Development build"
+  },
+  {
+    "source": "独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。",
+    "en": "An independent community launcher powered by nxnative. Not affiliated with or endorsed by Nintendo."
+  },
+  {
+    "source": "上游 nxnative",
+    "en": "Upstream nxnative"
+  },
+  {
+    "source": "开源许可与版权说明",
+    "en": "Open-source licenses & copyright"
+  },
+  {
+    "source": "在 App Store 获取 Xcode",
+    "en": "Get Xcode on the App Store"
+  },
+  {
+    "source": "重新检查",
+    "en": "Check again"
+  },
+  {
+    "source": "卸载 Metal 编译组件…",
+    "en": "Uninstall Metal compiler…"
+  },
+  {
+    "source": "卸载 Apple 管理的共享组件，可重新安装",
+    "en": "Remove the shared Apple-managed component; you can reinstall it"
+  },
+  {
+    "source": "当前 Xcode 不支持命令行卸载组件",
+    "en": "This Xcode version does not support command-line component removal"
+  },
+  {
+    "source": "卸载 Metal 编译组件？",
+    "en": "Uninstall Metal compiler?"
+  },
+  {
+    "source": "卸载组件",
+    "en": "Uninstall component"
+  },
+  {
+    "source": "这是 Xcode 管理的共享组件，卸载也会影响其他使用它的项目。卸载后无法准备或重新编译游戏，可随时重新安装。游戏文件、密钥和存档会保留。",
+    "en": "This shared component is managed by Xcode. Removing it also affects other projects that use it. You will need to reinstall it to prepare or rebuild games. Games, keys, and saves are kept."
+  },
+  {
+    "source": "先准备 Mac 运行环境。需要 Apple Silicon、macOS 26 或更新系统、完整 Xcode 和 Metal 编译组件。检查通过后再导入玩家内容。",
+    "en": "Set up your Mac first: Apple Silicon, macOS 26 or later, the full Xcode app, and the Metal compiler are required. Import player content after the checks pass."
+  },
+  {
+    "source": "正在检查运行环境…",
+    "en": "Checking the environment…"
+  },
+  {
+    "source": "缺少环境时，按以下顺序安装：",
+    "en": "If components are missing, install them in this order:"
+  },
+  {
+    "source": "1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 在下方填写 Xcode 的 Developer 目录并重新检查。\n3. 缺少 Metal 时点击安装；其余构建依赖已随应用提供。",
+    "en": "1. Get the full Xcode app, open it, and complete license acceptance and initial setup.\n2. Enter its Developer directory below and check again.\n3. Install Metal if missing. Other build dependencies are bundled with this app."
+  },
+  {
+    "source": "环境已就绪，可以继续选择游戏库。",
+    "en": "Environment ready. Continue to choose a game library."
+  },
+  {
+    "source": "检查并安装环境",
+    "en": "Check & install environment"
+  },
+  {
+    "source": "选择游戏库",
+    "en": "Choose a library"
+  },
+  {
+    "source": "导入 prod.keys",
+    "en": "Import prod.keys"
+  },
+  {
+    "source": "欢迎使用璃游",
+    "en": "Welcome to LumaDock"
+  },
+  {
+    "source": "先准备环境，再导入密钥和游戏。",
+    "en": "Set up the environment, then import keys and games."
+  },
+  {
+    "source": "游戏文件会复制到此位置，支持外置硬盘。请为大型游戏预留充足空间。璃游不附带游戏、密钥或固件，所有内容均由玩家自行导入。",
+    "en": "Game files are copied here. External drives are supported; allow enough space for large games. LumaDock includes no games, keys, or firmware. Import your own content."
+  },
+  {
+    "source": "选择游戏库文件夹…",
+    "en": "Choose library folder…"
+  },
+  {
+    "source": "尚未选择",
+    "en": "Nothing selected yet"
+  },
+  {
+    "source": "先导入 prod.keys，应用才能读取游戏内容。通常只需导入一次，多款游戏可共用这份密钥集合。",
+    "en": "Import prod.keys so the app can read your games. Usually one import provides a key set shared by multiple games."
+  },
+  {
+    "source": "正在检查并导入密钥…",
+    "en": "Checking and importing keys…"
+  },
+  {
+    "source": "导入时检查格式，首次读取游戏时验证解密能力。密钥仅保存在本机私有目录，源文件保持原样。",
+    "en": "The format is checked on import; decryption is verified when reading a game. Keys stay in private local storage. Your original file is unchanged."
+  },
+  {
+    "source": "密钥已就绪，可以添加游戏",
+    "en": "Keys ready. You can add games."
+  },
+  {
+    "source": "选择支持版本的 NSP 本体、更新及可选 DLC，或扫描所在文件夹。导入时会验证密钥和文件内容，缺少版本会明确提示。",
+    "en": "Choose a supported base NSP, required updates, and optional DLC, or scan their folder. Keys and file contents are verified on import. Missing versions are listed explicitly."
+  },
+  {
+    "source": "文件齐全后加入准备队列；完成后由你点击“启动游戏”。可在设置中关闭自动准备。",
+    "en": "Games with complete files enter the preparation queue. Click “Launch game” when ready. You can disable automatic preparation in Settings."
+  },
+  {
+    "source": "环境检查已通过，导入后会再次检查准备条件。",
+    "en": "Environment checks passed. Preparation requirements are checked again after import."
+  },
+  {
+    "source": "上一步",
+    "en": "Back"
+  },
+  {
+    "source": "稍后添加",
+    "en": "Add later"
+  },
+  {
+    "source": "添加游戏…",
+    "en": "Add games…"
+  },
+  {
+    "source": "继续",
+    "en": "Continue"
+  },
+  {
+    "source": "导入密钥…",
+    "en": "Import keys…"
+  },
+  {
+    "source": "璃游",
+    "en": "LumaDock"
+  },
+  {
+    "source": "编译并验证 Metal 库",
+    "en": "Compile and verify Metal libraries"
+  },
+  {
+    "source": "阶段没有生成完整产物，未记录成功缓存。",
+    "en": "The stage did not produce complete output. No successful cache was recorded."
+  },
+  {
+    "source": "已验证并复用完成阶段",
+    "en": "Validated and reused a completed stage"
+  },
+  {
+    "source": "阶段完成",
+    "en": "Stage completed"
+  },
+  {
+    "source": "Apple 工具链不完整，请在设置中安装 Xcode 和 Metal 编译组件。",
+    "en": "The Apple toolchain is incomplete. Install Xcode and the Metal compiler in Settings."
+  },
+  {
+    "source": "着色器转换组件缺失，请重新安装完整应用。",
+    "en": "The shader converter is missing. Reinstall the full app."
+  },
+  {
+    "source": "编译 Mac 主程序",
+    "en": "Build Mac host"
+  },
+  {
+    "source": "检测到仅输入前端更新，迁移已有阶段后逐项验证；主程序重新编译。",
+    "en": "Only the input frontend changed. Existing stages will be migrated and validated; the host will be rebuilt."
+  },
+  {
+    "source": "Metal 工具链不可用，无法创建一致的着色器链。",
+    "en": "The Metal toolchain is unavailable. A consistent shader chain cannot be created."
+  },
+  {
+    "source": "着色器常量表版本不一致。",
+    "en": "Shader constant table version mismatch."
+  },
+  {
+    "source": "找不到本机系统字体。",
+    "en": "No system font found on this Mac."
+  },
+  {
+    "source": "运行目录不完整。",
+    "en": "The runtime directory is incomplete."
+  },
+  {
+    "source": "运行目录缺少代码模块。",
+    "en": "The runtime directory is missing code modules."
+  },
+  {
+    "source": "重写代码模块不完整。",
+    "en": "Rewritten code modules are incomplete."
+  },
+  {
+    "source": "游戏资源缺少配置指定的文件。",
+    "en": "Game resources are missing a file required by the profile."
+  },
+  {
+    "source": "Vulkan 着色器库缺失。",
+    "en": "The Vulkan shader library is missing."
+  },
+  {
+    "source": "Metal 着色器缓存缺失。",
+    "en": "The Metal shader cache is missing."
+  },
+  {
+    "source": "Metal 着色器缓存不完整或版本不一致。",
+    "en": "The Metal shader cache is incomplete or its version does not match."
+  },
+  {
+    "source": "验证游戏、工具链与缓存",
+    "en": "Validate game, toolchain, and cache"
+  },
+  {
+    "source": "托管源文件已丢失或内容发生改变，请重新导入。",
+    "en": "Managed source files are missing or have changed. Import them again."
+  },
+  {
+    "source": "准备游戏需要约 {0} GB 可用空间。",
+    "en": "Game preparation requires about {0} GB of free space."
+  },
+  {
+    "source": "处理 DLC",
+    "en": "Process DLC"
+  },
+  {
+    "source": "重写原生代码",
+    "en": "Rewrite native code"
+  },
+  {
+    "source": "采集运行时 GLSLC 着色器",
+    "en": "Capture runtime GLSLC shaders"
+  },
+  {
+    "source": "采集运行时 Vulkan 着色器",
+    "en": "Capture runtime Vulkan shaders"
+  },
+  {
+    "source": "转换并编译 Vulkan 着色器",
+    "en": "Convert and compile Vulkan shaders"
+  },
+  {
+    "source": "提取并核对着色器",
+    "en": "Extract and verify shaders"
+  },
+  {
+    "source": "转换并编译 Metal 着色器",
+    "en": "Convert and compile Metal shaders"
+  },
+  {
+    "source": "检查并安装运行版本",
+    "en": "Validate and install runtime version"
+  },
+  {
+    "source": "首版迁移仅支持已有《旷野之息》Mac 构建目录。",
+    "en": "Migration currently supports existing Breath of the Wild Mac builds only."
+  },
+  {
+    "source": "验证迁移来源",
+    "en": "Validate migration source"
+  },
+  {
+    "source": "迁移来源没有有效的游戏与着色器构建记录。",
+    "en": "The migration source has no valid game and shader build record."
+  },
+  {
+    "source": "迁移目录缺少完整 Mac 游戏资源。",
+    "en": "The migration folder is missing complete Mac game resources."
+  },
+  {
+    "source": "迁移代码模块构建标识不匹配。",
+    "en": "Migration code module build IDs do not match."
+  },
+  {
+    "source": "迁移来源的着色器映射表与当前配置不同。",
+    "en": "The migration shader mapping table differs from the current profile."
+  },
+  {
+    "source": "为当前工具链更新着色器缓存",
+    "en": "Update shader cache for this toolchain"
+  },
+  {
+    "source": "工具链已变化且迁移目录没有着色器包，请执行正常准备流程。",
+    "en": "The toolchain changed and the migration folder contains no shader package. Use normal preparation instead."
+  },
+  {
+    "source": "复用已验证资源",
+    "en": "Reuse validated resources"
+  },
+  {
+    "source": "源目录保持原样；运行版本使用克隆副本。",
+    "en": "The source folder is unchanged. The runtime version uses cloned copies."
+  },
+  {
+    "source": "重新编译配置化 Mac 主程序",
+    "en": "Rebuild Mac host with configurable input"
+  },
+  {
+    "source": "安装独立运行版本",
+    "en": "Install standalone runtime version"
+  },
+  {
+    "source": "游戏运行中",
+    "en": "Game running"
+  },
+  {
+    "source": "游戏进程异常退出，启动器仍可使用。请查看日志或重试。",
+    "en": "The game process exited unexpectedly. The launcher is still available. Check the log or retry."
+  },
+  {
+    "source": "系统未提供可用的 Metal 设备。请确认使用 Apple Silicon 并在本机图形会话中启动。",
+    "en": "No Metal device is available. Use an Apple Silicon Mac and launch from a local graphical session."
+  },
+  {
+    "source": "运行时着色器链不一致，请重新准备游戏。",
+    "en": "Runtime shader chain mismatch. Prepare the game again."
+  },
+  {
+    "source": "游戏运行遇到引擎兼容问题。请查看日志；实验性配置可能尚不能正常运行。",
+    "en": "The game encountered an engine compatibility issue. Check the log; experimental profiles may not run correctly yet."
+  },
+  {
+    "source": "不支持的输入配置版本。",
+    "en": "Unsupported input configuration version."
+  },
+  {
+    "source": "输入配置包含未知目标。",
+    "en": "The input configuration contains an unknown target."
+  },
+  {
+    "source": "无效的键盘绑定（Esc 保留给鼠标捕获）。",
+    "en": "Invalid keyboard binding (Esc is reserved for mouse capture)."
+  },
+  {
+    "source": "Command 保留给系统快捷键。",
+    "en": "Command is reserved for system shortcuts."
+  },
+  {
+    "source": "不支持的鼠标按钮。",
+    "en": "Unsupported mouse button."
+  },
+  {
+    "source": "不支持的手柄按钮。",
+    "en": "Unsupported controller button."
+  },
+  {
+    "source": "{0} 存在重复绑定，请先解除冲突。",
+    "en": "Duplicate bindings on {0}. Resolve conflicts first."
+  },
+  {
+    "source": "手柄摇杆配置无效。",
+    "en": "Invalid controller stick configuration."
+  },
+  {
+    "source": "手柄轴存在重复绑定。",
+    "en": "Duplicate controller axis bindings."
+  },
+  {
+    "source": "鼠标灵敏度应在 0.1–10 之间。",
+    "en": "Mouse sensitivity must be between 0.1 and 10."
+  },
+  {
+    "source": "鼠标模式无效。",
+    "en": "Invalid mouse mode."
+  },
+  {
+    "source": "手柄死区无效。",
+    "en": "Invalid controller dead zone."
+  },
+  {
+    "source": "创建游戏库",
+    "en": "Create game library"
+  },
+  {
+    "source": "请选择空文件夹或已有璃游（NS Mac）游戏库，避免混入其他文件。",
+    "en": "Choose an empty folder or an existing LumaDock (NS Mac) library to avoid mixing unrelated files."
+  },
+  {
+    "source": "检查系统与工具链",
+    "en": "Check system and toolchain"
+  },
+  {
+    "source": "缺失",
+    "en": "Missing"
+  },
+  {
+    "source": "需要完整 Xcode，请检查 Developer 目录，不能仅使用 Command Line Tools",
+    "en": "The full Xcode app is required. Check the Developer directory; Command Line Tools alone are insufficient."
+  },
+  {
+    "source": "可用空间",
+    "en": "Free space"
+  },
+  {
+    "source": "{0} GB（大型游戏通常需要 40–80 GB）",
+    "en": "{0} GB (large games usually need 40–80 GB)"
+  },
+  {
+    "source": "构建组件",
+    "en": "Build components"
+  },
+  {
+    "source": "NSP 读取、Python、着色器转换组件由应用管理",
+    "en": "NSP reader, Python, and shader converters are managed by the app"
+  },
+  {
+    "source": "导入玩家密钥",
+    "en": "Import player keys"
+  },
+  {
+    "source": "已验证解密能力",
+    "en": "Decryption verified"
+  },
+  {
+    "source": "格式检查通过；首次读取 NSP 时验证解密能力",
+    "en": "Format verified; decryption will be checked when reading the first NSP"
+  },
+  {
+    "source": "无法解密或验证 NSP 元数据，请检查密钥是否正确、文件是否完整。",
+    "en": "Unable to decrypt or validate NSP metadata. Check the keys and file integrity."
+  },
+  {
+    "source": "无法识别 NSP 元数据，请检查密钥、文件完整性和文件类型。",
+    "en": "Unable to identify NSP metadata. Check the keys, file integrity, and file type."
+  },
+  {
+    "source": "此游戏尚无原生适配配置",
+    "en": "This game has no native adaptation profile yet"
+  },
+  {
+    "source": "缺少本体 v0",
+    "en": "Missing base game v0"
+  },
+  {
+    "source": "缺少更新 {0}（{1}）",
+    "en": "Missing update {0} ({1})"
+  },
+  {
+    "source": "{0} 的 {1} 构建标识与已适配版本不同",
+    "en": "The {1} build ID in {0} differs from the supported version"
+  },
+  {
+    "source": "请先导入玩家自己的 prod.keys。",
+    "en": "Import your own prod.keys first."
+  },
+  {
+    "source": "首版只接受 NSP 文件或包含 NSP 的文件夹。",
+    "en": "Only NSP files or folders containing NSPs are supported."
+  },
+  {
+    "source": "所选位置没有 NSP 文件。",
+    "en": "No NSP files were found at the selected location."
+  },
+  {
+    "source": "读取 NSP 元数据（{0}/{1}）",
+    "en": "Read NSP metadata ({0}/{1})"
+  },
+  {
+    "source": "无效的游戏标识。",
+    "en": "Invalid game ID."
+  },
+  {
+    "source": "正在校验源文件内容",
+    "en": "Verifying source file contents"
+  },
+  {
+    "source": "游戏库可用空间不足，复制尚未开始。",
+    "en": "Not enough free space in the library. Copying has not started."
+  },
+  {
+    "source": "复制后校验失败，原始文件未改动。",
+    "en": "Verification failed after copying. Original files are unchanged."
+  },
+  {
+    "source": "密钥文件不可用，请重新导入 prod.keys",
+    "en": "The key file is unavailable. Import prod.keys again."
+  },
+  {
+    "source": "格式通过，首次导入游戏时验证解密能力",
+    "en": "Format verified; decryption will be checked on the first game import"
+  },
+  {
+    "source": "读取游戏库",
+    "en": "Read game library"
+  },
+  {
+    "source": "无效的清理范围。",
+    "en": "Invalid cleanup scope."
+  },
+  {
+    "source": "导出诊断",
+    "en": "Export diagnostics"
+  },
+  {
+    "source": "不接受指向游戏库之外的符号链接。",
+    "en": "Symbolic links pointing outside the game library are not accepted."
+  },
+  {
+    "source": "操作路径不属于托管游戏库。",
+    "en": "The operation path is outside the managed game library."
+  },
+  {
+    "source": "游戏库磁盘已断开或位置发生变化，请重新连接后重试。",
+    "en": "The library drive is disconnected or its location changed. Reconnect it and retry."
+  },
+  {
+    "source": "应用缺少 NSP 读取组件，请重新安装完整版本。",
+    "en": "The NSP reader is missing. Reinstall the full app."
+  },
+  {
+    "source": "组件 {0} 运行失败（{1}）。详细信息见任务日志。",
+    "en": "Component {0} failed ({1}). See the task log for details."
+  },
+  {
+    "source": "工具链正在使用中，请等待游戏运行、准备或组件管理任务结束后重试。",
+    "en": "The toolchain is in use. Wait for gameplay, preparation, or component management to finish and retry."
+  },
+  {
+    "source": "另一个任务正在使用游戏库，请稍后重试。",
+    "en": "Another task is using the game library. Try again later."
+  },
+  {
+    "source": "游戏未登记在当前游戏库中。",
+    "en": "The game is not registered in the current library."
+  },
+  {
+    "source": "密钥文件过大，请选择 prod.keys 文本文件。",
+    "en": "The key file is too large. Select the prod.keys text file."
+  },
+  {
+    "source": "密钥文件格式无效，请检查是否选择了正确的文本文件。",
+    "en": "Invalid key file format. Check that you selected the correct text file."
+  },
+  {
+    "source": "密钥文件存在冲突条目。",
+    "en": "The key file contains conflicting entries."
+  },
+  {
+    "source": "缺少有效的 header_key，无法读取 NSP。",
+    "en": "No valid header_key found. NSP files cannot be read."
+  },
+  {
+    "source": "安装 Apple Metal 编译组件",
+    "en": "Install Apple Metal compiler"
+  },
+  {
+    "source": "请先确认卸载共享 Metal 编译组件。",
+    "en": "Confirm removal of the shared Metal compiler first."
+  },
+  {
+    "source": "当前 Xcode 不支持命令行卸载组件，请在 Xcode 的组件设置中管理。",
+    "en": "This Xcode version does not support command-line removal. Manage components in Xcode Settings instead."
+  },
+  {
+    "source": "卸载 Apple Metal 编译组件",
+    "en": "Uninstall Apple Metal compiler"
+  },
+  {
+    "source": "不支持的任务类型。",
+    "en": "Unsupported task type."
+  },
+  {
+    "source": "操作完成",
+    "en": "Operation completed"
+  },
+  {
+    "source": "任务已取消；上次成功的运行版本和存档已保留。",
+    "en": "Task cancelled. The last successful runtime version and saves are kept."
+  },
+  {
+    "source": "操作失败，请检查磁盘连接、权限和任务日志后重试。",
+    "en": "The operation failed. Check the drive connection, permissions, and task log, then retry."
+  },
+  {
+    "source": "解包与合并 {0}",
+    "en": "Extract and merge {0}"
+  },
+  {
+    "source": "配置指定版本",
+    "en": "version required by profile"
+  },
+  {
+    "source": "语言",
+    "en": "Language"
+  },
+  {
+    "source": "跟随系统",
+    "en": "System default"
+  },
+  {
+    "source": "简体中文",
+    "en": "简体中文"
+  },
+  {
+    "source": "界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。",
+    "en": "Interface changes apply immediately. Built-in buttons in system file dialogs follow the macOS language."
+  },
+  {
+    "source": "Mac 游戏启动器",
+    "en": "Mac game launcher"
+  },
+  {
+    "source": "选择",
+    "en": "Choose"
+  },
+  {
+    "source": "保存",
+    "en": "Save"
+  },
+  {
+    "source": "；",
+    "en": "; "
+  },
+  {
+    "source": "左摇杆 {0}, {1} · 右摇杆 {2}, {3} · L2 {4} · R2 {5}",
+    "en": "Left stick {0}, {1} · Right stick {2}, {3} · L2 {4} · R2 {5}"
+  },
+  {
+    "source": "鼠标位移：{0}, {1}",
+    "en": "Mouse movement: {0}, {1}"
+  },
+  {
+    "source": "解除绑定",
+    "en": "Clear binding"
+  },
+  {
+    "source": "语言与外观",
+    "en": "Language & appearance"
+  },
+  {
+    "source": "外观",
+    "en": "Appearance"
+  },
+  {
+    "source": "浅色",
+    "en": "Light"
+  },
+  {
+    "source": "深色",
+    "en": "Dark"
+  }
+]

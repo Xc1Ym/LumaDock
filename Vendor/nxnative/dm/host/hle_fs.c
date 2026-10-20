@@ -29,7 +29,7 @@ enum { DIRMODE_DIR = 1, DIRMODE_FILE = 2 };
 typedef struct { char name[0x301]; uint8_t pad0[3]; int8_t type; uint8_t pad1[3]; int64_t size; } DirectoryEntry;
 _Static_assert(sizeof(DirectoryEntry) == 0x310, "DirectoryEntry layout");
 
-#define MAX_MOUNT 16
+#define MAX_MOUNT 512   // Monster Hunter Rise mounts every add-on content it owns (aoc0 … : 252 licences in the folder) right after the first-boot settings: 16 ended in "mount table full"
 // Save transactions (HLE audit items 1–3): on the real device a save can be rolled back as a whole before commit, and after a crash / kill a remount sees only the version from the last Commit.
 // Host: at mount, the committed directory commit (= $DM_SAVE) is clonefile'd as a whole tree into the working directory <commit>.work (APFS copy-on-write, nearly zero cost), and the mount points at the working directory,
 // all game reads and writes happen in the working directory; Commit = clonefile(work → <commit>.new), then renamex_np(RENAME_SWAP) swaps it atomically with commit, then the swapped-out old version is deleted.
@@ -348,6 +348,29 @@ HLE_FORCE("_ZN2nn2fs9IsMountedEPKc", "fsp-srv; looks up the host mount table", i
     for (int i = 0; name && i < g_nmnt; i++) if (!strcmp(g_mnt[i].name, name)) return 1;
     return 0;
 }
+// IsPathMounted / GetPathLengthMax: the SDK's C library (nnmusl) checks every path with them before it calls nn::fs (sdk+0x8ef50, under open / stat / opendir), and the original SDK answers from
+// its own empty mount table. Ace Attorney Investigations Collection (Unity 2022 IL2CPP): File.Exists → SystemNative_Stat → stat → open failed with no nn::fs call at all, so Addressables
+// never found StreamingAssets/aa/settings.json and the game crashed on a null asset (main+0x31100ec; found by armyja, GitHub issue #18). The mount name is the part before ':', as in FindFileSystem
+HLE_FORCE("_ZN2nn2fs13IsPathMountedEPKc", "fsp-srv; looks up the host mount table", int, h_fs_IsPathMounted, const char *path) {   // bool in w0: 1 / 0
+    const char *c = path ? strchr(path, ':') : NULL;
+    PATH_LOCK();
+    for (int i = 0; c && i < g_nmnt; i++) if (strlen(g_mnt[i].name) == (size_t)(c - path) && !strncmp(g_mnt[i].name, path, c - path)) return 1;
+    if (g_flag.fs) LOG("fs path not mounted: %s", path ? path : "(null)");
+    return 0;
+}
+// The length limits nnmusl checks next (sdk+0x8f17c..0x8f254): Horizon's 0x300 bytes for paths and entry names, and no separate UTF-16 limit (false skips that check)
+HLE_FORCE("_ZN2nn2fs16GetPathLengthMaxEPmPKc", "fsp-srv; every host mount takes Horizon's 0x300-byte paths", Result, h_fs_GetPathLengthMax, uint64_t *out, const char *path) {
+    (void)path; *out = 0x300; return RES_OK;
+}
+HLE_FORCE("_ZN2nn2fs21GetEntryNameLengthMaxEPmPKc", "fsp-srv; every host mount takes Horizon's 0x300-byte entry names", Result, h_fs_GetEntryNameLengthMax, uint64_t *out, const char *path) {
+    (void)path; *out = 0x300; return RES_OK;
+}
+HLE_FORCE("_ZN2nn2fs21GetUtf16PathLengthMaxEPbPmPKc", "fsp-srv; host mounts have no UTF-16 path limit", Result, h_fs_GetUtf16PathLengthMax, uint8_t *limited, uint64_t *out, const char *path) {
+    (void)path; *limited = 0; *out = 0x300; return RES_OK;
+}
+HLE_FORCE("_ZN2nn2fs26GetUtf16EntryNameLengthMaxEPbPmPKc", "fsp-srv; host mounts have no UTF-16 entry name limit", Result, h_fs_GetUtf16EntryNameLengthMax, uint8_t *limited, uint64_t *out, const char *path) {
+    (void)path; *limited = 0; *out = 0x300; return RES_OK;
+}
 HLE_FORCE("_ZN2nn2fs21MountTemporaryStorageEPKc", "fsp-srv; temporary storage → host directory", Result, h_fs_MountTemp, const char *name) {
     char b[1024]; return mount(name, envdir("DM_TEMP", "run/platform/temp", b, sizeof b), 0);
 }
@@ -366,6 +389,14 @@ HLE_FORCE("_ZN2nn2fs17MountCacheStorageEPKci", "fsp-srv; cache storage → host 
 }
 HLE_FORCE("_ZN2nn2fs18DeleteCacheStorageEi", "fsp-srv; cache storage → deletes the host directory", Result, h_fs_DeleteCache, int index) {
     char b[1100]; rm_tree(cache_dir(index, b, sizeof b)); return RES_OK;
+}
+HLE_FORCE("_ZN2nn2fs17MountCacheStorageEPKc", "fsp-srv; cache storage 0 → host directory (SDK 11 one-argument form, Monster Hunter Rise)", Result, h_fs_MountCache0, const char *name) { return h_fs_MountCache(name, 0); }
+// Save data size (Monster Hunter Rise, SDK 11): the save directory has no size of its own, so it reports 256 MB of data and journal, more than a game asks for; extending succeeds without doing anything
+HLE_FORCE("_ZN2nn2fs15GetSaveDataSizeEPlS1_RKNS_7account3UidE", "fsp-srv; save data size: 256 MB data + 256 MB journal", Result, h_fs_SaveSize, int64_t *size, int64_t *journal, const void *uid) {
+    (void)uid; if (size) *size = 256 << 20; if (journal) *journal = 256 << 20; return RES_OK;
+}
+HLE_FORCE("_ZN2nn2fs14ExtendSaveDataERKNS_7account3UidEll", "fsp-srv; extend save data: the host directory has no size limit", Result, h_fs_ExtendSave, const void *uid, int64_t size, int64_t journal) {
+    (void)uid; LOG("fs extend save data to %lld bytes (journal %lld): nothing to do", (long long)size, (long long)journal); return RES_OK;
 }
 HLE_FORCE("_ZN2nn2fs14EnsureSaveDataERKNS_7account3UidE", "fsp-srv; the save directory is created at mount time", Result, h_fs_EnsureSave, const void *uid) { (void)uid; return RES_OK; }
 // Settings defaults for the touch product (dropped item names shown permanently by default, can be turned off in settings): Settings/Settings.json in the save only records keys the player has changed, unrecorded ones use the game default.

@@ -20,16 +20,21 @@ static pthread_mutex_t g_mq_lock = PTHREAD_MUTEX_INITIALIZER; static pthread_con
 static uint32_t g_mq[MQ]; static int g_mqh, g_mqn;
 static _Atomic int g_ntf_opmode, g_ntf_perfmode;          // only pushed after the game turns it on with Set*NotificationEnabled
 // Notification event (Hades main+0x3ed18c polls it every frame and pops one message each time it fires): the SDK's version returns the event oe::Initialize would have
-// created, and the host's oe::Initialize is a no-op, so TryWaitSystemEvent asserted on it. A host-owned auto-clear SystemEvent instead, signalled while the queue holds a message
+// created, and the host's oe::Initialize is a no-op, so TryWaitSystemEvent asserted on it. A host-owned auto-clear SystemEvent instead, which follows the queue as the am service's
+// does: signalled while a notification is queued, cleared when the last one is popped. Monster Hunter Rise's MessageSuperviseThread (main+0x6bc8fc4) waits on it with WaitAny,
+// which does not clear it, then pops until the queue is empty; when the event was only ever signalled, the first focus change on iOS left it set and the thread spun on a core
+// (995 ms/s, 5-6 W on an iPhone). The count is read and the event set or cleared under g_mq_lock, so a push racing a pop cannot leave it cleared over a queued notification
+// (lock order g_mq_lock → G → g_se_lock; nothing takes g_mq_lock while holding G)
 static uint8_t g_mq_ev[0x80] __attribute__((aligned(16)));
 static _Atomic int g_mq_ev_on;
-static void mq_ev_kick(void) {
+static void mq_ev_sync(void) {
     if (!atomic_load(&g_mq_ev_on)) return;
-    pthread_mutex_lock(&g_mq_lock); int n = g_mqn; pthread_mutex_unlock(&g_mq_lock);
-    if (n) hle_signal_system_event(g_mq_ev);
+    pthread_mutex_lock(&g_mq_lock);
+    if (g_mqn) hle_signal_system_event(g_mq_ev); else hle_clear_system_event(g_mq_ev);
+    pthread_mutex_unlock(&g_mq_lock);
 }
 static void mq_push_(uint32_t m);
-static void mq_push(uint32_t m) { mq_push_(m); mq_ev_kick(); }
+static void mq_push(uint32_t m) { mq_push_(m); mq_ev_sync(); }
 static void mq_push_(uint32_t m) {
     pthread_mutex_lock(&g_mq_lock);
     // 15/30/31 are invalidation notifications meaning "query the current state", not events carrying historical values.
@@ -103,6 +108,15 @@ HLE_FORCE("_ZN2nn2oe22SetCopyrightVisibilityEb", "copyright overlay visibility; 
 // OperationMode: 0 Handheld, 1 Console; PerformanceMode: 0 Normal, 1 Boost (one-to-one with the operation mode)
 HLE_FORCE("_ZN2nn2oe16GetOperationModeEv", "operation mode query; a fixed value from DM_OPMODE", int, h_oe_GetOpMode, void) { int u = g_ui_opmode; if (atomic_exchange(&g_ui_armed, 0)) atomic_fetch_add(&g_ui_reads, 1); return u >= 0 ? u : opmode(); }
 HLE_FORCE("_ZN2nn2oe18GetPerformanceModeEv", "performance mode query; same as the operation mode", int, h_oe_GetPerfMode, void) { return opmode(); }
+// SDK 11 calls of Monster Hunter Rise: the CPU overclock query reads an apm session the host never opened (null read in sdk+0x35258 at the start of nnMain, main+0x6bc8650);
+// the default display resolution is the TV's (1080p docked) or the panel's (720p handheld) and only changes with the operation mode
+HLE_FORCE("_ZN2nn2oe21IsCpuOverclockEnabledEv", "CPU overclock state (through apm): not enabled", unsigned, h_oe_CpuOc, void) { return 0; }
+HLE_FORCE("_ZN2nn2oe27GetDefaultDisplayResolutionEPiS1_", "default display resolution: 1920x1080 docked, 1280x720 handheld", void, h_oe_DefRes, int *w, int *h) {
+    int con = opmode() == 1; if (w) *w = con ? 1920 : 1280; if (h) *h = con ? 1080 : 720;
+}
+HLE_FORCE("_ZN2nn2oe38GetDefaultDisplayResolutionChangeEventEPNS_2os11SystemEventE", "default display resolution change event: bound, never signaled (the operation mode notification carries the change)",
+          void, h_oe_DefResEv, void *ev) { hle_bind_system_event(ev, 0); }
+HLE_FORCE("_ZN2nn2oe40SendServerMaintenanceOverlayNotificationENS_4time9PosixTimeES2_", "server maintenance overlay (through am); the host has no system overlay", void, h_oe_MaintOverlay, int64_t a, int64_t b) { (void)a; (void)b; }
 // apm performance configurations: Normal 0x00010000 (CPU 1020 / GPU 384 / EMC 1600 MHz, the handheld default), Boost 0x00010001 (GPU 768 MHz, the docked default)
 HLE_FORCE("_ZN2nn2oe27GetPerformanceConfigurationENS0_15PerformanceModeE", "query the CPU/GPU clock config (through apm); reports the default for the mode", int, h_oe_GetPerfCfg, int mode) { return mode == 1 ? 0x00010001 : 0x00010000; }
 HLE_FORCE("_ZN2nn2oe24SetAlbumImageOrientationENS_5album16ImageOrientationE", "screenshot orientation (through am); the host has no system screenshot", void, h_oe_AlbumOrient, int o) { (void)o; }
@@ -228,8 +242,9 @@ static void scale3d_tick(void) {
         if (e) { char *end; float v = strtof(e, &end); if (end == e || *end || !(v >= 0.5f && v <= 1.0f)) die("DM_3D_SCALE invalid: %s (must be 0.5–1.0)", e); want_cfg = v; }
         for (int i = 0; i < g_nmod; i++) if (!strcmp(g_mod[i].name, "main")) main = &g_mod[i];
         // The addresses above (renderer global pointer, resolution change function, member offsets) all belong to D2R build db0507f3…; in other builds (every Mario version) the same addresses are unrelated data and code
-        // (Mario v0's main+0x8582f0 is in the middle of a static initializer), so writing and calling them would corrupt memory. Only enabled on that build
-        if (main && strcmp(main->build_id, "db0507f36b84200ac05f75d76ed5026f")) { LOG("3D render scale: main build %s has no known addresses, left alone (only D2R db0507f3… is known)", main->build_id[0] ? main->build_id : "(output has no build ID)"); main = NULL; }
+        // (Mario v0's main+0x8582f0 is in the middle of a static initializer), so writing and calling them would corrupt memory. Only enabled on that build; elsewhere it says so only when DM_3D_SCALE asks for this scale
+        // (Breath of the Wild and Tears of the Kingdom scale through DM_RENDER_SCALE, and the line read like a failure in their logs)
+        if (main && strcmp(main->build_id, "db0507f36b84200ac05f75d76ed5026f")) { if (e) LOG("3D render scale: main build %s has no known addresses, left alone (only D2R db0507f3… is known)", main->build_id[0] ? main->build_id : "(output has no build ID)"); main = NULL; }
     }
     int lv = atomic_load(&g_scale3d_level);   // dynamic level: 0 = configured value, 1 = 0.72, 2 = 0.70 (none higher than the configured value)
     float dyn = lv == 0 ? want_cfg : lv == 1 ? SCALE3D_MID : SCALE3D_MIN; if (dyn > want_cfg) dyn = want_cfg;
@@ -257,7 +272,7 @@ HLE_FORCE("_ZN2nn2oe25TryPopNotificationMessageEPj", "system notification queue;
     if (ok) for (int i = 0; i < 2; i++) if (g_keyres[i]) pthread_setspecific(g_keyres[i], (void *)dm_game_res(i));
     if (ok && *msg == MSG_PERFMODE) dm_uiscreen_res_reread();
     if (ok) LOG("oe notification popped by the game: %u", *msg);   // state changes are rare, printing each one does not flood the log
-    if (ok) mq_ev_kick();   // one message per signal: fire again for the next one
+    mq_ev_sync();   // signalled again while notifications remain, cleared when the queue is empty (also a signal left behind by a pop that found it empty)
     return ok;
 }
 // The blocking form (Link's Awakening pops on a thread of its own, main+0xfa1ff8): the SDK's version waits on the system event oe::Initialize would have created,
@@ -272,7 +287,8 @@ HLE_FORCE("_ZN2nn2oe22PopNotificationMessageEv", "system notification queue (blo
     }
 }
 HLE_FORCE("_ZN2nn2oe27GetNotificationMessageEventEv", "notification event: the host's auto-clear SystemEvent, signalled while the queue holds notifications", void *, h_oe_GetMsgEv, void) {
-    if (!atomic_load(&g_mq_ev_on)) { hle_bind_system_event(g_mq_ev, 1); atomic_store(&g_mq_ev_on, 1); mq_ev_kick(); }   // bound on the game's thread (it runs SDK code)
+    pthread_once(&g_oe_once, oe_script_start);   // DM_OE_SCRIPT also for games that wait on the event and pop only once it fires (Monster Hunter Rise)
+    if (!atomic_load(&g_mq_ev_on)) { hle_bind_system_event(g_mq_ev, 1); atomic_store(&g_mq_ev_on, 1); mq_ev_sync(); }   // bound on the game's thread (it runs SDK code)
     return g_mq_ev;
 }
 // bool arguments: Switch callers do not extend them, declared as unsigned and only the low 8 bits are looked at

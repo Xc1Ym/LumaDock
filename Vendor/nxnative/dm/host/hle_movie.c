@@ -8,6 +8,7 @@
 #include "vpx/vpx_decoder.h"
 #include "vpx/vp8dx.h"
 #include "hle_movie_avc.h"   // H.264 on VideoToolbox
+#include <AudioToolbox/AudioToolbox.h>   // AAC
 // Vorbis (movie audio tracks, Link's Awakening): stb_vorbis, built into this file (dm/third_party/stb_vorbis); only its push-data API, floats out
 #define STB_VORBIS_NO_STDIO
 #define STB_VORBIS_NO_PULLDATA_API
@@ -50,7 +51,9 @@ HLE_FORCE("_ZN5movie9Extractor13SetDataSourceEPKc", "movie demuxer: the host doe
 #define MD_MODE_TEX 2            // native texture mode: the decoder writes frames into the client's NVN texture
 #define MD_TYPE_AVC 1
 #define MD_TYPE_VP9 3
-#define MD_TYPE_VORBIS 5         // audio: the SDK's Decoder accepts AAC (4) and Vorbis (5) in CPU mode, output format 1 only (interleaved PCM16)
+#define MD_TYPE_AAC 4            // audio: the SDK's Decoder accepts AAC (4) and Vorbis (5) in CPU mode, output format 1 only (interleaved PCM16)
+#define MD_TYPE_VORBIS 5
+#define MD_AUDIO(d) ((d)->type == MD_TYPE_VORBIS || (d)->type == MD_TYPE_AAC)
 #define MD_FMT_PCM16 1
 #define MD_PCM_CAP (8192 * 8 * 2)   // bytes per audio output: a Vorbis packet gives at most 4096 samples per channel (blocksize 8192), 8 channels at most
 
@@ -70,6 +73,8 @@ typedef struct {
     vpx_codec_ctx_t vpx; int vpx_on, red_dec, red_img;
     // Vorbis: the identification and setup headers from Configure's MediaData ("csd-0", "csd-1", as with Android's MediaCodec), the decoder (opened at the first packet), channels / rate, Ogg page sequence
     uint8_t *vhdr[2]; int vhdr_n[2]; stb_vorbis *vb; int ch, rate; uint32_t ogg_seq; int64_t ogg_gran; int red_vb;
+    // AAC (Monster Hunter Rise's movies): AudioToolbox's converter, opened at the first packet from the AudioSpecificConfig (Configure's csd-0, kept in vhdr[0]); the packet being fed
+    AudioConverterRef aac; const uint8_t *aac_pkt; UInt32 aac_pkt_n; AudioStreamPacketDescription aac_desc;
     uint64_t dec_n, dec_ns, dec_max;            // decode timing (on the host thread, per packet)
     unsigned long ncall[24];
 } mdec_t;
@@ -293,16 +298,65 @@ static int md_vorbis(mdec_t *d, const uint8_t *p, int n, int slot) {
     d->out[slot].bytes = need;
     return 1;
 }
+// ---------- AAC ----------
+// The demuxer hands over raw AAC frames (1024 samples each) and the AudioSpecificConfig in csd-0. AudioToolbox takes the configuration as an MPEG-4 ES descriptor (the magic cookie built
+// here as FFmpeg's AudioToolbox decoder builds it); without csd-0 an AAC-LC configuration is made from the sample rate and channel count
+static uint8_t *esds_descr(uint8_t *p, int tag, unsigned n) { *p++ = (uint8_t)tag; for (int i = 3; i > 0; i--) *p++ = (uint8_t)(n >> (7 * i) | 0x80); *p++ = (uint8_t)(n & 0x7f); return p; }
+static OSStatus aac_feed(AudioConverterRef c, UInt32 *np, AudioBufferList *bl, AudioStreamPacketDescription **pd, void *ud) {
+    (void)c; mdec_t *d = ud;
+    if (!d->aac_pkt) { *np = 0; return 1; }   // this packet is used up: a non-zero status ends the fill with what was decoded
+    bl->mNumberBuffers = 1; bl->mBuffers[0].mData = (void *)d->aac_pkt; bl->mBuffers[0].mDataByteSize = d->aac_pkt_n; bl->mBuffers[0].mNumberChannels = (UInt32)d->ch;
+    d->aac_desc = (AudioStreamPacketDescription){0, 0, d->aac_pkt_n}; if (pd) *pd = &d->aac_desc;
+    *np = 1; d->aac_pkt = NULL; return 0;
+}
+static int md_aac_open(mdec_t *d) {
+    static const int rates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350};
+    uint8_t asc[64]; int an = d->vhdr_n[0] > 0 && d->vhdr_n[0] <= (int)sizeof asc ? d->vhdr_n[0] : 0;
+    if (an) memcpy(asc, d->vhdr[0], (size_t)an);
+    if (an >= 2) {   // sampling frequency index and channel configuration from the configuration itself
+        int fi = (asc[0] & 7) << 1 | asc[1] >> 7, cc = asc[1] >> 3 & 15;
+        if (fi < 13 && d->rate <= 0) d->rate = rates[fi]; if (cc && cc < 8 && d->ch <= 0) d->ch = cc == 7 ? 8 : cc;
+    }
+    if (d->rate <= 0) d->rate = 48000; if (d->ch <= 0) d->ch = 2;
+    if (!an) { int fi = 3; for (int i = 0; i < 13; i++) if (rates[i] == d->rate) fi = i; asc[0] = (uint8_t)(2 << 3 | fi >> 1); asc[1] = (uint8_t)((fi & 1) << 7 | (d->ch & 15) << 3); an = 2; }
+    AudioStreamBasicDescription in = {.mSampleRate = d->rate, .mFormatID = kAudioFormatMPEG4AAC, .mFramesPerPacket = 1024, .mChannelsPerFrame = (UInt32)d->ch};
+    AudioStreamBasicDescription out = {.mSampleRate = d->rate, .mFormatID = kAudioFormatLinearPCM, .mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
+                                       .mBytesPerPacket = 2u * d->ch, .mFramesPerPacket = 1, .mBytesPerFrame = 2u * d->ch, .mChannelsPerFrame = (UInt32)d->ch, .mBitsPerChannel = 16};
+    OSStatus st = AudioConverterNew(&in, &out, &d->aac);
+    if (st) { if (!d->red_vb++) LOG("[RED] movie: AudioToolbox cannot create an AAC decoder (%d; %d channels %d Hz), outputting silence", (int)st, d->ch, d->rate); d->aac = NULL; return 0; }
+    uint8_t ck[128], *p = ck;
+    p = esds_descr(p, 3, 3 + 5 + 13 + 5 + (unsigned)an); *p++ = 0; *p++ = 0; *p++ = 0;   // ES descriptor: ES ID 0, no flags
+    p = esds_descr(p, 4, 13 + 5 + (unsigned)an); *p++ = 0x40; *p++ = 0x15; memset(p, 0, 11); p += 11;   // decoder configuration: MPEG-4 audio, audio stream; buffer size and bit rates 0
+    p = esds_descr(p, 5, (unsigned)an); memcpy(p, asc, (size_t)an); p += an;
+    st = AudioConverterSetProperty(d->aac, kAudioConverterDecompressionMagicCookie, (UInt32)(p - ck), ck);
+    if (st && !d->red_vb++) LOG("[RED] movie: AAC configuration not accepted by AudioToolbox (%d)", (int)st);
+    LOG("[movie] AAC: %d channels %d Hz, AudioSpecificConfig %d bytes (object type %d)", d->ch, d->rate, an, asc[0] >> 3);
+    return 1;
+}
+// one packet → PCM16 interleaved in the slot; 1 when there are samples (the decoder's start-up delay may give none for the first packet)
+static int md_aac(mdec_t *d, const uint8_t *p, int n, int slot) {
+    if (!d->aac && !md_aac_open(d)) return 0;
+    if (n <= 0) return 0;
+    if (d->out[slot].cap < MD_PCM_CAP) { free(d->out[slot].frm); d->out[slot].frm = malloc(MD_PCM_CAP); d->out[slot].cap = MD_PCM_CAP; }
+    d->aac_pkt = p; d->aac_pkt_n = (UInt32)n;
+    UInt32 frames = (UInt32)(MD_PCM_CAP / (2 * d->ch));
+    AudioBufferList ob = {1, {{(UInt32)d->ch, frames * 2u * d->ch, d->out[slot].frm}}};
+    OSStatus st = AudioConverterFillComplexBuffer(d->aac, aac_feed, d, &frames, &ob, NULL);
+    d->aac_pkt = NULL;
+    if (st && st != 1 && !d->red_dec++) LOG("[RED] movie: AAC decode error (AudioToolbox %d, first case)", (int)st);
+    d->out[slot].bytes = (size_t)frames * 2 * d->ch;
+    return frames > 0;
+}
 // H.264: decode the packet (if any) and hand out the next picture in presentation order (with jflush every queued one in turn); 1 = a picture is in the slot, its time in jpts_out
 static int md_avc(mdec_t *d, const uint8_t *p, int n, int slot, int take_only) {
-    if (!d->avc) d->avc = mavc_new();
+    if (!d->avc) { d->avc = mavc_new(); if (d->fmt == MD_FMT_ABGR) mavc_set_rgba(d->avc); }
     if (!take_only && n > 0) mavc_decode(d->avc, p, n, d->jpts);
     if (d->w <= 0 || d->h <= 0) return 0;
-    size_t need = (size_t)d->w * d->h * 3 / 2;
+    size_t need = (size_t)d->w * d->h * (d->fmt == MD_FMT_ABGR ? 4 : 3) / (d->fmt == MD_FMT_ABGR ? 1 : 2);
     if (d->out[slot].cap < need) { free(d->out[slot].frm); d->out[slot].frm = malloc(need); d->out[slot].cap = need; }
     return mavc_take(d->avc, d->jflush, d->out[slot].frm, d->w, d->h, &d->jpts_out);
 }
-static void md_close(mdec_t *d) { if (d->vpx_on) { vpx_codec_destroy(&d->vpx); d->vpx_on = 0; } if (d->vb) { stb_vorbis_close(d->vb); d->vb = NULL; } if (d->avc) { mavc_free(d->avc); d->avc = NULL; } }
+static void md_close(mdec_t *d) { if (d->vpx_on) { vpx_codec_destroy(&d->vpx); d->vpx_on = 0; } if (d->vb) { stb_vorbis_close(d->vb); d->vb = NULL; } if (d->aac) { AudioConverterDispose(d->aac); d->aac = NULL; } if (d->avc) { mavc_free(d->avc); d->avc = NULL; } }
 void dm_host_helper_qos(qos_class_t q);   // hle_thread.c
 static void *md_worker(void *arg) {
     mdec_t *d = arg;
@@ -315,7 +369,8 @@ static void *md_worker(void *arg) {
         pthread_mutex_unlock(&d->wmu);
         if (job == MDJ_DECODE || job == MDJ_TAKE) {
             uint64_t t0 = now_ns();
-            d->jgot = d->type == MD_TYPE_AVC ? md_avc(d, d->jp, d->jn, d->jslot, job == MDJ_TAKE) : d->type == MD_TYPE_VORBIS ? md_vorbis(d, d->jp, d->jn, d->jslot) : md_vp9(d, d->jp, d->jn, d->jslot);
+            d->jgot = d->type == MD_TYPE_AVC ? md_avc(d, d->jp, d->jn, d->jslot, job == MDJ_TAKE) : d->type == MD_TYPE_VORBIS ? md_vorbis(d, d->jp, d->jn, d->jslot) :
+                      d->type == MD_TYPE_AAC ? md_aac(d, d->jp, d->jn, d->jslot) : md_vp9(d, d->jp, d->jn, d->jslot);
             uint64_t dt = now_ns() - t0; d->dec_n++; d->dec_ns += dt; if (dt > d->dec_max) d->dec_max = dt;
         }
         else md_close(d);
@@ -359,12 +414,13 @@ static void md_pump(mdec_t *d) {
         pthread_mutex_unlock(&d->mu);
         int got = 0, avc = d->type == MD_TYPE_AVC;
         int eos = (pk.flags & 4) != 0;   // MediaCodec BUFFER_FLAG_END_OF_STREAM
-        if ((pk.size > 0 && (d->type == MD_TYPE_VP9 || d->type == MD_TYPE_VORBIS || avc)) || (avc && eos)) {
+        if (eos && pk.pts < 0) pk.size = 0;   // Monster Hunter Rise ends a stream with time -1 and the whole input buffer (4 MB) as its length: no data (decoding it gave VideoToolbox -12909 and AudioToolbox -50)
+        if ((pk.size > 0 && (d->type == MD_TYPE_VP9 || MD_AUDIO(d) || avc)) || (avc && eos)) {
             d->jp = d->in[pk.in] + pk.off; d->jn = pk.size; d->jslot = slot; d->jpts = pk.pts; d->jflush = 0; md_job(d, MDJ_DECODE); got = d->jgot; }
         int more = avc && eos && d->avc && mavc_queued(d->avc) > 0;   // H.264 pictures still queued: they follow this output, the last of them carries the end-of-stream flag
         pthread_mutex_lock(&d->mu);
         d->infree[d->ninfree++] = pk.in;
-        int ready = got || eos || (d->type != MD_TYPE_VP9 && d->type != MD_TYPE_VORBIS && !avc);   // an end-of-stream packet without a picture still yields an output to carry the flag back; VP8 has no decoder and gives black frames
+        int ready = got || eos || (d->type != MD_TYPE_VP9 && !MD_AUDIO(d) && !avc);   // an end-of-stream packet without a picture still yields an output to carry the flag back; VP8 has no decoder and gives black frames
         if (ready) { d->out[slot].pic = got; d->out[slot].pts = got && avc ? d->jpts_out : pk.pts; d->out[slot].flags = more ? pk.flags & ~4u : pk.flags; d->outq[d->noutq++] = slot; }
         else d->out[slot].used = 0;
         if (more) d->avc_drain = 1;
@@ -380,12 +436,11 @@ HLE_FORCE("_ZN5movie7DecoderC1ENS_11DecoderTypeENS_19DecoderOutputFormatENS_11De
     static void *vt; if (!vt) { uint8_t *t = guest_sym("_ZTVN5movie7DecoderE"); if (!t) die("movie: missing the vtable of movie::Decoder"); vt = t + 0x10; }
     md_syms();
     self[0] = vt; self[1] = NULL;
-    // Only video (AVC / VP8 / VP9 = 1..3): NV12 output (Engage's Unity, CPU buffers), or RGBA output into the client's NVN texture (mode 2, Metroid Dread);
+    // Only video (AVC / VP8 / VP9 = 1..3): NV12 output (Engage's Unity, CPU buffers), or RGBA output into the client's NVN texture (mode 2: Metroid Dread's VP9, Monster Hunter Rise's AVC);
     // anything else (audio) keeps a null impl and every method returns the SDK's failure code. VP9 is decoded with libvpx, AVC with VideoToolbox (hle_movie_avc.c); VP8 gives black frames
-    // Audio: Vorbis to PCM16 (Link's Awakening's movies carry a Vorbis track; without a decoder the SDK's player plays them silent)
-    int audio = type == MD_TYPE_VORBIS && fmt == MD_FMT_PCM16;
+    // Audio: Vorbis to PCM16 (Link's Awakening's movies carry a Vorbis track; without a decoder the SDK's player plays them silent), AAC to PCM16 with AudioToolbox (Monster Hunter Rise)
+    int audio = (type == MD_TYPE_VORBIS || type == MD_TYPE_AAC) && fmt == MD_FMT_PCM16;
     if (!audio && (type < 1 || type > 3 || (fmt != MD_FMT_NV12 && !(fmt == MD_FMT_ABGR && mode == MD_MODE_TEX)))) { LOG("[RED] movie: decoder type %d output %d mode %d not supported by the host, every method returns failure", type, fmt, mode); return; }
-    if (!audio && type == MD_TYPE_AVC && fmt != MD_FMT_NV12) { LOG("[RED] movie: AVC outputs NV12 only (requested output %d mode %d), every method returns failure", fmt, mode); return; }
     if (!audio && type != MD_TYPE_VP9 && type != MD_TYPE_AVC) LOG("[RED] movie: decoder type %d (VP8) is not decoded by the host, outputting black frames", type);
     mdec_t *d = calloc(1, sizeof *d);
     pthread_mutex_init(&d->mu, NULL); pthread_mutex_init(&d->dmu, NULL); pthread_mutex_init(&d->wmu, NULL); pthread_cond_init(&d->wcv, NULL);
@@ -414,17 +469,22 @@ static void md_free(void **self) {
 HLE_FORCE("_ZN5movie7DecoderD2Ev", "movie decoder destructor: frees the host object", void, h_movie_DecD2, void **self) { md_free(self); }
 // complete-object destructor (D1): Metroid Dread calls it directly (main+0x225a08); without the take-over the SDK destroys the host object as a DecoderImpl and crashes
 HLE_FORCE("_ZN5movie7DecoderD1Ev", "movie decoder destructor (complete object): frees the host object", void, h_movie_DecD1, void **self) { md_free(self); }
-// deleting destructor: Unity allocates the object with its own allocator, calls D2 and frees it itself; the object itself is not freed here
-HLE_FORCE("_ZN5movie7DecoderD0Ev", "movie decoder deleting destructor: frees the host object", void, h_movie_DecD0, void **self) { LOG("[RED] movie: deleting destructor (the object itself is not freed)"); md_free(self); }
+// deleting destructor: Unity allocates the object with its own allocator, calls D2 and frees it itself. Monster Hunter Rise deletes its decoders (new / delete), so after the host object the
+// object itself goes back through the game's operator delete (guest code, called on the calling guest thread)
+HLE_FORCE("_ZN5movie7DecoderD0Ev", "movie decoder deleting destructor: frees the host object, then the object with operator delete", void, h_movie_DecD0, void **self) {
+    md_free(self);
+    static void (*del)(void *); if (!del) del = (void (*)(void *))guest_sym("_ZdlPv");
+    if (del) del(self); else LOG("[RED] movie: no operator delete in the game; the decoder object is not freed");
+}
 
 HLE_FORCE("_ZN5movie7Decoder9ConfigureEPNS_9MediaDataE", "movie decoder configure", int, h_movie_Configure, void **self, void *md) {
     mdec_t *d = md_of(self); if (!d) return 0x1000;
-    if (d->type == MD_TYPE_VORBIS) {   // codec-specific data as Android's MediaCodec takes it: csd-0 = identification header, csd-1 = setup header
+    if (MD_AUDIO(d)) {   // codec-specific data as Android's MediaCodec takes it: Vorbis csd-0 = identification header, csd-1 = setup header; AAC csd-0 = AudioSpecificConfig
         for (int k = 0; k < 2 && md; k++) { void *b = NULL; char key[8]; snprintf(key, sizeof key, "csd-%d", k);
             if (G.find_buf(md, key, &b) && b && G.data(b) && G.size(b)) { size_t n = G.size(b); free(d->vhdr[k]); d->vhdr[k] = malloc(n); memcpy(d->vhdr[k], G.data(b), n); d->vhdr_n[k] = (int)n; } }
         int ch = 0, rate = 0; if (md) { G.find_i32(md, "channel-count", &ch); G.find_i32(md, "sample-rate", &rate); }
         if (ch > 0) d->ch = ch; if (rate > 0) d->rate = rate;
-        MD_TRACE(d, 0, "Configure (Vorbis): %d channels %d Hz, headers %d + %d bytes", ch, rate, d->vhdr_n[0], d->vhdr_n[1]);
+        MD_TRACE(d, 0, "Configure (%s): %d channels %d Hz, headers %d + %d bytes", d->type == MD_TYPE_AAC ? "AAC" : "Vorbis", ch, rate, d->vhdr_n[0], d->vhdr_n[1]);
         return 0;
     }
     if (d->type == MD_TYPE_AVC && md) {   // SPS / PPS: csd-0 / csd-1 (Annex B, as Android's MediaCodec takes them) or, from this SDK's MP4 demuxer (Super Mario Odyssey), "avcc" = the avcC box
@@ -507,7 +567,7 @@ HLE_FORCE("_ZN5movie7Decoder24SendInputBufferForDecodeEiiilj", "movie decoder: s
     pthread_mutex_lock(&d->mu);
     int fmt_now = 0;
     if (d->type == MD_TYPE_VP9 && !d->w && size > 0 && vp9_size(d->in[i] + off, size, &d->w, &d->h)) LOG("[movie] VP9 key frame: %d×%d", d->w, d->h);
-    if (!d->fmt_sent) { d->fmt_sent = 1; fmt_now = 1; if (!d->w && d->type != MD_TYPE_VORBIS) { d->w = 1920; d->h = 1080; } }   // the size is fixed from here on (slots are allocated by it)
+    if (!d->fmt_sent) { d->fmt_sent = 1; fmt_now = 1; if (!d->w && !MD_AUDIO(d)) { d->w = 1920; d->h = 1080; } }   // the size is fixed from here on (slots are allocated by it)
     d->pend[d->npend].in = i; d->pend[d->npend].off = off; d->pend[d->npend].size = size; d->pend[d->npend].pts = pts; d->pend[d->npend].flags = flags; d->npend++;
     int queued = d->npend;
     pthread_mutex_unlock(&d->mu);
@@ -532,7 +592,7 @@ HLE_FORCE("_ZN5movie7Decoder24AcquireOutputBufferIndexEPiPlPjS1_", "movie decode
     return r;
 }
 static void md_format(mdec_t *d, void *md) {
-    if (d->type == MD_TYPE_VORBIS) { G.set_i32(md, "channel-count", d->ch > 0 ? d->ch : 2); G.set_i32(md, "sample-rate", d->rate > 0 ? d->rate : 48000); return; }
+    if (MD_AUDIO(d)) { G.set_i32(md, "channel-count", d->ch > 0 ? d->ch : 2); G.set_i32(md, "sample-rate", d->rate > 0 ? d->rate : 48000); return; }
     int w, h, stride, slice; md_dims(d, &w, &h, &stride, &slice);
     G.set_i32(md, "width", w); G.set_i32(md, "height", h);
     G.set_rect(md, "crop", 0, 0, w - 1, h - 1);
@@ -554,7 +614,7 @@ HLE_FORCE("_ZN5movie7Decoder21GetOutputBufferFormatEiPNS_9MediaDataE", "movie de
 HLE_FORCE("_ZN5movie7Decoder19GetOutputBufferSizeEPiS1_", "movie decoder: output buffer size (one NV12 frame)", int, h_movie_OutSize, void **self, int *size, int *mode) {
     mdec_t *d = md_of(self); if (!d) return 0x1000;
     if (!size || !mode) return 0x100b;
-    if (d->type == MD_TYPE_VORBIS) { *size = MD_PCM_CAP; *mode = d->mode; MD_TRACE(d, 11, "GetOutputBufferSize → %d (PCM)", *size); return 0; }
+    if (MD_AUDIO(d)) { *size = MD_PCM_CAP; *mode = d->mode; MD_TRACE(d, 11, "GetOutputBufferSize → %d (PCM)", *size); return 0; }
     int w, h, stride, slice; md_dims(d, &w, &h, &stride, &slice);
     *size = stride * slice * 3 / 2; *mode = d->mode;   // the SDK fills the second output with the decoder mode
     MD_TRACE(d, 11, "GetOutputBufferSize → %d (%d×%d)", *size, w, h);
@@ -587,7 +647,7 @@ HLE_FORCE("_ZN5movie7Decoder15GetOutputBufferEiPNS_6BufferE", "movie decoder: ge
     mdec_t *d = md_of(self); if (!d) return 0x1000;
     if (!buf || i < 0 || i >= MD_NOUT) return 0x100b;
     if (d->mode == MD_MODE_TEX) return md_out_tex(d, i, buf);
-    if (d->type == MD_TYPE_VORBIS) {   // PCM16 interleaved; an output without samples (end of stream) is empty
+    if (MD_AUDIO(d)) {   // PCM16 interleaved; an output without samples (end of stream) is empty
         size_t n = d->out[i].pic ? d->out[i].bytes : 0, cap = G.cap(buf); uint8_t *p = G.data(buf);
         if (!p || cap < n) { LOG("[RED] movie: client audio output buffer is %zu bytes, this packet needs %zu", cap, n); G.set_range(buf, 0, 0); return 0x100b; }
         if (n) memcpy(p, d->out[i].frm, n);

@@ -4,6 +4,7 @@ import pathlib,zipfile,os
 from product import ROOT,RELEASE,PRODUCT,checksums
 EXCLUDED={'work','release','.build','.git','Runtime','__pycache__','bin','obj','gen','.agents','.codex'}
 SOURCE_DIRS={'Sources','Worker','Vendor','Assets','scripts','tests','docs','.github'}
+SOURCE_ARTWORK={f'Assets/LumaDock{x}' for x in ('.png','.svg','.icns','.ico')} | {f'docs/screenshots/{screen}-{language}.jpg' for screen in ('library','setup','settings') for language in ('en','zh')}
 SOURCE_FILES={'Package.swift','product.json','requirements-runtime.txt','README.md','README.zh-CN.md','LICENSE','.gitignore'}
 def main():
  out=RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-source.zip";out.parent.mkdir(exist_ok=True)
@@ -16,7 +17,7 @@ def main():
     if pathlib.Path(directory)==ROOT and name not in SOURCE_FILES:continue
     if p.is_symlink() or not p.is_file() or any(part in EXCLUDED for part in rel.parts) or p.name=='.DS_Store':continue
     if p.suffix in ('.keys','.nsp','.xci','.nsz','.ipa','.metallib','.pyc') or p.name=='dmhost':raise RuntimeError('Unexpected generated/private asset: '+str(rel))
-    if p.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg') and str(rel) not in {f'Assets/LumaDock{x}' for x in ('.png','.svg','.icns','.ico')}:raise RuntimeError('Unexpected source artwork: '+str(rel))
+    if p.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg') and str(rel) not in SOURCE_ARTWORK:raise RuntimeError('Unexpected source artwork: '+str(rel))
     z.write(p,PRODUCT['name']+'/'+str(rel));count+=1
  checksums()
  print('Source archive:',out,'files:',count)

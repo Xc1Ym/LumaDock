@@ -30,6 +30,8 @@ typedef struct {
     uint8_t *base;             // Start address of the image (including the patch area) in the host address space
     size_t size;
     uint64_t text_end, ro_off, data_off, key_page_off, key_page_size;   // From the rewriter fixups header
+    uint64_t fps_state_off;    // frame step state page (patch_nso.py FRAME_STEP: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main); 0 = none
+    int fps_legacy_elapsed;    // its legacy mode is an elapsed-time step (TOTK); 0 = legacy is the game's own interval logic (BotW)
     int64_t patch_off;         // patch area relative to the base; negative = before the base (image too large, see patch_nso.py FAR), and size does not include it
     uint64_t image_size, file_image_len, patch_len;   // only with the patch area before the base: whole image (with bss and key page), length of the image part of the file, patch area length
     char build_id[33];         // First 16 bytes of the NSO build ID (hex); empty for older build outputs
@@ -95,6 +97,7 @@ uint64_t dm_prof_ribbon_ns(void);   // The now_ns time at which OpenPanel MainMe
 void *objmap_get(const void *guest); void objmap_put(const void *guest, void *host); void *objmap_del(const void *guest);
 void hle_signal_system_event(void *g);   // hle_thread.c: signal a service-layer SystemEvent (any thread)
 void hle_bind_system_event(void *g, int autoclear);   // On a guest thread, bind a guest SystemEvent to a kernel event
+void hle_clear_system_event(void *g);    // hle_thread.c: clear a bound service-layer SystemEvent (any thread)
 // Page fault hook / hook before the host writes guest memory (crash.c; used for write-protect dirty page tracking)
 void dm_fault_hook_register(int (*fn)(void *addr, int is_write, void *uc));
 void dm_guest_write_prep_register(void (*fn)(void *addr, size_t len));

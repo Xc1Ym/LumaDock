@@ -12,10 +12,12 @@
 #       block = control section + code area. A program's vertex / pixel stages form a pair. The game's own serialized files (data.unity3d, unity default resources) carry no type trees and borrow the bundles' Shader type tree of the same hash (second pass)
 #       Before 2019.3 (Cuphead, Unity 2017.4; found by armyja, GitHub pull request #2) a subprogram holds one stage: program code = a 0x10 header {?, ?, control length, code length} + control section
 #       + code area, and the stage is not in the code but in the Shader's m_ParsedForm (unity_stages)
+#       Unity 2022 (Ace Attorney Investigations Collection, 2022.3) keeps the 0x60 header in the program code, but the blob also holds parameter entries, which unity_code_blobs leaves out
 #   · MSHD (MercurySteam, Metroid Dread system/shd/*.bshdat): each stage = a control section (+0x20 = control length; sometimes a small compiler option table follows) + the code area starting at the next code header;
 #       NV assembly text follows the first 0x880 bytes of the control section, and SASS disassembly text follows the code area. All 478 files hold "vertex, pixel" in pairs (1, 2 or 4 pairs), paired two by two in order
 #   · G2S (Koei Tecmo's KTGL, Hyrule Warriors: Age of Calamity): GLSLC compiler outputs inside the IDRK entries of the RDB data files (zlib in chunks), see idrk_shaders
 #   · SPKG (the older KTGL of Fire Emblem: Three Houses): shader packages of G2S containers, loose and inside the LINKDATA archive DATA0.bin / DATA1.bin, see kt_shaders and linkdata_jobs
+#   · SDF (Capcom's RE Engine, Monster Hunter Rise): shader definitions inside the PAK archives (KPKA, entries zstd / deflate compressed), only the newest copy of each path, see kpka_jobs and sdf_shaders
 # Code area: 0x30 header + (graphics) 0x50 SPH + instructions; header magic 0x12345678 for graphics, 0x12345679 for compute. The control section starts with 0x98761234, +0x704 = code area length,
 #   +0x700 = start of the c1 constant segment within the code area; for compute +0x748 thread group xyz (u32 ×3), +0x754 shared memory bytes (checked one by one against PC reflection on D2R's 22 compute shaders).
 # Stage: BNSH uses the stage slot; BAHS uses bits 10..13 of SPH word 0 (1 vertex 2 hull 3 domain 4 geometry 5 pixel), and a compute header means compute.
@@ -216,6 +218,71 @@ def linkdata_shaders(path, rel, rng, out):
             off, n, stored, comp = struct.unpack_from('<QQQQ', idx, i * 32)
             if n: kt_shaders(d[off:off + (stored if comp else n)], f'/{rel}#{i}', out)
 
+KPKA = b'KPKA'
+SDF_STAGES = ['vs', 'hs', 'ds', 'gs', 'ps', 'cs']   # an SDF entry's stage offsets, in BNSH order
+def kpka_entries(path):
+    """Capcom's RE Engine PAK (Monster Hunter Rise: re_chunk_000.pak plus 16 .patch_NNN.pak, 19.6 GB): 'KPKA', u8 version 4, u8 0, u16 features (0: the table is not encrypted), u32 count, u32 fingerprint,
+    then count 0x30-byte entries {u32 hash of the lower-case path, u32 hash of the upper-case path, u64 offset, u64 stored length, u64 length, u64 attributes, u64 checksum}.
+    Attribute bits 0-3: 0 stored, 1 raw deflate, 2 zstd. → [(path hash, offset, stored length, length, attributes)]"""
+    with open(path, 'rb') as f:
+        h = f.read(16)
+        if h[:4] != KPKA: return None
+        ver, feat, n = h[4], struct.unpack_from('<H', h, 6)[0], struct.unpack_from('<I', h, 8)[0]
+        if ver != 4 or feat: red(f'{path}: PAK version {ver}, features {feat:#x}: only version 4 with a plain entry table is known')
+        t = f.read(0x30 * n)
+    return [(lo | hi << 32, off, csz, usz, attr) for lo, hi, off, csz, usz, attr, _ in struct.iter_unpack('<IIqqqqQ', t)]
+
+def kpka_data(d, e, head=None):
+    """An entry's data (head: only its first bytes)"""
+    import zlib
+    _, off, csz, usz, attr = e; raw = d[off:off + csz]
+    if attr & 0xf == 0: return raw[:head] if head else raw
+    if attr & 0xf == 1: return zlib.decompressobj(-15).decompress(raw, head or 0)
+    if attr & 0xf == 2:
+        from compression import zstd
+        if not head: return zstd.decompress(raw)
+        return zstd.ZstdDecompressor().decompress(raw, max_length=head)
+    red(f'PAK entry {e[0]:016x}: compression {attr & 0xf} is not known')
+
+def kpka_jobs(files, parts=64):
+    """The game reads its PAKs as one view: a path in a later patch PAK (re_chunk_000.pak.patch_NNN.pak, in name order after re_chunk_000.pak) replaces the same path hash in earlier ones.
+    Only the newest copy of each path is scanned, so shaders of replaced files do not enter the tables. → ([(path, rel, entries), …] in about equal stored sizes, the PAK paths taken)"""
+    paks = [(p, r) for p, r in files if p.endswith('.pak') and kpka_entries(p) is not None]
+    if not paks: return [], set()
+    view = {}
+    for p, r in sorted(paks, key=lambda x: x[1]):
+        for e in kpka_entries(p): view[e[0]] = (p, r, e)
+    jobs, cur, size, step = [], collections.defaultdict(list), 0, sum(e[2] for _, _, e in view.values()) / parts
+    for p, r, e in sorted(view.values(), key=lambda x: (x[1], x[2][1])):
+        cur[(p, r)].append(e); size += e[2]
+        if size >= step: jobs += [(p_, r_, tuple(es)) for (p_, r_), es in cur.items()]; cur, size = collections.defaultdict(list), 0
+    jobs += [(p_, r_, tuple(es)) for (p_, r_), es in cur.items()]
+    return jobs, {p for p, _ in paks}
+
+def sdf_shaders(d, label):
+    """RE Engine shader definition ('SDF\\0', 2,685 entries in Monster Hunter Rise's PAKs): u16 version 1, u16 entry count, u64, then 0x108-byte entries from +0x10. Entry +0x10: six u64 offsets
+    (vertex, hull, domain, geometry, pixel, compute; 0 = no stage), each to {u32 control length, u32 code length} followed by the control section and the code area. Compute code has no header.
+    The stages of one entry form a program, so its vertex / pixel stages are a pair"""
+    ver, n = struct.unpack_from('<HH', d, 4); out = []
+    if not ver and not n: return out   # an empty definition: 16 bytes, version 0, no entries
+    if ver != 1: red(f'{label}: SDF version {ver}')
+    for i in range(n):
+        offs = struct.unpack_from('<6Q', d, 0x10 + 0x108 * i + 0x10)
+        for st, o in zip(SDF_STAGES, offs):
+            if not o: continue
+            nctl, ncode = struct.unpack_from('<II', d, o); ctl, code = d[o + 8:o + 8 + nctl], d[o + 8 + nctl:o + 8 + nctl + ncode]
+            why = check(label, st, ctl, code)
+            if not why and st != 'cs' and SPH_STAGE.get((struct.unpack_from('<I', code, 0x30)[0] >> 10) & 0xf) != st: why = 'the SPH stage does not match the entry slot'
+            if why: red(f'{label} SDF entry {i} {st}: {why}')
+            out.append((f'{label}#SDF#var{i}', st, ctl, code))
+    return out
+
+def kpka_shaders(path, rel, ents, out):
+    import mmap
+    with open(path, 'rb') as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as d:
+        for e in ents:
+            if e[3] >= 0x10 and kpka_data(d, e, 4) == b'SDF\0': out.extend(sdf_shaders(kpka_data(d, e), f'/{rel}#{e[0]:016x}'))
+
 def yaz0(s):
     """Yaz0 decompression (Super Mario 3D World + Bowser's Fury: almost all of RomFS is .szs = SARC wrapped in Yaz0). Pure Python runs at about 20–45 MB/s per core, under a minute for the whole 4.7 GB RomFS in parallel, and needs no extra dependency.
     Group header bits: 1 = one literal byte; 0 = back-reference, 2 bytes {length high nibble, 12-bit distance} (distance + 1); length 0 reads one more byte + 0x12, else + 2. Overlapping copies are expanded by their period"""
@@ -258,7 +325,10 @@ def zs_dicts(romfs):
     a SARC (itself plain zstd) of *.zsdic files, each a zstd dictionary (magic 0xEC30A437, then its ID). → {ID: dictionary}; {} without that file (Mario's .zs are plain zstd)"""
     p = os.path.join(romfs, 'Pack/ZsDic.pack.zs')
     if not os.path.exists(p): return {}
-    from compression import zstd   # Python 3.14+
+    try:
+        from compression import zstd          # Python 3.14+
+    except:
+        from backports import zstd            # pip install backports.zstd
     d = zstd.decompress(open(p, 'rb').read())
     return {struct.unpack_from('<I', m, 4)[0]: m for _, m in sarc_members(d) if m[:4] == bytes.fromhex('37a430ec')}
 
@@ -269,7 +339,10 @@ def unzs(path):
     n, o = (0, 1, 2, 4)[fhd & 3], 6 - (fhd >> 5 & 1)   # dictionary ID size; it follows the window descriptor, which single-segment frames omit
     did = int.from_bytes(d[o:o + n], 'little')
     if not did: return subprocess.run(['zstd', '-d', '-c', '-q', path], capture_output=True, check=True).stdout
-    from compression import zstd
+    try:
+        from compression import zstd          # Python 3.14+
+    except:
+        from backports import zstd            # pip install backports.zstd
     if did not in ZDICTS: red(f'{path}: a frame needs zstd dictionary {did}, which Pack/ZsDic.pack.zs does not have')
     if did not in _ZD: _ZD[did] = zstd.ZstdDict(ZDICTS[did])
     return zstd.decompress(d, zstd_dict=_ZD[did])
@@ -304,6 +377,15 @@ def unity_stages(o):
                 for sp in (p.get(field) or {}).get('m_SubPrograms', []): m.setdefault(sp.get('m_BlobIndex'), st)
     return m
 
+def unity_code_blobs(o):
+    """Shader object → the subprogram indices that hold program code, or None when every entry does (before Unity 2022). Unity 2022 also keeps the parameters of each program in the blob
+    as entries of their own (m_ParameterBlobIndices of each program), and the player's programs are m_PlayerSubPrograms[tier][].m_BlobIndex (Ace Attorney Investigations Collection, Unity 2022.3).
+    Both fields came together: UnityPy's type trees for 2020.3.18 (Engage) and 2021.3 have neither, so older games read every entry as before"""
+    progs = [p.get(f) or {} for sub in (o.get('m_ParsedForm') or {}).get('m_SubShaders', []) for p in sub.get('m_Passes', [])
+             for f in ('progVertex', 'progFragment', 'progGeometry', 'progHull', 'progDomain')]
+    if not any('m_ParameterBlobIndices' in p for p in progs): return None
+    return {sp['m_BlobIndex'] for p in progs for tier in p.get('m_PlayerSubPrograms', []) for sp in tier}
+
 def unity_shaders(d, label, out, trees):
     """Shaders in a UnityFS bundle or serialized file → out; raises NoTree when no type tree is available"""
     import unityfs
@@ -314,7 +396,7 @@ def unity_shaders(d, label, out, trees):
         for cid, pid, o in unityfs.serialized_objects(x, COMMON, {unityfs.CLASS_SHADER}, trees):
             name = o['m_ParsedForm']['m_Name'] if 'm_ParsedForm' in o else o.get('m_Name', '?')
             stages = unity_stages(o)
-            for plat, k, sp in unityfs.shader_programs(o):
+            for plat, k, sp in unityfs.shader_programs(o, unity_code_blobs(o)):
                 where = f'{label}{":" + node if node else ""}#{name}#var{plat}.{k}'
                 code = unityfs.subprogram(sp)[4]
                 out.extend((where, st, ctl, cd) for st, ctl, cd in unity_program(code, where, stages.get(k)))
@@ -365,6 +447,9 @@ def scan_file(args):
     found = []; trees = {}
     if head[:8] == IDRK:
         idrk_shaders(path, '/' + rel, found)
+        return rel, uniq_keys(found), var_pairs(found), trees
+    if len(args) > 2 and head[:4] == KPKA:   # entries of an RE Engine PAK (kpka_jobs)
+        kpka_shaders(path, rel, args[2], found)
         return rel, uniq_keys(found), var_pairs(found), trees
     if len(args) > 2:   # a range of LINKDATA entries (linkdata_jobs)
         linkdata_shaders(path, rel, args[2], found)
@@ -429,7 +514,9 @@ def main():
     # First pass: every file; Unity bundles carry type trees, and the Shader trees are collected on the way. Second pass: Unity serialized files without type trees are scanned again with the borrowed trees
     J = int(os.environ.get('J', '8'))
     big = [j for p, r in files for j in (linkdata_jobs(p, r) or [])]   # Three Houses' 6.9 GB DATA1.bin: one job per range of entries, not one read of the whole file
-    files = [(p, r) for p, r in files if not linkdata_jobs(p, r)]
+    pak_jobs, paks = kpka_jobs(files)   # Monster Hunter Rise's PAKs: the newest copy of each path, in ranges of entries
+    big += pak_jobs
+    files = [(p, r) for p, r in files if not linkdata_jobs(p, r) and p not in paks]
     with cf.ProcessPoolExecutor(J, initializer=_pool_init, initargs=(common, {}, zdicts)) as ex:
         results += list(ex.map(scan_file, big)) + list(ex.map(scan_file, files, chunksize=16))
     trees, defer = {}, []
@@ -471,8 +558,8 @@ def main():
     for name, rr in recs.items():
         with open(os.path.join(pkg, name), 'wb') as f: f.write(b''.join(rr))
     with open(mapout, 'w') as f:
-        kinds = ' / '.join(k for k, hit in (('BNSH / BAHS', any('#BNSH@' in r[4] or '#BAHS@' in r[4] for r in rows)), ('Unity Shader', any('#var' in r[4] and '#BNSH@' not in r[4] and '#MSHD#' not in r[4] for r in rows)),
-                                            ('MSHD', any('#MSHD#' in r[4] for r in rows)), ('GLSLC', any('#GLSLC@' in r[4] for r in rows))) if hit)
+        kinds = ' / '.join(k for k, hit in (('BNSH / BAHS', any('#BNSH@' in r[4] or '#BAHS@' in r[4] for r in rows)), ('Unity Shader', any('#var' in r[4] and '#BNSH@' not in r[4] and '#MSHD#' not in r[4] and '#SDF#' not in r[4] for r in rows)),
+                                            ('MSHD', any('#MSHD#' in r[4] for r in rows)), ('GLSLC', any('#GLSLC@' in r[4] for r in rows)), ('RE Engine SDF', any('#SDF#' in r[4] for r in rows))) if hit)
         f.write(f'# kind: evidence  {NOTE} ({kinds} in RomFS + main) → control section + code area keys (dm/gfx/tools/shader_split.py)\n')
         f.write('# column 5 records where each key first appears; this game has no PC version to pair with\n')
         f.write('package\tindex\tstage\tdm_ctl_sha16\tsource\n')

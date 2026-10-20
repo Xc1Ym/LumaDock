@@ -2,7 +2,7 @@
 from __future__ import annotations
 import contextlib, ctypes, fcntl, hashlib, json, os, re, shutil, signal, subprocess, sys, threading, time, uuid
 from pathlib import Path
-ENGINE_REV = '10b33338a0eac75f45dc1eba23b6aebbe138faa3'
+ENGINE_REV = '4e2dcdc749668ddd4d61361117ad4a6980fabcf7'
 SCHEMA = 1
 class Failure(Exception): pass
 class Cancelled(Exception): pass

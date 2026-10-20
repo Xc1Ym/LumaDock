@@ -18,6 +18,10 @@ pad_layout	full
 # ---- Graphics ----
 # The frame-interval controller (60 fps cuts in patch_nso.py) and dynamic resolution read the GPU time between the frame's two timestamp reports: each report takes its segment's GPU start / end
 gpu_timestamps	segment
+# 60 fps (30 on the Switch): the host decides each frame's step in whole vsyncs and holds the frame that long (rewriter stubs at setWaitVsyncInterval and VFR::updateInterval,
+# patch_nso.py FRAME_STEP); 30 when 60 does not hold, game time = real time. DM_FPS_TARGET=30 (Documents/env.txt on the iPhone) saves power; DM_FRAME_STEP=legacy runs the game's own
+# interval controller with the 60 fps cuts instead
+fps_target	60
 
 # ---- Versions ----
 # only the merged 1.9.0 copy is extracted; the base game's own build IDs are added when needed

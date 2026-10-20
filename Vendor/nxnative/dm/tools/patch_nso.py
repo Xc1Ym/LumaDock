@@ -26,6 +26,11 @@ csz = struct.unpack_from('<III', d, 0x60)
 # The key page stays after bss (the patch area reaches it through ADRP, ±4 GB). Modules below the limit produce output byte-identical to before
 NEAR_PATCH_OFF = ((((segs[2][1] + segs[2][2] + bss + 0x3FFF) & ~0x3FFF) + 0x4000 + 0xFFFF) & ~0xFFFF)   # where an appended patch area would start (as in the else branch below)
 FAR, FRONT = NEAR_PATCH_OFF > 0x7000000, 0x2000000
+# A text segment that ends within 32 MB of the ±128 MB reach (Monster Hunter Rise: 125.3 MB of text) puts the patch area right before the base instead. Its stubs follow the sites in address
+# order, so the last site's stub ends up about as far from it as the text is long. The first pass tries the gap that keeps every site in reach; when the patch area does not fit there
+# (Monster Hunter Rise: 3.6 MB), the rewriter runs again with exactly the size it needs (DM_PATCH_FRONT, set only by that rerun) and B() checks every branch
+BIG_TEXT = FAR and segs[0][2] + FRONT > 0x8000000 - 0x10000
+if BIG_TEXT: FRONT = int(os.environ.get('DM_PATCH_FRONT', '0'), 0) or (0x8000000 - 0x10000 - segs[0][2]) & ~0xFFFF
 IMG = bytearray(segs[2][1] + segs[2][2] + (0 if FAR else bss))
 for i, (fo, mo, sz) in enumerate(segs):
     raw = d[fo:fo + csz[i]]
@@ -163,6 +168,13 @@ CUTS = {
     (0x346430, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000', 'host-only'),
     (0x3464cc, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000', 'host-only'),
   ],
+  # Ace Attorney Investigations Collection 1.0.0.2 (v131072) sdk (SDK 17.5.3): the same node area cut as Engage's. Without it nninitStartup's StandardAllocator::Initialize(nullptr, pool − used)
+  # (main+0x874b6c, virtual address memory) aborts at its first CentralHeap::Init: the 1 GB-aligned region of 3.14 GB did not fit in the 4.375 GB alias region after the node area.
+  # The constructor is at sdk+0x139458 (limit = alias start + 0x3fe00000 at +0x28, a unit heap of 0x30-byte nodes, the area then registered as occupied)
+  '311deab1f062b504f3d646a49ddcd4e8': [
+    (0x139468, '08fca752', '087ca052', 'AddressRegionManager constructor: node area limit mov w8,#0x3fe00000 → mov w8,#0x3e00000', 'host-only'),
+    (0x1394fc, '09fca752', '097ca052', 'AddressRegionManager constructor: length of the node area registered as an occupied region mov w9,#0x3fe00000 → mov w9,#0x3e00000', 'host-only'),
+  ],
   # The Legend of Zelda: Link's Awakening 1.1.0 (v131072) main: the physics step (main+0x15730, main thread) rebuilds each world's PhysX completion task in place
   # (a PxLightCpuTask at world+0xc8) and passes it to simulate. A worker runs it (main+0x10ccf80: fetchResults, world+0x1d8 done = 1, notify, unlock) and then calls its
   # release (main+0x10cd070), which calls the task's own destructor: vtable back to the PxLightCpuTask base, mTm = 0 (main+0x10cced0). At 30 fps the game steps twice
@@ -174,6 +186,37 @@ CUTS = {
   '909e904af78ac1b8deefe97ab2ccdb51': [
     (0x10cd070, '080040f9', 'c0035fd6', 'physics completion task release (calls its own destructor): ldr x8,[x0] → ret (no longer destroyed; the step function rebuilds it in place every step)', 'host-only'),
   ],
+  # Fire Emblem: Three Houses 1.2.0 (v327680) main: 60 fps. KTGL runs the game on the main thread at 60 updates a second whatever it shows: each update steps by
+  # 1/fps with fps = 60.0 (main+0x1a38f08, set at main+0x50e114; dt at main+0x510010), and the frame end (main+0x50f680) waits out 60/fps ticks of 1/59.94 s in a yield loop
+  # (main+0x5be430). The render thread (main+0x50f8c0) draws the latest update and presents with the interval of the render mode (frame +0xbb84, set at main+0x50f3d0:
+  # 0 = 1080p docked, 2 = 720p handheld; 3 / 5 their two-view variants; 1 and 4 are 720p / 1080p modes at interval 1 that nothing selects). Measured on the Mac: 59.2 updates
+  # and 29.8 presents a second. The per-mode interval table (int at main+0xd13de0, read by main+0x4b0420 for the present and by the 6-tick fade counter in main+0x4b7530;
+  # float at main+0xd13e40, the per-frame scroll step in main+0x4c2b30) becomes 1 for every mode, as in modes 1 and 4: every update is shown and the render thread's
+  # own steps stay at the same speed. Resolutions stay per mode
+  '89048449ba238c8cf565518b83bf02d3': [
+    (0xd13de0, '020000000100000002000000020000000100000002000000', '010000000100000001000000010000000100000001000000', 'per-render-mode present interval table {2,1,2,2,1,2} → all 1 (60 fps; the game logic already runs at 60 updates a second)', 'host-only'),
+    (0xd13e40, '000000400000803f00000040000000400000803f00000040', '0000803f0000803f0000803f0000803f0000803f0000803f', 'per-render-mode interval as float {2.0,1.0,2.0,2.0,1.0,2.0} → all 1.0 (render-thread per-frame steps)', 'host-only'),
+    # The render thread still presents with interval 2 while either of two flags is set: main+0x21c9a03, a full-screen image drawn before the frame (main+0x4b4908: the opening movie),
+    # and frame +0xc55f / +0xc560 (from the object at app +0x40: the character creation screen after the movie, and so on). In the engine's own 60 fps modes this traded 60 fps for
+    # resolution in those scenes (main+0x50f7d0 drops 720p mode 1 to 1080p mode 0); here it would show them at 30 with the render thread's own steps at half speed. Both are ignored
+    (0x50fb7c, '2801082a', 'e8031f2a', 'render thread forced interval 2: orr w8,w9,w8 (either flag) → mov w8,wzr (the mode\'s interval, 1)', 'host-only'),
+    # The frame limiter's wait (main+0x5be430: yield, read the tick, until 60/fps ticks of 1/59.94 s have passed since the last frame end; x8 = time passed and x23 = target, in 100 ns)
+    # is a busy loop on the host: the yield back-off spins its first 2 ms on a performance core and then oversleeps by up to 250 µs, so frames took 16.8 ms (59.5 fps, a repeated
+    # display frame every 2 s) and CPU energy went from 0.16 W at 30 fps to 1.5 W on the Mac. The yield becomes nn::os::SleepThread of 96% of the time left, and the loop goes back to
+    # the limiter's own tick read and comparison at main+0x5be44c (the instructions after the b are no longer reached); the host's sleep never oversleeps, so the frames take 16.68 ms
+    (0x5be4c0, '20fa1494', 'e00208cb', 'frame limiter wait: bl YieldThread → sub x0,x23,x8 (time left, 100 ns units)', 'host-only'),
+    (0x5be4c4, 'bbf71494', '01e87bd3', 'frame limiter wait: bl GetSystemTick → lsl x1,x0,#5', 'host-only'),
+    (0x5be4c8, '680240f9', '2018008b', 'frame limiter wait: ldr x8,[x19] → add x0,x1,x0,lsl #6 (96 ns per 100 ns left)', 'host-only'),
+    (0x5be4cc, '080008cb', '8df71494', 'frame limiter wait: sub x8,x0,x8 → bl nn::os::SleepThread (PLT main+0xafc300)', 'host-only'),
+    (0x5be4d0, '087d149b', 'dfffff17', 'frame limiter wait: mul x8,x8,x20 → b main+0x5be44c (read the tick and compare again)', 'host-only'),
+    # The render thread waits for the next update with KTGL's event wait (main+0xaa90e0, timeout in µs: × 1000 → nn::os::TimedWaitEvent) and passes 1/fps × 1000 = 16, one frame in ms,
+    # so it polls every 16 µs: at 60 fps it draws in about 3 ms and then polled for the rest of the frame (42,000–53,000 wakeups a second on the Mac, against 1,200 at 30 fps, where
+    # it waited in the present instead). The other four callers wait without a timeout. The timeout becomes 1000/fps × 1000 = 16,666 µs (s8 = 1000.0, loaded first)
+    (0x50f8e8, '01102e1e', '483d0090', 'render thread wait timeout: fmov s1,#1.0 → adrp x8,#0xcb7000', 'host-only'),
+    (0x50f8ec, '2018201e', '08514bbd', 'render thread wait timeout: fdiv s0,s1,s0 → ldr s8,[x8,#0xb50] (1000.0)', 'host-only'),
+    (0x50f8f0, '483d0090', '0019201e', 'render thread wait timeout: adrp x8,#0xcb7000 → fdiv s0,s8,s0 (1000/fps; the fmul by s8 that follows makes it µs)', 'host-only'),
+    (0x50f8f4, '08514bbd', '1f2003d5', 'render thread wait timeout: ldr s8,[x8,#0xb50] → nop (moved up)', 'host-only'),
+  ],
   # Hyrule Warriors: Age of Calamity 1.3.0 (v327680) main: the init (main+0x8d9610) hands the KTSL sound engine three heaps carved from one block: 15 MB engine memory, 2 MB, and
   # 142 MB sound data (sizes built by mov x8,#0xf00000; movk x8,#0x20,lsl #48 and mov w9,#0x8e00000; constructor main+0x12647a0, heaps created at main+0x1a2ba58). The audio renderer
   # work buffer in the 15 MB heap is 0x760000 (the SDK's AudioRenderSystem::GetWorkBufferSize, 0x40a9c8 of it command buffer), and the engine's setup asks for about 16.9 MB in
@@ -183,6 +226,14 @@ CUTS = {
   'c3cf52bf2b05d7310884971b50bcccb8': [
     (0x8d9610, '081ea0d2', '0826a0d2', 'sound engine heap: mov x8,#0xf00000 → mov x8,#0x1300000 (+4 MB)'),
     (0x8d9618, '091ca152', '0914a152', 'sound data heap: mov w9,#0x8e00000 → mov w9,#0x8a00000 (-4 MB; the block the three heaps come from keeps its total size)'),
+    # 60 fps. nnMain builds KTGL's device config on its stack and inits the device once (main+0x8d94c4 → main+0x17c34f0): {1920, 1080, 3, 9, 5, interval 2, 9, …}. The device
+    # keeps the interval (main+0x17c4ba8 → device +0x2aa4, passed to every present at main+0x17ced78, which sets it on the window when it changes) and its frame rate,
+    # 59.94 / interval (main+0x17c37c8 → device +0x32d0), which the game steps its time by (the event scripts at main+0x7802c4: timescale / frame rate). Forcing interval 1 at the
+    # present alone would keep the 1/29.97 step at 60 frames a second. With interval 1 in the config the device runs the engine's own 60 fps mode: frame rate 59.94, interval 1
+    (0x8d94b0, '4900c0f2', '2900c0f2', 'KTGL device config present interval: movk x9,#0x2,lsl #32 → #0x1 (60 fps; the device frame rate becomes 59.94 / 1)', 'host-only'),
+    # The frame itself is paced by a KIDS task (main+0x166d9c0, on a KIDSTaskScheduler thread): it waits until 1 / fps has passed since the last frame (tick frequency / fps,
+    # SleepThread and a poll), then steps the game by the time that really passed (+0x24, seconds). fps (+0x30) is 30, from engine data (main+0x166daa4)
+    (0x166db80, '14159f1a', '94078052', 'KIDS frame task wait: csinc w20,w8,wzr,ne (fps, at least 1) → mov w20,#60 (wait 1/60 s; the step stays the measured time)', 'host-only'),
   ],
 }
 # ---- Registered observation gates: {NSO build ID: [(offset, number, original instruction word, reason)]}. Numbers match OBS_* in the host's hle.h;
@@ -455,6 +506,12 @@ def site_blr(ins):
     emit(ADRP(30, here(), ret)); emit(ADDI(30, 30, ret & 0xFFF)); emit(BR(16))
     return start
 
+def site_br_call(ins):
+    """br x18 as an indirect tail call (tail_call): x16 = guest x18, br x16. As at site_blr, x16 / x17 are intra-procedure-call temporaries at a call, and x30 keeps the caller's return address"""
+    start = here()
+    emit(MRS_TPIDRRO(16)); emit_slot_addr(16, 17, 'K18'); emit(LDRX(16, 16)); emit(BR(16))
+    return start
+
 def site_sysreg_read(ins, kind):
     """mrs xN, tpidr_el0 / tpidrro_el0 → xN = thread slot value."""
     N = ins.bytes[0] & 31
@@ -655,7 +712,7 @@ import bisect
 def func_of(a):
     i = bisect.bisect_right(starts, a) - 1
     return (starts[i], starts[i + 1] if i + 1 < len(starts) else TEXT_END) if i >= 0 else (a, a + 4)
-done = set(); windows = []; jumps = {}; tabjumps = {}; retries = []
+done = set(); windows = []; jumps = {}; tabjumps = {}; tailcalls = set(); retries = []
 def jump_offsets(insl, j):
     """The br x18 is preceded by the offset-table form (Engage main+0x12eec94): cmp w18,#N; b.hi; ldrsw x18,[xB,x18,lsl #2]; add x18,x18,xB.
     The index may be another register, and the bounds check may be on a register copied into it: Link's Awakening's GLSLC (subsdk0+0x1be6e8) has
@@ -751,9 +808,25 @@ def jump_adr_offsets(insl, j):
         ok = [tb for tb in sorted(cands) if (t := targets(tb)) and all(fa <= x < fb and x % 4 == 0 for x in t)]
         return targets(ok[0]) if len(ok) == 1 else None
     return None
+def tail_call(insl, j):
+    """The br x18 is an indirect tail call, not a jump table: the last write of x18 before it is a plain pointer load and the br ends the function. Ace Attorney Investigations Collection
+    (Unity 2022.3 IL2CPP) main+0x1d271bc: ldr x18,[x0,#0x18]; ...; ldr x16,[sp]; ...; br x18, a thunk that moves stack arguments and jumps to the method pointer at +0x18"""
+    if j + 1 != len(insl): return False
+    for p in reversed(insl[:j]):
+        if 'x18' not in [p.reg_name(r) for r in p.regs_access()[1]]: continue
+        return p.mnemonic == 'ldr' and bool(re.fullmatch(r'x18, \[(x\d+|sp)(, #(0x[0-9a-f]+|\d+))?\]', p.op_str))
+    return False
+def disasm_fn(fa, fb):
+    """A function's instructions. Capstone stops at the first word it cannot decode, so go on after it: Monster Hunter Rise main+0x6b34540 is a trap word (0xe7ffdefe)
+    in the middle of a function, and the br x18 jump table after it (main+0x6b346d0) was never seen"""
+    out, a = [], fa
+    while a < fb:
+        l = list(md.disasm(bytes(IMG[a:fb]), a))
+        out += l; a = (l[-1].address + 4 if l else a) + 4
+    return out
 funcs = sorted({func_of(a) for a, (k, _) in kinds.items() if k == 'x18'})
 for fa, fb in funcs:
-    insl = list(md.disasm(bytes(IMG[fa:fb]), fa))
+    insl = disasm_fn(fa, fb)
     ws = find_windows(insl)
     for wseg in ws:
         windows.append(wseg); done |= {x.address for x in wseg}
@@ -775,6 +848,7 @@ for fa, fb in funcs:
                     break
             if not (base and width):
                 tgt = jump_offsets(insl, j) or jump_adr_offsets(insl, j)
+                if not tgt and tail_call(insl, j): tailcalls.add(ins.address); continue
                 assert tgt, f'jump table {ins.address:x}'
                 tabjumps[ins.address] = tgt; continue
             jumps[ins.address] = (base, width)
@@ -808,7 +882,8 @@ for a in sorted(kinds):
     ins = dis(struct.unpack_from('<I', IMG, a)[0], a)
     if k == 'x18':
         m = ins.mnemonic
-        if m == 'br': st = site_br_tab(ins, tabjumps[a]) if a in tabjumps else site_br(ins, *jumps[a]); stat('br')
+        if m == 'br' and a in tailcalls: st = site_br_call(ins); stat('br_call')
+        elif m == 'br': st = site_br_tab(ins, tabjumps[a]) if a in tabjumps else site_br(ins, *jumps[a]); stat('br')
         elif m in ('cbz', 'cbnz', 'tbz', 'tbnz'): st = site_cond(ins); stat('cond')
         elif m in ('adr', 'adrp'): st = site_pcrel(ins); stat('pcrel')
         elif m == 'blr': st = site_blr(ins); stat('blr')
@@ -990,6 +1065,239 @@ for oa, wa, ob_, wb, r, key, why in params:
     emit(STUR(tmp, 31, -16)); emit(MRS_TPIDRRO(r)); emit_slot_addr(r, tmp, key); emit(LDRX(r, r)); emit(LDUR(tmp, 31, -16)); emit(B(here(), oa + 4))
     struct.pack_into('<I', IMG, oa, B(oa, start)); struct.pack_into('<I', IMG, ob_, NOP); stat('param')
 
+# ---- Frame step in whole vsyncs (The Legend of Zelda: Tears of the Kingdom 1.4.3 and Breath of the Wild 1.9.0 main, host only) ----
+# Both games step their game time by a whole number of vsyncs (1/60 s) per frame that their own interval logic picks. With the stubs the host picks it (hle_nvn.c fstep_tick,
+# nvn_fstep.h): the step is the number of vsyncs the host keeps the frame on screen (1 = 60 fps, 2 = 30 when 60 does not hold), plus one while the game is behind real time after
+# a late frame, so motion is even and game time = real time. The steps stay values the games' own logic uses (1 to 3).
+# State page = the page after the key page (zero in the file, read-write in both loaders): +0 float target fps written by the loader (fps_target, DM_FPS_TARGET; 0 = every stub
+# runs the original instructions), +4 TOTK movie flag, +8 double lead (TOTK legacy), +0x10 float render scale (TOTK, below), +0x18 double game seconds (TOTK legacy),
+# +0x20 u32 step in vsyncs (host; 0 = not decided yet), +0x24 u32 a step the game fixes itself (BotW's VFR override; 0 = none), +0x28 u32 mode (loader: 0 = whole vsyncs, 1 = legacy),
+# +0x30 u64 vsyncs stepped (the stubs; logged by the host to check the game's speed). Legacy (DM_FRAME_STEP=legacy, profile frame_step) is each game's earlier method, kept for
+# the iPhone A/B test: TOTK's elapsed-time step (below); for BotW the loader writes target 0 (its own interval controller with the 60 fps cuts above). The value per build is
+# whether legacy keeps the state page on (fixups FPS_LEGACY_ELAPSED). Stub bodies assembled with clang
+FRAME_STEP = {'277178b7dba1b6d4949a84778d4abc58': 1, 'cd57b23fa4bbad65803d9788c01821ee': 0}
+FS_STATE_OFF = 0
+if BUILD_ID in FRAME_STEP and NAME == 'main':
+    FS_STATE_OFF = KEY_PAGE_OFF + 0x4000
+    assert not FAR and FS_STATE_OFF % 0x1000 == 0 and FS_STATE_OFF + 0x40 <= PATCH_OFF and not any(IMG[FS_STATE_OFF:]), 'frame step state page'
+    def fs_site(off, orig):
+        ob = bytes.fromhex(orig)
+        assert IMG[off:off + len(ob)] == ob, f'frame step original bytes mismatch {off:#x}: {bytes(IMG[off:off + len(ob)]).hex()}'
+        for o in range(off, off + len(ob), 4):
+            assert o not in kinds and not any(seg[0].address <= o < seg[-1].address + 4 for seg in windows), f'frame step site is a rewrite site {o:#x}'
+    def fs_put(off, words, why):
+        old = bytes(IMG[off:off + 4 * len(words)])
+        for i, w in enumerate(words): struct.pack_into('<I', IMG, off + 4 * i, w)
+        cuts.append((off, old.hex(), bytes(IMG[off:off + 4 * len(words)]).hex(), why, 'host-only')); stat('frame_step')
+# Tears of the Kingdom picks a present interval each frame (main+0x2db174: 2 = 30 fps, 3 under load) and steps its game time by 60 / fps (int fps at timing +0x50, read at main+0x2daa54
+# and main+0x3e562c). The stub replaces that logic: int fps = 60 / step, and the float fps (timing +0x24, unused, per masagrator's FPSLocker config for this build, which found the
+# sites) the same, which the consumers read. Legacy: the step is the measured frame time (timing frame +0xd8, 19.2 MHz ticks), clamped to [1 / cap, 1 / 15 s]; game time that ran
+# ahead after a short frame (the "lead", at most 0.25 s; totk-mobile) is paid back by later frames. Prerendered movies set a 30 cap (flag set and cleared around main+0x2b36100 /
+# main+0x2b33918), the D-pad menu fade starts at full rate (FPSLocker's fix at main+0x1fbc80) and the swapchain argument at main+0xbe14a8 becomes 1 as in FPSLocker
+if FS_STATE_OFF and BUILD_ID == '277178b7dba1b6d4949a84778d4abc58':
+    # frame step (replaces ldrb w9,[x0,#0x58], the first instruction after the prologue)
+    fs_site(0x2db18c, '09604139')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
+    for w in (0xbd400200,   # ldr s0,[x16]           target fps
+              0x1e202008,   # fcmp s0,#0.0
+              0x54000680,   # b.eq off (+52)        target 0: original path
+              0xb9402a02,   # ldr w2,[x16,#0x28]     mode
+              0x350001e2,   # cbnz w2,elapsed (+15)  legacy
+              0xb9402202,   # ldr w2,[x16,#0x20]     step in vsyncs
+              0x340001a2,   # cbz w2,elapsed (+13)   not decided yet
+              0x1e230041,   # ucvtf s1,w2
+              0x1e27d003,   # fmov s3,#30.0
+              0x1e211872,   # fdiv s18,s3,s1
+              0x1e322a52,   # fadd s18,s18,s18       fps = 60 / step
+              0xbd002412,   # str s18,[x0,#0x24]     float fps
+              0x52800785,   # mov w5,#60
+              0x1ac208a5,   # udiv w5,w5,w2
+              0xb9005005,   # str w5,[x0,#0x50]      integer fps
+              0xf9401a04,   # ldr x4,[x16,#0x30]
+              0x8b224084,   # add x4,x4,w2,uxtw
+              0xf9001a04):  # str x4,[x16,#0x30]     vsyncs stepped
+        emit(w)
+    emit(B(here(), 0x2db284))                                       # the original epilogue
+    for w in (0xf9406c22,   # elapsed: ldr x2,[x1,#0xd8]  last frame time in 19.2 MHz ticks
+              0x9e630041,   # ucvtf d1,x2
+              0x529f0003,   # mov w3,#0xf800
+              0x72a02483,   # movk w3,#0x124,lsl #16 (19,200,000)
+              0x1e630062,   # ucvtf d2,w3
+              0x1e621821,   # fdiv d1,d1,d2          elapsed seconds
+              0xb9400604,   # ldr w4,[x16,#4]        movie flag
+              0x1e27d003,   # fmov s3,#30.0
+              0x7100009f,   # cmp w4,#0
+              0x1e201c60,   # fcsel s0,s3,s0,ne      cap = movie ? 30 : target
+              0x1e22c000,   # fcvt d0,s0
+              0x1e6e1003,   # fmov d3,#1.0
+              0x1e601864,   # fdiv d4,d3,d0          shortest step 1 / cap
+              0x1e65d005,   # fmov d5,#15.0
+              0x1e651865,   # fdiv d5,d3,d5          longest step 1 / 15
+              0xfd400606,   # ldr d6,[x16,#8]        lead
+              0x1e663827,   # fsub d7,d1,d6
+              0x1e6448e7,   # fmax d7,d7,d4
+              0x1e6558e7,   # fmin d7,d7,d5          step = clamp(elapsed - lead)
+              0x1e6728c6,   # fadd d6,d6,d7
+              0x1e6138c6,   # fsub d6,d6,d1          lead += step - elapsed
+              0x2f00e410,   # movi d16,#0
+              0x1e7048c6,   # fmax d6,d6,d16
+              0x1e6a1011,   # fmov d17,#0.25
+              0x1e7158c6,   # fmin d6,d6,d17         lead in [0, 0.25]
+              0xfd000606,   # str d6,[x16,#8]
+              0x1e671872,   # fdiv d18,d3,d7         fps = 1 / step
+              0x1e624252,   # fcvt s18,d18
+              0xbd002412,   # str s18,[x0,#0x24]     float fps
+              0x1e380245,   # fcvtzs w5,s18
+              0xb9005005,   # str w5,[x0,#0x50]      integer fps
+              0xfd400e13,   # ldr d19,[x16,#0x18]
+              0x1e672a73,   # fadd d19,d19,d7
+              0xfd000e13):  # str d19,[x16,#0x18]    game seconds stepped
+        emit(w)
+    emit(B(here(), 0x2db284))                                       # the original epilogue
+    emit(0x39416009); emit(B(here(), 0x2db190))                     # off: ldrb w9,[x0,#0x58]; back
+    fs_put(0x2db18c, [B(0x2db18c, start)], 'frame step from the host in whole vsyncs, legacy by elapsed time (state page target fps; 0 = original interval logic)')
+    # the two readers of the integer fps: float fps when on; the scvtf a few instructions later moves into the stub (s0 is not touched in between)
+    for site, cvt, r in ((0x2daa54, 0x2daa6c, 19), (0x3e562c, 0x3e5638, 22)):
+        fs_site(site, struct.pack('<I', 0xbd425000 | r << 5).hex()); fs_site(cvt, '00d8215e')
+        start = here(); emit(STP_PRE(16, 17, 31, -16)); emit(ADRP(16, here(), FS_STATE_OFF))
+        for w in (0xb9400211,                # ldr w17,[x16]
+                  0x34000071,                # cbz w17,off (+12)
+                  0xbd422400 | r << 5,       # ldr s0,[xR,#0x224]  float fps
+                  0x14000003,                # b done (+12)
+                  0xbd425000 | r << 5,       # off: ldr s0,[xR,#0x250]  integer fps
+                  0x5e21d800,                # scvtf s0,s0
+                  0xa8c147f0):               # done: ldp x16,x17,[sp],#16
+            emit(w)
+        emit(B(here(), site + 4))
+        fs_put(site, [B(site, start)], 'game step reads the float fps (original integer fps and scvtf when off)')
+        fs_put(cvt, [NOP], 'scvtf moved into the stub at the load')
+    # D-pad menu fade (w8 is overwritten right after the site)
+    fs_site(0x1fbc80, '0820201e0a04081f')
+    start = here(); emit(ADRP(8, here(), FS_STATE_OFF))
+    for w in (0xb9400108, 0x340001a8,       # ldr w8,[x8]; cbz w8,off (+52)
+              0x1e202028, 0x54000101,       # fcmp s1,#0.0; b.ne go
+              0x785fa308, 0x7100151f, 0x540000a1,   # ldurh w8,[x24,#-6]; cmp w8,#5; b.ne go
+              0x785f8308, 0x7100151f, 0x54000041,   # ldurh w8,[x24,#-8]; cmp w8,#5; b.ne go
+              0x1e2e1008,                   # fmov s8,#1.0
+              0x1f08040a, 0x1e202008, 0x14000003,   # go: fmadd s10,s0,s8,s1; fcmp s0,#0.0; b end
+              0x1e202008, 0x1f08040a):      # off: the original fcmp s0,#0.0; fmadd s10,s0,s8,s1
+        emit(w)
+    emit(B(here(), 0x1fbc88))
+    fs_put(0x1fbc80, [B(0x1fbc80, start), NOP], 'D-pad menu fade starts at full rate under fractional steps (FPSLocker)')
+    # swapchain argument (x16 is dead before the bl that follows)
+    fs_site(0xbe14a8, '61a24039')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
+    for w in (0xb9400210, 0x34000070, 0x52800021, 0x14000002, 0x3940a261):   # ldr w16,[x16]; cbz w16,off; mov w1,#1; b end; off: ldrb w1,[x19,#0x28]
+        emit(w)
+    emit(B(here(), 0xbe14ac))
+    fs_put(0xbe14a8, [B(0xbe14a8, start)], 'swapchain argument 1 when on (FPSLocker)')
+    # prerendered movie start and end set and clear the flag (x16 / x17 are free at a call)
+    fs_site(0x2b36100, 'b6f37097'); fs_site(0x2b33918, 'de170214')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF)); emit(0x52800031); emit(0xb9000611); emit(B(here(), 0x772fd8))   # mov w17,#1; str w17,[x16,#4]; tail call
+    fs_put(0x2b36100, [B(0x2b36100, start) | 0x80000000], 'movie starts: 30 fps cap')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF)); emit(0xb900061f); emit(B(here(), 0x2bb9890))                     # str wzr,[x16,#4]; tail call
+    fs_put(0x2b33918, [B(0x2b33918, start)], 'movie ends')
+    # Render scale (state +0x10, float written by the loader: DM_RENDER_SCALE, 1.0 by default). main+0xd5c24 sizes each view: screen size x the view's scale (5/6 for the scene: 1600x896
+    # docked) x the dynamic-resolution multiplier, clamped to 8..16384 and floored to the view's alignment. The stub multiplies both extents by the factor (s6, w8 and the flags are dead
+    # at main+0xd5cc0: s6 is set to 8.0 right after); any factor but 1.0 also replaces the dynamic multiplier (main+0xd5d80) with 1, so the size is fixed. 1.0 = bit-exact original
+    fs_site(0xd5cc0, '08d0a8524008251e6108241e0401271e'); fs_site(0xd5d80, '062940bd')
+    start = here(); emit(ADRP(8, here(), FS_STATE_OFF))
+    for w in (0xbd401106,   # ldr s6,[x8,#0x10]   render scale
+              0x1e250840,   # fmul s0,s2,s5       (original)
+              0x1e240861,   # fmul s1,s3,s4       (original)
+              0x1e2020c8,   # fcmp s6,#0.0
+              0x5400006d,   # b.le skip (+12)     not set
+              0x1e260800,   # fmul s0,s0,s6
+              0x1e260821,   # fmul s1,s1,s6
+              0x52a8d008,   # skip: mov w8,#0x46800000 (original)
+              0x1e270104):  # fmov s4,w8          (original)
+        emit(w)
+    emit(B(here(), 0xd5cd0))
+    fs_put(0xd5cc0, [B(0xd5cc0, start)], 'view render size x the host render scale (1.0 = original)')
+    start = here(); emit(0xbd402906); emit(ADRP(8, here(), FS_STATE_OFF))   # ldr s6,[x8,#0x28] (original: the dynamic multiplier); x8 is dead after it
+    for w in (0xbd401107,   # ldr s7,[x8,#0x10]
+              0x1e2e1010,   # fmov s16,#1.0
+              0x1e3020e0,   # fcmp s7,s16
+              0x54000080,   # b.eq done (+16)     scale 1: the game's dynamic resolution
+              0x1e2020e8,   # fcmp s7,#0.0
+              0x5400004d,   # b.le done (+8)      not set
+              0x1e204206):  # fmov s6,s16         a fixed scale: no dynamic multiplier
+        emit(w)
+    emit(B(here(), 0xd5d84))
+    fs_put(0xd5d80, [B(0xd5d80, start)], 'dynamic resolution only at render scale 1.0')
+# Breath of the Wild: the framework's interval controller (the 60 fps cuts above) hands its interval to setWaitVsyncInterval (main+0x11269b8), which the main loop calls once a frame
+# (main+0x11267c0); the framework keeps it at fw+0x244 (getter vtable +0x138, read by both callers of VFR::updateInterval and directly in 43 places) and passes it on to
+# nvnWindowSetPresentInterval. The stub at the setter's entry replaces it with the host's step, read once a frame: ksys::VFR::updateInterval (main+0x151d3d0, x0 = the VFR at
+# [main+0x1e93890]; called from GameScene::calc and the per-frame delegate main+0x1280f80) takes the framework's interval in the next frame (ratio = step / 2, base interval 2, and the
+# int interval that 16 pieces of logic read), so the time step and everything else that reads the interval agree. The step is not written into the VFR call itself: the game presents
+# on its own thread, so the host's step can change between the two VFR calls of a frame. The VFR's own override (+0x29 flag, +0x2c interval: 2 at main+0xc3b588 and main+0xc5ebf8,
+# 1 at main+0xc609d8, set and cleared by game scenes) wins in the VFR:
+# a stub there publishes it at state +0x24 so the host holds frames that long, and the setter stub leaves the framework's interval to the game while it is set. x16 / x17 are free
+# at both entries
+if FS_STATE_OFF and BUILD_ID == 'cd57b23fa4bbad65803d9788c01821ee':
+    fs_site(0x11269b8, 'fd7bbea9'); fs_site(0x151d3d0, 'fd7bbea9')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
+    for w in (0xb9400211,   # ldr w17,[x16]          target fps (0 = off)
+              0x340001d1,   # cbz w17,orig (+14)
+              0xb9402a11,   # ldr w17,[x16,#0x28]    mode
+              0x35000191):  # cbnz w17,orig (+12)    legacy
+        emit(w)
+    emit(ADRP(17, here(), 0x1e93890)); emit(LDRX(17, 17, 0x890 // 8))   # the VFR
+    for w in (0xb4000131,   # cbz x17,orig (+9)
+              0x3940a631,   # ldrb w17,[x17,#0x29]   the VFR's override
+              0x350000f1,   # cbnz w17,orig (+7)     the framework keeps the game's interval
+              0xb9402211,   # ldr w17,[x16,#0x20]    step in vsyncs
+              0x340000b1,   # cbz w17,orig (+5)      not decided yet
+              0x2a1103e1,   # mov w1,w17
+              0xf9401a11,   # ldr x17,[x16,#0x30]
+              0x8b214231,   # add x17,x17,w1,uxtw
+              0xf9001a11,   # str x17,[x16,#0x30]    vsyncs stepped
+              0xa9be7bfd):  # orig: stp x29,x30,[sp,#-0x20]!
+        emit(w)
+    emit(B(here(), 0x11269bc))
+    fs_put(0x11269b8, [B(0x11269b8, start)], 'setWaitVsyncInterval: the host\'s step unless the VFR override is set (state page target fps; 0 = the game\'s interval)')
+    start = here(); emit(ADRP(16, here(), FS_STATE_OFF))
+    for w in (0xb9400211,   # ldr w17,[x16]          target fps (0 = off)
+              0x340000f1,   # cbz w17,orig (+7)
+              0xb9402a11,   # ldr w17,[x16,#0x28]    mode
+              0x350000b1,   # cbnz w17,orig (+5)     legacy
+              0x3940a411,   # ldrb w17,[x0,#0x29]    the VFR's override
+              0x34000051,   # cbz w17,pub (+2)       none: 0
+              0xb9402c11,   # ldr w17,[x0,#0x2c]
+              0xb9002611,   # pub: str w17,[x16,#0x24]  the game's own step: the host holds frames that long
+              0xa9be7bfd):  # orig: stp x29,x30,[sp,#-0x20]!
+        emit(w)
+    emit(B(here(), 0x151d3d4))
+    fs_put(0x151d3d0, [B(0x151d3d0, start)], 'VFR::updateInterval: its own override published for the host (state page target fps; 0 = original)')
+    # Render scale (state +0x10, float written by the loader: DM_RENDER_SCALE, 1.0 by default; independent of the frame step). The dynamic-resolution method (main+0x12666e4) keeps a
+    # scale in 0.8–1.0 rounded to 0.05 steps (+0x1218, main+0x1266818), or the game's forced 0.75 / 0.5 (+0x284 & 0x1800), in s8; from main+0x1266880 it applies s8: each view's
+    # scale (+0x28a0 / +0x28a4 = s8 × base width (+0x1214: 1600 docked, 1280 handheld) / output width), from which the scene buffers are sized each frame (main+0x106340c), the
+    # shader ratio uking_dynamic_resolution_ratio and the other readers (main+0xc3c3f4, an LOD check at main+0x14126b4). Setting s8 there keeps them all consistent (a multiply in the
+    # size function, TOTK's way, would leave the ratio and those readers at the old scale). The apply block runs only when the dynamic path has just recomputed the scale (+0x280 bit 4,
+    # set at main+0x1266830) or in a forced mode, else main+0x126686c skips it; with a factor it is taken every frame, as in the dynamic mode, so the factor holds with dynamic
+    # resolution off too. Factors above 1.0 are refused by the loader: the per-frame texture pool's size is unknown. x8, s0, s1 and the flags are dead at both sites
+    fs_site(0x1266880, '88ae40f9'); fs_site(0x126686c, struct.pack('<I', B(0x126686c, 0x1266950)).hex())
+    apply = here(); emit(ADRP(8, here(), FS_STATE_OFF))
+    for w in (0xbd401100,   # ldr s0,[x8,#0x10]      render scale
+              0x1e202008,   # fcmp s0,#0.0
+              0x540000ad,   # b.le orig (+5)         not set
+              0x1e2e1001,   # fmov s1,#1.0
+              0x1e212000,   # fcmp s0,s1
+              0x54000040,   # b.eq orig (+2)         1.0: the game's own scale
+              0x1e204008,   # fmov s8,s0             the host's scale
+              0xf940ae88):  # orig: ldr x8,[x20,#0x158]
+        emit(w)
+    emit(B(here(), 0x1266884))
+    fs_put(0x1266880, [B(0x1266880, apply)], '3D view scale = the host render scale (1.0 = the game\'s dynamic resolution)')
+    start = here(); emit(ADRP(8, here(), FS_STATE_OFF))
+    for w in (0xb9401108,   # ldr w8,[x8,#0x10]      render scale (float bits)
+              0x34000088,   # cbz w8,skip (+4)       not set
+              0x52091908,   # eor w8,w8,#0x3f800000
+              0x34000048):  # cbz w8,skip (+2)       1.0
+        emit(w)
+    emit(B(here(), 0x1266880)); emit(B(here(), 0x1266950))   # apply the host's scale; skip: the original branch
+    fs_put(0x126686c, [B(0x126686c, start)], 'scale apply block taken every frame when the host render scale is not 1.0')
+
 # The three existing native rule trampolines all use only the dead temporary w8 that is overwritten afterwards, and do not change the w0/stat return, sp or NZCV.
 # 6c6290 is after the original mode3 gate; the Blaze / reference count and data invalidation 6c62dc branches before it and the state update after it are untouched.
 rule_blocks = []
@@ -1030,6 +1338,10 @@ if RULE_RUN:
 os.makedirs(outdir, exist_ok=True)
 P = lambda ext: os.path.join(outdir, f'{NAME}.{ext}')
 if FAR:   # patch area before the base: file = text + ro + data (padded to 16K) + patch area
+    if BIG_TEXT and len(patch) > FRONT - 0x4000 and 'DM_PATCH_FRONT' not in os.environ:
+        need = (len(patch) + 0x4000 + 0xFFFF) & ~0xFFFF
+        print(f'{NAME}: patch area of {len(patch):#x} bytes does not fit in {FRONT:#x} before the base; rewriting again with {need:#x}', flush=True)
+        os.execve(sys.executable, [sys.executable] + sys.argv, dict(os.environ, DM_PATCH_FRONT=hex(need)))
     assert len(patch) <= FRONT - 0x4000, f'patch area of {len(patch):#x} bytes does not fit in the {FRONT:#x} before the base'
     open(P('patched.bin'), 'wb').write(IMG + bytearray(FILE_IMAGE_LEN - len(IMG)) + patch)
 else:
@@ -1051,6 +1363,7 @@ with open(P('fixups.tsv'), 'w') as f:
     f.write(f'# PATCH_OFF\t{PATCH_OFF:#x}\n# KEY_PAGE_OFF\t{KEY_PAGE_OFF:#x}\n# KEY_PAGE_SIZE\t0x4000\n# TEXT_END\t{TEXT_END:#x}\n# RO_OFF\t{RO_OFF:#x}\n# DATA_OFF\t{DATA_OFF:#x}\n')
     if FAR: f.write(f'# IMAGE_SIZE\t{IMAGE_SIZE:#x}\n# FILE_IMAGE_LEN\t{FILE_IMAGE_LEN:#x}\n')   # patch area before the base (negative PATCH_OFF): whole image size, length of the image part of the file
     for k in KEY_INDEX: f.write(f'# KEY_{k}_IDX\t{KEY_INDEX[k]}\n')
+    if FS_STATE_OFF: f.write(f'# FPS_STATE_OFF\t{FS_STATE_OFF:#x}\n# FPS_LEGACY_ELAPSED\t{FRAME_STEP[BUILD_ID]:#x}\n')   # frame step state page (FRAME_STEP): the loader writes the target fps and the mode there
     f.write(f'# BUILD_ID\t{BUILD_ID}\n')   # the host identifies the build by it: features with hard-coded addresses only run on the build they belong to
 with open(P('gates.tsv'), 'w') as f:
     for ret, k, arg, orig in gates: f.write(f'{ret:#x}\t{k}\t{arg}\t{orig:#x}\n')

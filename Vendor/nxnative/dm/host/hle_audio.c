@@ -33,6 +33,9 @@ typedef struct {
     int nlog;                          // Start / Stop / Close lines logged so far (at most 32 per output)
     _Atomic uint64_t under_n, under_b; // underruns: times the pending queue was empty when the callback needed data / zero-filled bytes
     uint64_t st_calls, st_qsum, st_u0, st_ub0; uint32_t st_fmin, st_fmax;   // sound card callback statistics (read and written only on the callback thread)
+    _Atomic uint64_t cb_n;             // device callbacks of this output (the watchdog's evidence that the device still plays it)
+    uint64_t wd_n, wd_t;               // watchdog: callback count last seen and when it last moved (under g_aos_lock)
+    int stalled, retry_ms; uint64_t retry_at;   // the device stopped calling back (or would not start): the silent sink stands in and the watchdog retries the AudioUnit at retry_at, backing off
 } aout;
 
 // Registry of open outputs: suspended / resumed all at once by the front-end lifecycle (going to background).
@@ -112,7 +115,7 @@ uint64_t dm_audio_render_calls(void) { return atomic_load_explicit(&g_render_cal
 static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioTimeStamp *ts, UInt32 bus, UInt32 frames, AudioBufferList *bl) {
     (void)f; (void)ts; (void)bus; (void)frames;
     aout *a = ctx;
-    atomic_fetch_add_explicit(&g_render_calls, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&g_render_calls, 1, memory_order_relaxed); atomic_fetch_add_explicit(&a->cb_n, 1, memory_order_relaxed);
     {
         // Every 2000 callbacks of each output, log one line: frames requested per call, pending blocks at callback start, underruns (check this line on a new device; docs/agents/03-bringup.md "Crackling on iOS only").
         // Kept per output: with two outputs open, combined numbers mislead (one fully fed and one fed by nobody look like "every other callback underruns")
@@ -126,7 +129,7 @@ static OSStatus au_render(void *ctx, AudioUnitRenderActionFlags *f, const AudioT
       if (mute) memset(bl->mBuffers[0].mData, 0, bl->mBuffers[0].mDataByteSize); }
     return noErr;
 }
-static void au_open(aout *a) {
+static OSStatus au_create(aout *a) {
     AudioComponentDescription d = {.componentType = kAudioUnitType_Output,
 #if TARGET_OS_IPHONE
                                    .componentSubType = kAudioUnitSubType_RemoteIO,
@@ -135,7 +138,7 @@ static void au_open(aout *a) {
 #endif
                                    .componentManufacturer = kAudioUnitManufacturer_Apple};
     AudioComponent c = AudioComponentFindNext(NULL, &d);
-    if (!c || AudioComponentInstanceNew(c, &a->au)) die("AudioUnit cannot be created");
+    a->au = NULL; if (!c || AudioComponentInstanceNew(c, &a->au)) { a->au = NULL; return -1; }
     AudioStreamBasicDescription f = {.mSampleRate = RATE, .mFormatID = kAudioFormatLinearPCM,
                                      .mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
                                      .mBytesPerPacket = 2u * a->ch, .mFramesPerPacket = 1, .mBytesPerFrame = 2u * a->ch,
@@ -146,10 +149,13 @@ static void au_open(aout *a) {
         UInt32 fr = (UInt32)atoi(e); OSStatus st = AudioUnitSetProperty(a->au, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &fr, sizeof fr);
         LOG("audio device buffer frame count set to %u: status %d", fr, (int)st); } }
 #endif
-    if (AudioUnitSetProperty(a->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &f, sizeof f) ||
-        AudioUnitSetProperty(a->au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb) ||
-        AudioUnitInitialize(a->au)) die("AudioUnit setup failed");
+    OSStatus st = AudioUnitSetProperty(a->au, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &f, sizeof f);
+    if (!st) st = AudioUnitSetProperty(a->au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &cb, sizeof cb);
+    if (!st) st = AudioUnitInitialize(a->au);
+    if (st) { AudioComponentInstanceDispose(a->au); a->au = NULL; }
+    return st;
 }
+static void au_open(aout *a) { OSStatus st = au_create(a); if (st) die("AudioUnit setup failed (status %d)", (int)st); }
 // Silent sink: consumes in real time at 48 kHz every 5 ms. When more than 100 ms behind (iOS suspended the whole process in the background, SIGSTOP on the Mac), restart the count from now and do not make up the missed time --
 // making it up would pull hundreds of times in one go (seconds' worth), releasing all of the game's buffers and logging hundreds of underruns; a suspended console does not play that stretch either
 static void *null_sink(void *p) {
@@ -170,6 +176,46 @@ static void backend_stop(aout *a) {
     else if (a->backend == BK_NULL) null_stop(a);
 }
 static int real_audio(void) { const char *e = getenv("DM_AUDIO"); return e ? atoi(e) != 0 : TARGET_OS_IPHONE; }
+// Start the AudioUnit of an output whose backend is BK_NONE (callers hold g_aos_lock). When the device refuses (the session is held by a call, or is being reset), the silent sink stands in and the watchdog retries
+static void au_go(aout *a, uint64_t now) {
+    OSStatus st = a->au ? AudioOutputUnitStart(a->au) : -1;
+    a->wd_n = atomic_load_explicit(&a->cb_n, memory_order_relaxed); a->wd_t = now;
+    if (!st) { a->backend = BK_AU; a->stalled = 0; return; }
+    null_start(a);
+    if (!a->stalled) { a->stalled = 1; a->retry_ms = 1000; LOG("[RED] audio #%d: the AudioUnit did not start (status %d): the silent sink stands in, retrying", a->id, (int)st); }
+    else if (a->retry_ms < 8000) a->retry_ms *= 2;
+    a->retry_at = now + (uint64_t)a->retry_ms * 1000000;
+}
+// Watchdog (real output only): an AudioUnit that is started while the app is in focus must keep calling back. iOS stops calling back without telling the AudioUnit when another audio session takes over
+// (Siri, an alarm, a call) or the media services reset; the output's buffers were then never released, and a game whose audio thread waits for them (Wwise's poll-only output, FMOD) stayed silent for good.
+// After 200 ms without a callback the silent sink takes over (the game's audio keeps its real-time pace) and the AudioUnit is retried after 1, 2, 4, 8 s. A late wake-up of the watchdog itself (the whole process was stopped) only restarts the count
+enum { WD_TICK_MS = 50, WD_STALL_MS = 200 };
+static void *au_watchdog(void *p) {
+    (void)p; uint64_t last = now_ns();
+    for (;;) {
+        usleep(WD_TICK_MS * 1000); uint64_t t = now_ns(), gap = t - last; last = t;
+        pthread_mutex_lock(&g_aos_lock);
+        for (int i = 0; i < AOMAX; i++) {
+            aout *a = g_aos[i]; if (!a || !a->au) continue;
+            uint64_t n = atomic_load_explicit(&a->cb_n, memory_order_relaxed);
+            if (a->backend != BK_AU || g_suspended || gap > 4ull * WD_TICK_MS * 1000000 || n != a->wd_n) {
+                if (a->backend == BK_AU && n != a->wd_n) a->retry_ms = 0;   // callbacks seen: a later stall starts the back-off from 1 s again
+                a->wd_n = n; a->wd_t = t;
+            } else if (t - a->wd_t > WD_STALL_MS * 1000000ull) {
+                LOG("[RED] audio #%d: the device has not called back for %.0f ms while playing: the silent sink stands in, retrying the AudioUnit", a->id, (t - a->wd_t) / 1e6);
+                AudioOutputUnitStop(a->au); a->backend = BK_NONE; null_start(a);
+                a->stalled = 1; a->retry_ms = a->retry_ms ? (a->retry_ms < 8000 ? a->retry_ms * 2 : 8000) : 1000; a->retry_at = t + (uint64_t)a->retry_ms * 1000000;
+            }
+            if (a->stalled && a->backend == BK_NULL && !g_suspended && t >= a->retry_at) {
+                null_stop(a); au_go(a, t);
+                if (a->backend == BK_AU) LOG("audio #%d: AudioUnit restarted", a->id);
+            }
+        }
+        pthread_mutex_unlock(&g_aos_lock);
+    }
+    return NULL;
+}
+static void au_watchdog_start(void) { pthread_t t; if (!pthread_create(&t, NULL, au_watchdog, NULL)) pthread_detach(t); }
 
 // AudioOutParameter = { int32 sampleRate; uint16 channelCount; uint16 _r; ... }, 0 = system default (48 kHz / 2 channels)
 HLE_FORCE("_ZN2nn5audio27InitializeAudioOutParameterEPNS0_17AudioOutParameterE", "audio output parameter defaults", void, h_au_InitParam, uint8_t *p) { memset(p, 0, 8); }
@@ -201,7 +247,7 @@ static Result au_open_at(void *g, void *ev, const char *name, const uint8_t *par
     pthread_mutex_unlock(&g_aos_lock);
     char sb[64];
     LOG("audio #%d OpenAudioOut %s channels %d %s%s (call site %s)", a->id, name ? name : "(default)", ch, real_audio() ? "real output" : "silent sink", ev ? "" : ", no release event (the game polls)", site(lr, sb, sizeof sb));
-    if (real_audio()) au_open(a);
+    if (real_audio()) { static pthread_once_t wd = PTHREAD_ONCE_INIT; au_open(a); pthread_once(&wd, au_watchdog_start); }
     return RES_OK;
 }
 HLE_FORCE("_ZN2nn5audio12OpenAudioOutEPNS0_8AudioOutEPNS_2os11SystemEventEPKcRKNS0_17AudioOutParameterE", "connect to the audout service; host AudioUnit / silent sink",
@@ -217,7 +263,7 @@ static Result au_start_at(void *g, void *lr) {
     int was = atomic_exchange_explicit(&a->state, STATE_STARTED, memory_order_acq_rel);
     au_note(a, was == STATE_STARTED ? "Start (already playing)" : g_suspended ? "Start (app in the background: the silent sink takes over for now)" : "Start", lr);
     if (was != STATE_STARTED) {
-        if (a->au && !g_suspended) { if (AudioOutputUnitStart(a->au)) die("AudioUnit start failed"); a->backend = BK_AU; }
+        if (a->au && !g_suspended) { a->stalled = 0; au_go(a, now_ns()); }
         else null_start(a);
     }
     pthread_mutex_unlock(&g_aos_lock);
@@ -310,15 +356,25 @@ void dm_audio_suspend(int on) {
             // While suspended the silent sink consumes in real time instead: otherwise buffers are no longer released, the FMOD output thread waits forever and the game's audio pacing stalls (same for an incoming call interruption)
             if (on) { if (a->backend == BK_AU) { AudioOutputUnitStop(a->au); null_start(a); } }
             else if (a->backend == BK_NULL) {
-                null_stop(a);
-                OSStatus st = AudioOutputUnitStart(a->au);
-                if (!st) a->backend = BK_AU;
-                else {   // The session is still held by someone else (switched back to the game with a call not yet hung up, or the user is still in another app when the interruption ends): not fatal, the silent sink keeps covering, and we retry at the next resume
-                    LOG("[RED] AudioUnit resume failed (status %d): keeping the silent sink, retrying at the next resume", (int)st);
-                    null_start(a); failed = 1; } }
+                // The session may still be held by someone else (back in the game with a call not yet hung up): not fatal, the silent sink keeps covering and the watchdog retries
+                null_stop(a); a->stalled = 0; au_go(a, now_ns()); failed |= a->backend != BK_AU; }
         }
-        if (failed) g_suspended = 1;   // Resume did not succeed: the state stays "suspended", and the next call with 0 will retry
-        LOG("audio %s", on ? "suspended (background / interruption)" : failed ? "resume failed" : "resumed (foreground / interruption ended)");
+        LOG("audio %s", on ? "suspended (background / interruption)" : failed ? "resumed, an AudioUnit still refuses to start (retrying)" : "resumed (foreground / interruption ended)");
     }
+    pthread_mutex_unlock(&g_aos_lock);
+}
+// The media services were reset (iOS): every AudioUnit is invalid. Create each output's unit again and restart the ones that were playing; the front end has set the audio session up again first
+void dm_audio_reset(void) {
+    pthread_mutex_lock(&g_aos_lock);
+    for (int i = 0; i < AOMAX; i++) {
+        aout *a = g_aos[i]; if (!a || !a->au) continue;
+        int playing = a->backend == BK_AU;
+        if (playing) { AudioOutputUnitStop(a->au); a->backend = BK_NONE; }
+        AudioUnitUninitialize(a->au); AudioComponentInstanceDispose(a->au);
+        OSStatus st = au_create(a);
+        if (st) LOG("[RED] audio #%d: no AudioUnit after the media services reset (status %d): this output stays silent", a->id, (int)st);
+        if (playing) { if (a->au && !g_suspended) { a->stalled = 0; au_go(a, now_ns()); } else null_start(a); }
+    }
+    LOG("audio outputs set up again after the media services reset");
     pthread_mutex_unlock(&g_aos_lock);
 }

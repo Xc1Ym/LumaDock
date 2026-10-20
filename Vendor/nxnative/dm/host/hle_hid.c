@@ -169,6 +169,12 @@ HLE_FORCE("_ZN2nn3hid18InitializeKeyboardEv", "keyboard; not provided by the hos
 HLE_FORCE("_ZN2nn3hid16GetKeyboardStateEPNS0_13KeyboardStateE", "keyboard state: not connected (KeyboardState 0x30 bytes zeroed)", void, h_hid_KbdState, void *s) {
     memset(s, 0, 0x30); ((int64_t *)s)[0] = atomic_fetch_add(&g_sampling, 1) + 1;
 }
+// The history form (Monster Hunter Rise): every requested entry, newest first, with consecutive sampling numbers, as GetNpadStates fills them
+HLE_FORCE("_ZN2nn3hid17GetKeyboardStatesEPNS0_13KeyboardStateEi", "keyboard state history: not connected (each 0x30-byte entry zeroed)", int, h_hid_KbdStates, uint8_t *s, int n) {
+    int64_t top = atomic_fetch_add(&g_sampling, 1) + 1;
+    for (int i = 0; i < n; i++) { memset(s + 0x30 * i, 0, 0x30); *(int64_t *)(s + 0x30 * i) = top - i; }
+    return n > 0 ? n : 0;
+}
 
 // ---------- SDK 12 interfaces (Engage): single GetNpadState, mode queries / setters, touch screen, gestures, six-axis details, controller colors, etc. ----------
 // In the original all of these read hid shared memory or go through the hid service; the host has no shared memory and answers from the same front-end state as above. Library functions that only modify the game's own buffers (vibration file parse / generate, ControllerSupportArg SetDefault / SetExplainText) keep running in the SDK

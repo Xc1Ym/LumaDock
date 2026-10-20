@@ -38,5 +38,14 @@ class DistributionTests(unittest.TestCase):
                     verify_source(archive)
 
 
+    def test_source_audit_rejects_unlisted_game_screenshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            archive=pathlib.Path(directory)/'test.zip'
+            with zipfile.ZipFile(archive,'w') as output:
+                for name in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico','Vendor/nxnative/LICENSE'):
+                    output.writestr(PRODUCT['name']+'/'+name,'fixture')
+                output.writestr(PRODUCT['name']+'/docs/screenshots/game-cover.jpg','private artwork')
+            with self.assertRaises(AssertionError): verify_source(archive)
+
 if __name__ == '__main__':
     unittest.main()

@@ -7,19 +7,36 @@
 <p align="center">Apple Silicon · macOS 26+ · 原生 Liquid Glass 界面</p>
 <p align="center"><a href="https://github.com/Xc1Ym/LumaDock/releases/latest">下载 Mac 版</a> · <a href="https://github.com/Xc1Ym/LumaDock/actions/workflows/ci.yml">构建状态</a></p>
 
-璃游是专为 Apple Silicon Mac 开发的游戏启动器，基于 **[nxnative](https://github.com/seedds/nxnative)**。带上你有权使用的游戏 NSP 文件和 `prod.keys`，在图形界面里导入、准备、设置键位，然后启动游戏。
+璃游是专为 Apple Silicon Mac 开发的游戏启动器，基于 **[nxnative](https://github.com/seedds/nxnative)**。带上你有权使用的游戏 NSP 文件和 `prod.keys`，在图形界面里导入、准备并启动游戏。
 
 游戏通过 nxnative 的代码重写与运行时，在 Apple Silicon 上原生执行，图形由 Metal 呈现。璃游负责整理游戏库和调度这些步骤，直接生成 macOS 运行文件。
 
-**项目不附带游戏、更新、DLC、固件、密钥、游戏封面或玩家生成的着色器缓存，与 Nintendo 及游戏发行商没有隶属关系。** 当前应用界面为简体中文；本 README 提供中英文版本。
+**项目不附带游戏、更新、DLC、固件、密钥、游戏封面或玩家生成的着色器缓存，与 Nintendo 及游戏发行商没有隶属关系。** 应用界面与 README 均支持**英文和简体中文**。界面默认跟随 macOS 语言，可在**设置 → 语言**或首次运行向导中选择“跟随系统 / English / 简体中文”，切换立即生效。系统对话框内置按钮及原始编译日志保留系统或工具语言。
+
+可在**设置 → 语言与外观**中选择“跟随系统、浅色、深色”，独立控制璃游的显示风格，立即生效并记住选择。
 
 ## 功能
 
 - **一个游戏库**：导入 NSP 或扫描文件夹，按内容元数据识别本体、更新和 DLC，支持拖入、多选、中文路径及重复文件检查。
 - **自动准备**：解包、合并更新、处理 DLC、重写代码、转换并编译着色器，再构建 Mac 主程序。提供阶段进度、取消、缓存校验和重试。
-- **键鼠和手柄**：鼠标转动视角、全局与每游戏映射、冲突提示、输入测试。修改映射后下次启动生效，不用重新编译。
 - **原生 Mac 界面**：SwiftUI / AppKit、Liquid Glass、明暗外观，以及“减少透明度”的不透明回退。
 - **独立保存玩家数据**：原始文件、托管副本、运行文件、缓存和存档分开管理；准备失败时保留上次成功版本。
+
+## 界面截图
+
+截图均使用浅色外观和空游戏库，不包含游戏画面、封面、密钥或玩家数据。
+
+**游戏库** — 由玩家自行导入内容，应用不附带游戏。
+
+<img src="docs/screenshots/library-zh.jpg" width="1000" alt="璃游游戏库">
+
+**首次运行向导** — 先检查环境，再导入密钥与游戏。
+
+<img src="docs/screenshots/setup-zh.jpg" width="1000" alt="璃游首次运行向导">
+
+**设置** — 切换界面语言，管理本地环境。
+
+<img src="docs/screenshots/settings-zh.jpg" width="1000" alt="璃游设置">
 
 ## 已在 Mac 测试的游戏
 
@@ -34,11 +51,13 @@
 
 导入时请提供本体、指定更新及需要使用的 DLC。Title ID 和程序构建标识必须匹配固定游戏配置；应用会在准备前检查所需内容。
 
+《奥德赛》的较长时间玩家游玩记录基于此前的 `10b33338` 引擎。将固定引擎更新到 `4e2dcdc` 不会扩大这一游玩验证范围，也不代表其他游戏已通过 Mac 验收。
+
 ## 开始使用
 
 需要 **Apple Silicon Mac、macOS 26 或更新系统，以及完整 Xcode 和 Metal 编译组件**。当前实测环境为 M5 Pro、macOS 27.0.1、Xcode 27.1；macOS 26 真机尚未重新验收。大型游戏请预留数十 GB 空间，实际用量随游戏及缓存变化。
 
-**1. 安装璃游。** 打开 `LumaDock-0.2.0-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
+**1. 安装璃游。** 打开 `LumaDock-0.2.1-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
 
 **2. 先检查并安装环境。** 向导第一步检查 Apple Silicon、macOS、完整 Xcode、Metal、应用组件与可用空间。Xcode 按钮直接打开其 [Mac App Store 页面](https://apps.apple.com/app/xcode/id497799835)。缺少 Apple 工具时按步骤安装，再重新检查；全部通过后才能继续。Metal 组件可按 [Apple 官方方式](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components) 安装。其余运行依赖已随应用提供，玩家不需要安装 Homebrew、Python 或 .NET。
 
@@ -50,27 +69,6 @@
 
 设置中可卸载当前 Xcode 支持管理的 Metal 编译组件。卸载通过 Apple 的组件管理接口执行，因其为共享组件，需要确认；游戏或准备队列运行时禁止安装和卸载，操作后重新检查状态。卸载不会删除游戏、密钥或存档，再次准备游戏前需重新安装组件。
 
-## 操作
-
-在游戏详情中设置每游戏映射；工具栏或设置页可编辑全局映射。支持按键录入、组合键、鼠标按钮、手柄按钮与摇杆，重复绑定会提示冲突。**保存后下次启动生效，不触发重新构建。**
-
-《旷野之息》的默认键鼠配置：
-
-| 电脑输入 | Switch 输入 |
-| --- | --- |
-| W / A / S / D | 左摇杆移动 |
-| 鼠标移动 | 右摇杆视角 |
-| E / Shift / 空格 | A / B / X |
-| 鼠标左键 / 右键 | Y / ZL |
-| Q / G / R | L / R / ZR |
-| Ctrl / C | 左摇杆按下 / 右摇杆按下 |
-| Tab / M | ＋ / － |
-| 方向键 | 十字键 |
-| Esc | 切换鼠标捕获 |
-
-可调整鼠标横纵灵敏度、反转和停止回中，也可选择触屏指针模式。失焦或最小化时释放鼠标并清空输入。其他游戏显示 Switch 按钮名称，避免把《旷野之息》的动作说明套到其他游戏。
-
-手柄通过 macOS GameController 接入，默认按 Switch 物理布局映射，支持单玩家、双摇杆和扳机。当前仍缺少实体手柄连接 / 断开的实机验收，详见验收记录。
 
 ## 存档与文件
 
@@ -98,7 +96,7 @@
 
 ## 开发与构建
 
-启动器使用 SwiftUI / AppKit，Python Worker 调度构建，固定 nxnative 提交为 [`10b33338a0eac75f45dc1eba23b6aebbe138faa3`](https://github.com/seedds/nxnative/tree/10b33338a0eac75f45dc1eba23b6aebbe138faa3)，不自动跟随上游分支。[架构说明](docs/架构说明.md) 和 [引擎修改清单](docs/引擎修改.md) 记录了接口及本地改动。
+启动器使用 SwiftUI / AppKit，Python Worker 调度构建，固定 nxnative 提交为 [`4e2dcdc749668ddd4d61361117ad4a6980fabcf7`](https://github.com/seedds/nxnative/tree/4e2dcdc749668ddd4d61361117ad4a6980fabcf7)，不自动跟随上游分支。[架构说明](docs/架构说明.md) 和 [引擎修改清单](docs/引擎修改.md) 记录了接口及本地改动。
 
 维护者需完整 Xcode、Homebrew，以及 PATH 中可用的 [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)。以下命令在项目根目录执行；Xcode 位于其他位置时请调整 `DEVELOPER_DIR`：
 
@@ -119,7 +117,7 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 产物在 `release/`：应用、DMG、源码 ZIP、`SHA256SUMS` 和发行审计。发行构建不需要游戏或密钥。运行依赖的实际版本记录在应用内 `Runtime/versions.json`；Homebrew 与工具链版本随构建环境变化，目前不保证逐字节可复现。
 
-[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.0`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
+[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.1`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
 
 开发和私有测试使用忽略的 `work/`；`--data-root <目录>` 可隔离应用数据。不要提交 `work/`、`release/`、`Runtime` 或任何玩家数据。
 

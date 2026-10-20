@@ -121,8 +121,8 @@ typedef struct { int32_t stage, index; uint64_t addr, size; } p_bind_buf;  // UB
 typedef struct { int32_t stage, first, n, defer; uint64_t src; uint64_t h[32]; } p_bind_handles; // Separate texture / sampler handles
 typedef struct { int32_t face, value_mask, mask, ref, which; } p_stencil;  // which: 0 value mask 1 write mask 2 reference value
 typedef struct { float factor, units, clamp; } p_poly_offset;
-typedef struct { int32_t prim, first, count, instances, base_instance; uint64_t ind; } p_draw;   // instances 0 counts as 1; ind != 0: DrawArraysIndirect, the arguments are read by the GPU from that address
-typedef struct { int32_t prim, itype, count, base_vertex, base_instance, instances; uint64_t ibuf, ind; } p_draw_idx;   // ind != 0: DrawElementsIndirect, {count, instances, first index, base vertex, base instance} read by the GPU from that address
+typedef struct { int32_t prim, first, count, instances, base_instance; uint64_t ind; uint64_t mdi_cnt; int32_t mdi_i, pad; } p_draw;   // instances 0 counts as 1; ind != 0: DrawArraysIndirect, the arguments are read by the GPU from that address; mdi_cnt != 0: draw mdi_i of an indirect-count multi-draw (drawn only while mdi_i < the u32 at mdi_cnt)
+typedef struct { int32_t prim, itype, count, base_vertex, base_instance, instances; uint64_t ibuf, ind; uint64_t mdi_cnt; int32_t mdi_i, pad; } p_draw_idx;   // ind != 0: DrawElementsIndirect, {count, instances, first index, base vertex, base instance} read by the GPU from that address; mdi_cnt: as in p_draw
 typedef struct { int32_t x, y, z; uint64_t caller, ind; } p_dispatch;   // caller: return address of the game call site (to locate the dispatcher); ind != 0: DispatchComputeIndirect, the group counts are read by the GPU from that address
 typedef struct { const dpool_t *pool; } p_set_pool;
 typedef struct { uint64_t src; const tex_t *tex; view_t view; uint8_t has_view; NVNcopyRegion r; int32_t flags; } p_copy_b2t;

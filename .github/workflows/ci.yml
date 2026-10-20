@@ -64,8 +64,14 @@ jobs:
           work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt
       - name: Worker and distribution regression tests
         run: work/python-venv/bin/python -B -m unittest discover -s tests -v
-      - name: Import and toolchain workflow regression tests
+      - name: Import, localization and appearance regression tests
         run: swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
+      - name: Native mouse and frame-step regression tests
+        run: |
+          xcrun clang -std=c11 -O1 -Wall -Wextra -Werror Vendor/nxnative/dm/host/tests/t_mouse_mac.c -lm -o work/t_mouse_mac
+          work/t_mouse_mac
+          xcrun clang -O1 -Wall Vendor/nxnative/dm/gfx/tests/t_fstep.c -o work/t_fstep
+          work/t_fstep
       - name: Generate original app icons
         run: swift scripts/make_icons.swift
       - name: Build portable runtime

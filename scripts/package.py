@@ -2,6 +2,7 @@
 """Create a clean, ad-hoc-signed distribution using an explicit resource allowlist."""
 import hashlib,json,os,pathlib,plistlib,shutil,subprocess,sys
 from product import ROOT, RELEASE, PRODUCT, checksums
+from build_dmg import build_dmg
 APP=RELEASE/(PRODUCT['name']+'.app')
 def run(a,**kw):return subprocess.run([str(x) for x in a],check=True,**kw)
 def macho(p):
@@ -63,12 +64,6 @@ def main():
     run([resources/'Runtime/python/bin/python3','-B','-I','-c','import capstone,lz4.block,fontTools; print("Packaged runtime OK")'],env=dict(env,PYTHONNOUSERSITE='1'))
     run(['codesign','--verify','--deep','--strict',APP])
     if '--app-only' in sys.argv:return
-    stage=ROOT/'work/dmg-stage';shutil.rmtree(stage,ignore_errors=True);stage.mkdir()
-    run(['cp','-cR',APP,stage/APP.name]);(stage/'Applications').symlink_to('/Applications')
-    shutil.copy2(ROOT/'docs/使用说明.md',stage/'使用说明.md');shutil.copy2(ROOT/'docs/第三方许可.md',stage/'第三方许可.md')
-    shutil.copy2(ROOT/'docs/Getting-started.md',stage/'Getting-started.md');shutil.copy2(ROOT/'docs/Third-party-licenses.md',stage/'Third-party-licenses.md')
-    dmg=RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-arm64.dmg";dmg.unlink(missing_ok=True)
-    run(['hdiutil','create','-volname',PRODUCT['displayName'],'-srcfolder',stage,'-ov','-format','UDZO',dmg])
-    run(['hdiutil','verify',dmg]);checksums()
+    dmg=build_dmg(APP,RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-arm64.dmg");checksums()
     print('Created:',dmg)
 if __name__=='__main__':main()

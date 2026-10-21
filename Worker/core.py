@@ -62,6 +62,8 @@ class Context:
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
         self.engine = self.resource / 'Vendor/nxnative'
         self.runtime = self.resource / 'Runtime'
+        if not self.runtime.exists() and (self.resource/'work/Runtime/versions.json').is_file():
+            self.runtime = self.resource/'work/Runtime'
         self.keys = self.private / 'keys/prod.keys'
         self.library = Path(request.get('library', self.private / 'library')).expanduser().resolve()
     def emit(self, kind='progress', message='', done=None, total=None, **kw):
@@ -113,6 +115,7 @@ class Context:
         env['DOTNET_ROOT_ARM64'] = env['DOTNET_ROOT']; env['DOTNET_MULTILEVEL_LOOKUP'] = '0'
         env['DOTNET_CLI_TELEMETRY_OPTOUT'] = '1'; env['DOTNET_SYSTEM_GLOBALIZATION_INVARIANT'] = '1'
         if game: env['DM_GAME'] = game
+        env['DM_MAC_ONLY'] = '1'
         if root:
             env.update(DM_ROOT=str(root), WORK=str(Path(root)/'tmp'), TMPDIR=str(Path(root)/'tmp'), PYTHONUNBUFFERED='1')
             Path(env['WORK']).mkdir(parents=True, exist_ok=True)

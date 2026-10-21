@@ -5,6 +5,7 @@ import json
 import plistlib
 import struct
 import subprocess
+import tempfile
 import zipfile
 from product import ROOT, RELEASE, PRODUCT
 from package import audit
@@ -49,6 +50,45 @@ def verify_source(path):
             assert PRODUCT['name']+'/'+required in names, f'Missing source file: {required}'
 
 
+def verify_dmg(path):
+    """Check the shipped Finder layout and signed payload without launching the app."""
+    from pathlib import Path
+    from ds_store import DSStore
+    from build_dmg import LAYOUT
+    subprocess.run(['hdiutil','verify',str(path)],check=True,stdout=subprocess.DEVNULL)
+    with tempfile.TemporaryDirectory(prefix='dmg-verify-',dir=ROOT/'work') as directory:
+        mount=Path(directory)/'volume';mount.mkdir()
+        subprocess.run(['hdiutil','attach','-readonly','-nobrowse','-mountpoint',str(mount),str(path)],check=True,stdout=subprocess.DEVNULL)
+        try:
+            assert {p.name for p in mount.iterdir() if not p.name.startswith('.')} == {PRODUCT['name']+'.app','Applications','Read me'}
+            assert (mount/'Applications').is_symlink() and (mount/'Applications').readlink() == Path('/Applications')
+            assert (mount/'.background.tiff').is_file() and (mount/'.VolumeIcon.icns').is_file()
+            description=subprocess.check_output(['sips','-g','pixelWidth','-g','pixelHeight','-g','dpiWidth','-g','dpiHeight',str(mount/'.background.tiff')],text=True)
+            pixels={line.strip().split(':',1)[0]:line.strip().split(':',1)[1].strip() for line in description.splitlines() if ':' in line}
+            assert int(pixels['pixelWidth'])==LAYOUT['width']*2 and int(pixels['pixelHeight'])==LAYOUT['height']*2
+            assert float(pixels['dpiWidth'])==144 and float(pixels['dpiHeight'])==144
+            with DSStore.open(str(mount/'.DS_Store'),'r') as store:
+                window=store['.']['bwsp'];view=store['.']['icvp']
+                assert not window['ShowToolbar'] and not window['ShowSidebar']
+                assert window['WindowBounds'] == '{{180, 160}, {%d, %d}}' % (LAYOUT['width'],LAYOUT['height']+32)
+                assert view['backgroundType']==2 and view['backgroundImageAlias']
+                assert view['arrangeBy']=='none' and view['iconSize']==LAYOUT['iconSize']
+                for name,position in LAYOUT['iconPositions'].items():
+                    assert store[name]['Iloc']==tuple(position), f'Wrong installer position: {name}'
+                    assert 0<position[0]<LAYOUT['width'] and 0<position[1]<LAYOUT['height']-40
+            for name in ('Getting-started.md','使用说明.md','Environment.md','环境要求.md','Third-party-licenses.md','第三方许可.md'):
+                assert (mount/'Read me'/name).read_bytes()==(ROOT/'docs'/name).read_bytes()
+            assert (mount/'Read me/LumaDock-LICENSE.txt').read_bytes()==(ROOT/'LICENSE').read_bytes()
+            app=mount/(PRODUCT['name']+'.app')
+            info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
+            assert info['CFBundleShortVersionString']==PRODUCT['version']
+            subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+            audit(mount)
+        finally:
+            subprocess.run(['hdiutil','detach',str(mount)],check=True,stdout=subprocess.DEVNULL)
+    print('Verified installer: Finder layout, Retina background, documentation, Applications link, clean data and app signature')
+
+
 def main():
     verify_icons()
     app = RELEASE/(PRODUCT['name']+'.app')
@@ -74,7 +114,7 @@ def main():
     source = RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-source.zip"
     verify_source(source)
     dmg = RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-arm64.dmg"
-    subprocess.run(['hdiutil', 'verify', dmg], check=True, stdout=subprocess.DEVNULL)
+    verify_dmg(dmg)
     entries = dict(line.strip().split('  ', 1)[::-1] for line in (RELEASE/'SHA256SUMS').read_text().splitlines())
     assert set(entries) == {source.name, dmg.name}
     for path in (source, dmg):

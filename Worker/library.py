@@ -15,22 +15,12 @@ def setup(c):
     return {'library':str(c.library),'libraryId':info['id']}
 
 def preflight(c):
-    import platform
     c.begin('检查系统与工具链',1,1)
-    env = c.env(); checks=[]
-    def add(name,ok,message): checks.append({'name':name,'ok':bool(ok),'message':message})
-    add('Apple Silicon',platform.machine()=='arm64',platform.machine())
-    version=platform.mac_ver()[0]; add('macOS 26+',bool(version) and int(version.split('.')[0])>=26,version)
-    for title,args in [('Xcode',['xcrun','--find','clang']),('Metal 编译组件',['xcrun','-sdk','macosx','metal','--version'])]:
-        p=subprocess.run(args,env=env,capture_output=True,text=True)
-        full_xcode=title!='Xcode' or (Path(env['DEVELOPER_DIR'])/'Platforms/MacOSX.platform').is_dir()
-        message=(p.stdout or p.stderr).splitlines()[0] if (p.stdout or p.stderr) else '缺失'
-        add(title,p.returncode==0 and full_xcode,message if full_xcode else '需要完整 Xcode，请检查 Developer 目录，不能仅使用 Command Line Tools')
-    pth=c.library if c.library.exists() else c.private
-    free=shutil.disk_usage(pth).free; add('可用空间',free>=5*2**30,f'{free/2**30:.1f} GB（大型游戏通常需要 40–80 GB）')
-    add('构建组件',c.nx().exists(),'NSP 读取、Python、着色器转换组件由应用管理')
-    from toolchain import supports_removal
-    return {'checks':checks,'ready':all(x['ok'] for x in checks),'canUninstallMetal':supports_removal(c)}
+    from toolchain import inspect_environment, supports_removal
+    checks = inspect_environment(c)
+    return {'checks':checks,'ready':all(x['ok'] for x in checks),
+            'launchReady':all(x['ok'] for x in checks if 'launch' in x['requiredFor']),
+            'canUninstallMetal':supports_removal(c)}
 
 def keys(c):
     c.begin('导入玩家密钥',1,1); src=Path(c.r['path']); count=validate_keys(src)

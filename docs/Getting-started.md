@@ -2,6 +2,8 @@
 
 LumaDock runs on Apple Silicon Macs with macOS 26 or later. Preparing games requires the full Xcode app and Apple's Metal compiler component. Other build dependencies are bundled.
 
+See the [complete environment and repair guide](Environment.md) for every dependency, installation method, and live verification. Python is bundled; a separate system Python installation is not required.
+
 1. Open the DMG and drag **LumaDock.app** into **Applications**. The current community build uses ad-hoc signing and is not notarized. Verify the release source and `SHA256SUMS` before opening it through the procedure offered in macOS Privacy & Security.
 2. Open LumaDock. The setup assistant checks hardware, macOS, Xcode, Metal, bundled tools, and free space. **Get Xcode on the App Store** opens Apple's listing. Open Xcode once to accept its license and complete initial setup. Return to LumaDock, choose the correct Developer directory if necessary, and check again. Install Metal through the app if it is missing.
 3. Choose an empty folder for your managed library. External drives are supported; keep the drive connected during preparation and play. Large games can require tens of gigabytes for source copies and build caches.

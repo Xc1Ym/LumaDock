@@ -67,6 +67,8 @@ You need an **Apple Silicon Mac, macOS 26 or later, and a full Xcode installatio
 
 See the [getting started guide](docs/Getting-started.md) in English. For migration of an existing Breath of the Wild build and further data management details, see the [Chinese user guide](docs/使用说明.md).
 
+The [environment and repair guide](docs/Environment.md) lists every dependency and its installation method. Initial setup verifies the bundled Python interpreter and its extensions, .NET, the NSP reader, shader tools, Xcode initialization, the macOS SDK, actual native/Metal compilation, and library permissions. A missing bundled Python is reported by the native app; a separate system Python is not required. Build-only tools are distinguished from the requirements for launching already prepared games.
+
 Settings also provides Metal component removal when supported by the selected Xcode. Removal uses Apple’s component manager and requires confirmation because the component is shared with other projects. Installation and removal are blocked while a game or preparation queue is active; checks refresh afterward. Removing the compiler does not delete games, keys, or saves, but it must be reinstalled before preparing games again.
 
 
@@ -105,7 +107,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 mkdir -p work
 brew install python@3.14 spirv-cross zstd
 "$(brew --prefix python@3.14)/bin/python3.14" -m venv work/python-venv
-work/python-venv/bin/python -m pip install -r requirements-runtime.txt
+work/python-venv/bin/python -m pip install -r requirements-runtime.txt -r requirements-build.txt
 work/python-venv/bin/python -B -m unittest discover -s tests -v
 swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
 swift scripts/make_icons.swift

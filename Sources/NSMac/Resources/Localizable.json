@@ -1542,5 +1542,245 @@
   {
     "source": "深色",
     "en": "Dark"
+  },
+  {
+    "source": ".NET 10 运行时",
+    "en": ".NET 10 runtime"
+  },
+  {
+    "source": "Metal 图形设备",
+    "en": "Metal graphics device"
+  },
+  {
+    "source": "NSP 读取组件",
+    "en": "NSP reader"
+  },
+  {
+    "source": "Python 扩展",
+    "en": "Python extensions"
+  },
+  {
+    "source": "Xcode 初始设置",
+    "en": "Xcode initial setup"
+  },
+  {
+    "source": "capstone / lz4 / fontTools：加载、版本及基本功能检查",
+    "en": "capstone / lz4 / fontTools: load, version and basic functionality checks"
+  },
+  {
+    "source": "macOS SDK 不完整",
+    "en": "The macOS SDK is incomplete"
+  },
+  {
+    "source": "从 App Store 安装完整 Xcode，打开一次并完成许可及初始组件安装。选择实际 Xcode.app；仅安装 Command Line Tools 不够。",
+    "en": "Install the full Xcode app from the App Store, open it once, accept its license and finish initial component installation. Select the actual Xcode.app; Command Line Tools alone are insufficient."
+  },
+  {
+    "source": "先完成 Xcode 初始设置，再点击“安装 Metal 编译组件”。下载由 Apple 管理；完成后重新检查。",
+    "en": "Finish Xcode initial setup, then click Install Metal compiler. Apple manages the download; check again when it finishes."
+  },
+  {
+    "source": "内置 .NET 10 运行时不可用",
+    "en": "The bundled .NET 10 runtime is unavailable"
+  },
+  {
+    "source": "内置 Python",
+    "en": "Bundled Python"
+  },
+  {
+    "source": "内置 Python 无法运行或版本不匹配",
+    "en": "Bundled Python cannot run or its version does not match"
+  },
+  {
+    "source": "内置组件清单",
+    "en": "Bundled component manifest"
+  },
+  {
+    "source": "压缩组件不可用",
+    "en": "The compression tool is unavailable"
+  },
+  {
+    "source": "原生编译与本地签名",
+    "en": "Native compilation and local signing"
+  },
+  {
+    "source": "启动需要 Apple Silicon、macOS 26+ 和可用的系统 Metal 图形设备，请在设置中重新检查环境。",
+    "en": "Launching requires Apple Silicon, macOS 26+ and an available system Metal graphics device. Check the environment again in Settings."
+  },
+  {
+    "source": "在 Xcode 中完成初始组件安装，或重新安装完整 Xcode；无需下载其他设备的运行环境。",
+    "en": "Complete initial component installation in Xcode, or reinstall the full Xcode app. Runtimes for other devices are not required."
+  },
+  {
+    "source": "在“系统设置 → 通用 → 软件更新”升级至 macOS 26 或更新版本。",
+    "en": "Upgrade to macOS 26 or later in System Settings → General → Software Update."
+  },
+  {
+    "source": "实际编译并链接 arm64 测试程序，验证 make、ar 和 codesign",
+    "en": "Compile and link an arm64 test program; verify make, ar and codesign"
+  },
+  {
+    "source": "实际编译测试着色器并生成 macOS Metal 库",
+    "en": "Compile a test shader and generate a macOS Metal library"
+  },
+  {
+    "source": "工具检查超时，请重新检查或修复对应组件。",
+    "en": "The tool check timed out. Check again or repair the affected component."
+  },
+  {
+    "source": "检查系统是否能创建 Metal 设备",
+    "en": "Check whether the system can create a Metal device"
+  },
+  {
+    "source": "检查翻译器能否启动，且与固定引擎源码一致",
+    "en": "Check that the translator starts and matches the pinned engine source"
+  },
+  {
+    "source": "检查许可及首次启动组件是否就绪",
+    "en": "Check that the license and first-launch components are ready"
+  },
+  {
+    "source": "检查读取程序与 LibHac 能否加载（不读取游戏或密钥）",
+    "en": "Check that the reader and LibHac load, without reading games or keys"
+  },
+  {
+    "source": "游戏库存储权限",
+    "en": "Library storage permissions"
+  },
+  {
+    "source": "环境检查未通过，请在设置中修复：",
+    "en": "Environment checks failed. Repair these items in Settings:"
+  },
+  {
+    "source": "着色器翻译组件",
+    "en": "Shader translator"
+  },
+  {
+    "source": "着色器转换组件不可用",
+    "en": "The shader conversion tool is unavailable"
+  },
+  {
+    "source": "至少预留 5 GB；实际准备前会按所选游戏文件大小再次检查空间，可选择空间更大的游戏库磁盘。",
+    "en": "Keep at least 5 GB free. Before preparation, space is checked again against the selected game files. Choose a library disk with more space if needed."
+  },
+  {
+    "source": "请在 Apple Silicon Mac 的本机桌面会话中运行；系统图形驱动随 macOS 更新提供。",
+    "en": "Run in a local desktop session on an Apple Silicon Mac. System graphics drivers are provided by macOS updates."
+  },
+  {
+    "source": "这些组件随完整应用提供，无需另装 Python、Homebrew 或 .NET。请从官方 Release 重新下载 DMG，将完整应用复制到“应用程序”后重新检查；不要只复制可执行文件。",
+    "en": "These components are included in the full app; separate Python, Homebrew or .NET installations are not required. Download the DMG again from the official release, copy the complete app into Applications, then check again. Copying only the executable is insufficient."
+  },
+  {
+    "source": "选择可读写且允许执行程序的本地或外置磁盘，保持磁盘连接；在设置中重新选择游戏库。",
+    "en": "Choose a writable local or external disk that allows program execution, keep it connected, and select the library again in Settings."
+  },
+  {
+    "source": "需要 Apple Silicon Mac，Intel Mac 或 Rosetta 下运行不受支持。",
+    "en": "An Apple Silicon Mac is required. Intel Macs and running under Rosetta are unsupported."
+  },
+  {
+    "source": "验证随应用提供的组件版本清单",
+    "en": "Validate the component version manifest included with the app"
+  },
+  {
+    "source": "运行与构建环境",
+    "en": "Runtime and build environment"
+  },
+  {
+    "source": "准备游戏需要完整工具链；启动已准备好的游戏只需要标有“启动”的项目。首次安装请先完成全部检查。",
+    "en": "Preparing games requires the full toolchain. Prepared games only need items marked for launching. Complete all checks during initial setup."
+  },
+  {
+    "source": "Mac 与图形",
+    "en": "Mac and graphics"
+  },
+  {
+    "source": "应用内置组件",
+    "en": "Bundled app components"
+  },
+  {
+    "source": "游戏库存储",
+    "en": "Library storage"
+  },
+  {
+    "source": "获取 Xcode",
+    "en": "Get Xcode"
+  },
+  {
+    "source": "打开 Xcode 完成设置",
+    "en": "Open Xcode to finish setup"
+  },
+  {
+    "source": "下载完整应用",
+    "en": "Download the full app"
+  },
+  {
+    "source": "打开软件更新",
+    "en": "Open Software Update"
+  },
+  {
+    "source": "准备与启动",
+    "en": "Prepare and launch"
+  },
+  {
+    "source": "准备时需要",
+    "en": "Preparation only"
+  },
+  {
+    "source": "安装与修复方法",
+    "en": "Installation and repair"
+  },
+  {
+    "source": "正在逐项验证环境，请稍候…",
+    "en": "Verifying each environment component…"
+  },
+  {
+    "source": "构建与启动环境均已就绪",
+    "en": "Build and runtime environments are ready"
+  },
+  {
+    "source": "可启动已准备的游戏，构建环境仍需修复",
+    "en": "Prepared games can launch; build tools still need attention"
+  },
+  {
+    "source": "完成环境检查后再导入游戏",
+    "en": "Complete environment checks before importing games"
+  },
+  {
+    "source": "选择 Xcode.app…",
+    "en": "Select Xcode.app…"
+  },
+  {
+    "source": "选择完整 Xcode.app",
+    "en": "Select the full Xcode.app"
+  },
+  {
+    "source": "1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。",
+    "en": "1. Install the full Xcode app, open it once, accept its license and finish initial component installation.\n2. Select Xcode.app and check again. Install Metal if it is missing.\n3. Expand Installation and repair for each item. Continue after all checks pass."
+  },
+  {
+    "source": "Python、Python 扩展、.NET、NSP 读取器和着色器转换工具均随应用提供，并检查实际运行能力。无需另装系统 Python 或 Homebrew；内置组件缺失或损坏时请重装完整应用。",
+    "en": "Python, Python extensions, .NET, the NSP reader and shader tools are bundled and tested for actual operation. Separate system Python or Homebrew installations are not required. Reinstall the full app if a bundled component is missing or damaged."
+  },
+  {
+    "source": "内置 Python 缺失或不可执行，请重新安装完整应用。",
+    "en": "Bundled Python is missing or not executable. Reinstall the complete app."
+  },
+  {
+    "source": "内置 Python 无法启动环境检查",
+    "en": "Bundled Python could not start environment checks"
+  },
+  {
+    "source": "Python 随完整应用提供，无需另装系统 Python。请从官方 Release 重新下载 DMG，将完整应用复制到“应用程序”后重新检查。",
+    "en": "Python is included with the complete app; a separate system Python installation is not required. Download the DMG from the official release, copy the full app into Applications, and check again."
+  },
+  {
+    "source": "请先安装完整 Xcode 并完成初始设置。",
+    "en": "Install the full Xcode app and complete its initial setup first."
+  },
+  {
+    "source": "环境安装说明",
+    "en": "Environment installation guide"
   }
 ]

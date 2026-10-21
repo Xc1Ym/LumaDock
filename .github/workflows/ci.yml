@@ -61,7 +61,7 @@ jobs:
       - name: Install pinned Python build dependencies
         run: |
           "$(brew --prefix python@3.14)/bin/python3.14" -m venv work/python-venv
-          work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt
+          work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt -r requirements-build.txt
       - name: Worker and distribution regression tests
         run: work/python-venv/bin/python -B -m unittest discover -s tests -v
       - name: Import, localization and appearance regression tests

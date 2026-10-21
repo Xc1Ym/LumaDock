@@ -13,6 +13,7 @@ final class WorkerOutput: @unchecked Sendable {
         return lines
     }
     func error(_ data:Data) {lock.lock();defer{lock.unlock()};if errors.count<32768{errors.append(data)}}
+    var errorText:String {lock.lock();defer{lock.unlock()};return String(data:errors,encoding:.utf8) ?? ""}
 }
 
 @MainActor final class Store: ObservableObject {
@@ -20,6 +21,10 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var games: [Game] = []
     @Published var tasks: [TaskRecord] = []
     @Published var checks: [ToolCheck] = []
+    @Published private(set) var checkingEnvironment = false
+    @Published var environmentReportComplete = false
+    private var environmentCallbacks: [()->Void] = []
+    private var lastWorkerEvent: [String:Date] = [:]
     @Published var canUninstallMetal = false
     @Published var profiles: [GameProfile] = []
     @Published var keyStatus = "尚未导入密钥"
@@ -43,10 +48,11 @@ final class WorkerOutput: @unchecked Sendable {
     var refreshTimer: Timer?
     var libraryURL: URL { URL(fileURLWithPath: preferences.library) }
     var executionBusy: Bool { executionTask != nil }
-    var environmentReady: Bool { !checks.isEmpty && checks.allSatisfy(\.ok) }
-    var checkingEnvironment: Bool { tasks.contains { $0.operation == "preflight" && $0.active } }
+    var environmentReady: Bool { environmentReportComplete && !checkingEnvironment && !checks.isEmpty && checks.filter{$0.required(for:"prepare")}.allSatisfy(\.ok) }
+    var runtimeReady: Bool { environmentReportComplete && !checkingEnvironment && !checks.isEmpty && checks.filter{$0.required(for:"launch")}.allSatisfy(\.ok) }
     var metalInstalled: Bool { checks.contains { $0.name == "Metal 编译组件" && $0.ok } }
     var xcodeInstalled: Bool { checks.contains { $0.name == "Xcode" && $0.ok } }
+    var xcodeInitialized: Bool { checks.contains { $0.name == "Xcode 初始设置" && $0.ok } }
     var canManageToolchain: Bool { !executionBusy && queue.isEmpty && !checkingEnvironment }
     var importActionTitle: String { !environmentReady ? "准备环境" : hasImportedKeys ? "添加游戏" : "开始导入" }
     var importingKeys: Bool { tasks.contains { $0.operation == "keys" && $0.active } }
@@ -115,12 +121,62 @@ final class WorkerOutput: @unchecked Sendable {
             self.preferences.library = result["library"] as? String ?? url.path; self.preferences.libraryId = result["libraryId"] as? String ?? ""; self.savePreferences(); self.refresh(); self.checkEnvironment()
         }
     }
-    func checkEnvironment(completion: (() -> Void)? = nil) { checks = []; worker("preflight") { r in
-        if let checks = Self.decode([ToolCheck].self,r["checks"]) { self.checks = checks }
+    func checkEnvironment(completion: (() -> Void)? = nil) {
+        if let completion { environmentCallbacks.append(completion) }
+        guard !checkingEnvironment else { return }
+        checkingEnvironment = true; environmentReportComplete = false; checks = []; canUninstallMetal = false
+        let developerDir=preferences.developerDir,libraryId=preferences.libraryId
+        worker("preflight") { r in
+        if self.preferences.developerDir != developerDir || self.preferences.libraryId != libraryId {
+            self.checkingEnvironment=false;self.checkEnvironment();return
+        }
+        if let checks = Self.decode([ToolCheck].self,r["checks"]) { self.checks = checks;self.environmentReportComplete=true }
         self.canUninstallMetal = r["canUninstallMetal"] as? Bool == true
-        completion?()
+        self.checkingEnvironment = false
+        let callbacks = self.environmentCallbacks; self.environmentCallbacks = []
+        callbacks.forEach { $0() }
         if self.environmentReady { self.startNext() }
     } }
+    func pythonExecutable() throws -> URL {
+        let bundled = resources.appendingPathComponent("Runtime/python/bin/python3")
+        if FileManager.default.isExecutableFile(atPath:bundled.path) { return bundled }
+        // Source checkout support is explicit; installed apps never borrow a system Python.
+        let developer = resources.appendingPathComponent("work/Runtime/python/bin/python3")
+        if FileManager.default.fileExists(atPath:resources.appendingPathComponent("Package.swift").path), FileManager.default.isExecutableFile(atPath:developer.path) { return developer }
+        throw NSError(domain:"LumaDock",code:1,userInfo:[NSLocalizedDescriptionKey:L("内置 Python 缺失或不可执行，请重新安装完整应用。")])
+    }
+    func failEnvironmentBootstrap(_ detail:String) {
+        checkingEnvironment = false; environmentReportComplete = false; environmentCallbacks = []
+        checks = [.init(name:"内置 Python",ok:false,message:"内置 Python 无法启动环境检查",help:"Python 随完整应用提供，无需另装系统 Python。请从官方 Release 重新下载 DMG，将完整应用复制到“应用程序”后重新检查。",action:"reinstall",group:"bundled",requiredFor:["prepare","launch"],detail:detail)]
+    }
+    private func watchEnvironmentWorker(_ id:String) {
+        DispatchQueue.main.asyncAfter(deadline:.now()+45) { [weak self] in
+            guard let self,let process=self.processes[id],process.isRunning,self.checkingEnvironment else {return}
+            if Date().timeIntervalSince(self.lastWorkerEvent[id] ?? .distantPast) >= 40 {
+                process.terminate();self.failEnvironmentBootstrap("工具检查超时，请重新检查或修复对应组件。")
+            } else { self.watchEnvironmentWorker(id) }
+        }
+    }
+    func repairEnvironment(_ action:String) {
+        switch action {
+        case "xcodeStore": openXcodeStore()
+        case "openXcode":
+            let app = URL(fileURLWithPath:preferences.developerDir).deletingLastPathComponent().deletingLastPathComponent()
+            guard app.pathExtension == "app", FileManager.default.fileExists(atPath:app.path) else { openXcodeStore(); return }
+            NSWorkspace.shared.open(app)
+        case "installMetal": manageMetal(remove:false)
+        case "reinstall": NSWorkspace.shared.open(URL(string:"https://github.com/Xc1Ym/LumaDock/releases/latest")!)
+        case "systemUpdate": NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Software-Update-Settings.extension")!)
+        case "library": chooseLibrary()
+        default: break
+        }
+    }
+    func chooseXcode() {
+        let panel=NSOpenPanel();panel.title=L("选择完整 Xcode.app");panel.canChooseFiles=true;panel.canChooseDirectories=false;panel.allowedContentTypes=[.application]
+        guard panel.runModal() == .OK,let app=panel.url else {return}
+        preferences.developerDir=app.appendingPathComponent("Contents/Developer").path
+        savePreferences();checkEnvironment()
+    }
     func openXcodeStore() {
         if !NSWorkspace.shared.open(URL(string:"macappstore://apps.apple.com/app/xcode/id497799835?mt=12")!) {
             NSWorkspace.shared.open(URL(string:"https://apps.apple.com/app/xcode/id497799835")!)
@@ -128,7 +184,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func manageMetal(remove: Bool) {
         guard canManageToolchain else { error = "请等待游戏、准备队列和工具链任务结束后再管理组件。"; return }
-        guard xcodeInstalled else { error = "请先安装完整 Xcode 并通过环境检查。"; return }
+        guard xcodeInstalled, remove || xcodeInitialized else { error = "请先安装完整 Xcode 并完成初始设置。"; return }
         guard !remove || metalInstalled && canUninstallMetal else { error = "未检测到可卸载的 Metal 组件，或当前 Xcode 不支持卸载。"; return }
         savePreferences()
         checks = []
@@ -223,13 +279,15 @@ final class WorkerOutput: @unchecked Sendable {
         var req: [String:Any] = ["schema":1,"taskId":id,"operation":operation,"privateRoot":privateRoot.path,"resources":resources.path,"library":preferences.library.isEmpty ? privateRoot.appendingPathComponent("unconfigured").path : preferences.library,"libraryId":preferences.libraryId,"developerDir":preferences.developerDir,"parentPid":ProcessInfo.processInfo.processIdentifier]
         extra.forEach { req[$0] = $1 }
         // Environment setup must remain available when an old library drive is offline.
-        if ["preflight","installMetal","uninstallMetal"].contains(operation) { req["libraryId"] = "" }
+        if ["preflight","installMetal","uninstallMetal"].contains(operation) {
+            req["libraryId"] = ""
+            req["storageLibraryId"] = preferences.libraryId
+        }
         let dir = privateRoot.appendingPathComponent("requests"); try? FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700]); let file = dir.appendingPathComponent(id+".json")
         do {
             let data = try JSONSerialization.data(withJSONObject:req); try data.write(to:file,options:.atomic); try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
-            let bundled = resources.appendingPathComponent("Runtime/python/bin/python3")
-            let python = FileManager.default.isExecutableFile(atPath:bundled.path) ? bundled : URL(fileURLWithPath:"/opt/homebrew/bin/python3")
-            let process = Process(); process.executableURL = python; process.arguments = ["-B",resources.appendingPathComponent("Worker/main.py").path,"--request",file.path]
+            let python = try pythonExecutable()
+            let process = Process(); process.executableURL = python; process.arguments = ["-B","-I",resources.appendingPathComponent("Worker/main.py").path,"--request",file.path]
             var env = ProcessInfo.processInfo.environment; env["PYTHONUNBUFFERED"] = "1"; env["PYTHONDONTWRITEBYTECODE"] = "1"; env["PYTHONNOUSERSITE"] = "1"; env.removeValue(forKey:"PYTHONPATH"); env.removeValue(forKey:"PYTHONHOME"); process.environment = env
             let pipe = Pipe(); process.standardOutput = pipe; let err = Pipe(); process.standardError = err
             let output = WorkerOutput()
@@ -248,8 +306,10 @@ final class WorkerOutput: @unchecked Sendable {
                 pipe.fileHandleForReading.readabilityHandler = nil; err.fileHandleForReading.readabilityHandler = nil
                 DispatchQueue.main.asyncAfter(deadline:.now()+0.15) {
                     self.processes[id] = nil; try? FileManager.default.removeItem(at:file)
+                    self.lastWorkerEvent[id] = nil
                     if let i = self.tasks.firstIndex(where:{$0.id == id}), self.tasks[i].active {
                         self.tasks[i].state = p.terminationStatus == 130 ? "cancelled" : "interrupted"; self.tasks[i].message = "工作进程已退出。可重试并验证完成阶段。"
+                        if operation == "preflight" { self.failEnvironmentBootstrap(output.errorText.isEmpty ? "工作进程已退出。可重试并验证完成阶段。" : output.errorText) }
                     }
                     self.callbacks[id] = nil
                     if self.executionTask == id {
@@ -263,11 +323,22 @@ final class WorkerOutput: @unchecked Sendable {
             if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970),at:0) }
             callbacks[id] = completion; processes[id] = process
             try process.run()
-        } catch { self.error = "无法启动本地组件：\(error.localizedDescription)"; processes[id] = nil; callbacks[id] = nil; DispatchQueue.main.async {if self.executionTask==id {self.executionTask=nil;self.startNext()}} }
+            if operation == "preflight" {lastWorkerEvent[id]=Date();watchEnvironmentWorker(id)}
+        } catch {
+            self.error = "无法启动本地组件：\(error.localizedDescription)"; processes[id] = nil; callbacks[id] = nil
+            if let i=tasks.firstIndex(where:{$0.id==id}) { tasks[i].state="failed";tasks[i].message=self.error }
+            try? FileManager.default.removeItem(at:file)
+            if operation == "preflight" { failEnvironmentBootstrap(error.localizedDescription) }
+            DispatchQueue.main.async {if self.executionTask==id {self.executionTask=nil;self.startNext()}}
+        }
         return id
     }
     func event(_ e: [String:Any], visible: Bool) {
         guard e["schema"] as? Int == 1, let id = e["taskId"] as? String else { return }
+        if lastWorkerEvent[id] != nil {lastWorkerEvent[id]=Date()}
+        if e["type"] as? String == "check", tasks.contains(where:{$0.id==id && $0.operation=="preflight"}), let check=Self.decode(ToolCheck.self,e["check"]) {
+            if let index=checks.firstIndex(where:{$0.id==check.id}) {checks[index]=check} else {checks.append(check)}
+        }
         if let i = tasks.firstIndex(where:{$0.id == id}) {
             tasks[i].stage = e["stage"] as? String; tasks[i].stageIndex = e["stageIndex"] as? Int; tasks[i].stageCount = e["stageCount"] as? Int
             if e["type"] as? String != "heartbeat" {tasks[i].done = e["done"] as? Double; tasks[i].total = e["total"] as? Double; tasks[i].unit = e["unit"] as? String}; tasks[i].elapsed = e["elapsed"] as? Double
@@ -277,7 +348,10 @@ final class WorkerOutput: @unchecked Sendable {
         if e["type"] as? String == "result" {
             let state = e["state"] as? String
             if state == "completed" { callbacks[id]?(e["result"] as? [String:Any] ?? [:]) }
-            else if state == "failed" { error = e["message"] as? String ?? "操作失败，请查看任务日志。" }
+            else if state == "failed" {
+                error = e["message"] as? String ?? "操作失败，请查看任务日志。"
+                if tasks.contains(where:{$0.id==id && $0.operation=="preflight"}) {checkingEnvironment=false;environmentCallbacks=[]}
+            }
         }
     }
     func enqueue(_ game: Game) {
@@ -300,6 +374,13 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func launch(_ game: Game) {
         guard !executionBusy, queue.isEmpty else { error = "构建与游戏运行互斥，请等待当前任务结束。"; return }
+        guard runtimeReady else {
+            checkEnvironment {
+                if self.runtimeReady {self.launch(game)}
+                else {self.onboardingStep=0;self.showOnboarding=true}
+            }
+            return
+        }
         executionTask = worker("launch",extra:["gameId":game.id])
     }
     func migrate(_ game: Game) {

@@ -125,7 +125,7 @@ class WorkerTests(unittest.TestCase):
         def run(args,log=None,env=None,cwd=None,on_line=None):
             record=Path(env['DM_PSO_USER']);self.assertTrue(record.parent.is_dir());self.assertFalse(record.is_dir());seen.append(record)
             with record.open('a') as f:f.write('pipeline\n')
-        with patch('build.validate_runtime'),patch.object(self.ctx,'run',side_effect=run):
+        with patch('toolchain.require_launch_environment'),patch('build.validate_runtime'),patch.object(self.ctx,'run',side_effect=run):
             self.quiet(build.launch,self.ctx);self.quiet(build.launch,self.ctx)
         self.assertEqual(seen[0],seen[1]);self.assertEqual(seen[0].read_text().count('pipeline'),2)
 
@@ -148,16 +148,12 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(src.read_bytes(),b'unchanged')
         self.assertEqual(self.ctx.catalog()['games'],[])
 
-    def test_20_environment_requires_full_xcode_not_only_clang(self):
-        developer=self.root/'Developer';developer.mkdir()
-        nx=self.root/'nx_extract';nx.write_text('fixture')
-        tool=type('Tool',(),{'returncode':0,'stdout':'fixture tool version','stderr':''})()
-        with patch.object(self.ctx,'env',return_value={'DEVELOPER_DIR':str(developer)}),patch.object(self.ctx,'nx',return_value=nx),patch('library.subprocess.run',return_value=tool),patch('platform.machine',return_value='arm64'),patch('platform.mac_ver',return_value=('27.0.1',(),'')),patch('library.shutil.disk_usage',return_value=type('Disk',(),{'free':100*2**30})()):
+    def test_20_preflight_preserves_separate_prepare_and_launch_requirements(self):
+        checks=[dict(name='Xcode',ok=False,requiredFor=['prepare']),dict(name='Python',ok=True,requiredFor=['prepare','launch'])]
+        with patch('toolchain.inspect_environment',return_value=checks),patch('toolchain.supports_removal',return_value=False):
             result=self.quiet(library.preflight,self.ctx)
-            self.assertFalse(result['ready'])
-            self.assertFalse(next(x['ok'] for x in result['checks'] if x['name']=='Xcode'))
-            (developer/'Platforms/MacOSX.platform').mkdir(parents=True)
-            self.assertTrue(self.quiet(library.preflight,self.ctx)['ready'])
+        self.assertFalse(result['ready']);self.assertTrue(result['launchReady'])
+        self.assertEqual(result['checks'],checks)
 
     def test_21_metal_removal_requires_confirmation_and_supported_xcode(self):
         with patch.object(self.ctx,'run') as run:

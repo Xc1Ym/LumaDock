@@ -31,6 +31,7 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         try JSONSerialization.data(withJSONObject:toolchainReady,options:.fragmentsAllowed).write(to:root.appendingPathComponent("tools.json"))
         let store = Store(privateRoot:root.appendingPathComponent("private"),resources:resources)
         store.checks = [.init(name:"Fixture tools",ok:true,message:"fixture")]
+        store.environmentReportComplete = true
         store.preferences.library = root.appendingPathComponent("中文 游戏库").path
         store.preferences.libraryId = "fixture-library"
         try FileManager.default.createDirectory(at:store.privateRoot.appendingPathComponent("keys"),withIntermediateDirectories:true)
@@ -139,6 +140,53 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         let removal=operations(root).filter{$0["operation"] as? String == "uninstallMetal"}
         XCTAssertEqual(removal.count,1);XCTAssertEqual(removal.first?["confirmed"] as? Bool,true)
         XCTAssertNil(store.executionTask)
+        await cleanup(root,store)
+    }
+    func testMissingBundledPythonNeverFallsBackToHomebrew() async throws {
+        let (root,store)=try fixture()
+        try FileManager.default.removeItem(at:root.appendingPathComponent("resources/Runtime/python/bin/python3"))
+        store.checkEnvironment()
+        XCTAssertFalse(store.checkingEnvironment);XCTAssertFalse(store.environmentReady)
+        XCTAssertFalse(store.runtimeReady);XCTAssertTrue(store.processes.isEmpty)
+        XCTAssertEqual(store.checks.first?.name,"内置 Python")
+        XCTAssertEqual(store.checks.first?.action,"reinstall")
+        XCTAssertTrue(operations(root).isEmpty)
+        await cleanup(root,store)
+    }
+    func testPythonBootstrapCrashLeavesAnActionableCheckAndDoesNotRemainChecking() async throws {
+        let (root,store)=try fixture()
+        let executable=root.appendingPathComponent("resources/Runtime/python/bin/python3")
+        try FileManager.default.removeItem(at:executable)
+        try "#!/bin/sh\nexit 9\n".write(to:executable,atomically:true,encoding:.utf8)
+        try FileManager.default.setAttributes([.posixPermissions:0o700],ofItemAtPath:executable.path)
+        store.checkEnvironment()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        XCTAssertFalse(store.environmentReady);XCTAssertEqual(store.checks.first?.action,"reinstall")
+        await cleanup(root,store)
+    }
+    func testPartialChecksAndConcurrentRequestsCannotPrematurelyEnableContinue() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[],imports:[])
+        var callbacks=0
+        store.checkEnvironment {callbacks+=1}
+        store.checkEnvironment {callbacks+=1}
+        let id=try XCTUnwrap(store.tasks.first(where:{$0.operation=="preflight"})?.id)
+        store.event(["schema":1,"taskId":id,"type":"check","check":["name":"partial","ok":true,"message":"fixture"]],visible:true)
+        XCTAssertFalse(store.environmentReady)
+        try await waitUntil {callbacks==2 && store.processes.isEmpty}
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,1)
+        XCTAssertTrue(store.environmentReady)
+        await cleanup(root,store)
+    }
+    func testPreparedGameCanLaunchWhenOnlyCompileToolsAreUnavailable() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[],imports:[])
+        store.checks=[.init(name:"Python",ok:true,message:"fixture",requiredFor:["prepare","launch"]),.init(name:"Xcode",ok:false,message:"fixture",requiredFor:["prepare"])]
+        XCTAssertFalse(store.environmentReady);XCTAssertTrue(store.runtimeReady)
+        let game=try XCTUnwrap(Store.decode(Game.self,game("g",ready:true)))
+        store.launch(game)
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String=="launch"} && store.processes.isEmpty}
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String=="build"})
         await cleanup(root,store)
     }
 }

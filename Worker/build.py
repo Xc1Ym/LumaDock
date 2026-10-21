@@ -43,6 +43,8 @@ class Stages:
         self.c.emit('stageComplete','阶段完成',done=1,total=1)
 
 def tools(c):
+    from toolchain import require_environment
+    require_environment(c)
     env=c.env(); result={}
     for key,args in [('clang',['xcrun','clang','--version']),('metal',['xcrun','-sdk','macosx','metal','--version'])]:
         p=subprocess.run(args,env=env,capture_output=True,text=True)
@@ -51,6 +53,8 @@ def tools(c):
     sc=shutil.which('spirv-cross',path=env['PATH'])
     if not sc: raise Failure('着色器转换组件缺失，请重新安装完整应用。')
     result['spirv-cross']=digest(sc)
+    result['runtime']=digest(c.runtime/'versions.json')
+    result['macos-sdk']=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-version'],env=env,text=True).strip()
     # Every application-controlled source is part of the cache identity, including input runtime changes.
     h=hashlib.sha256()
     for p in sorted(c.engine.rglob('*')):
@@ -269,6 +273,8 @@ def migrate(c):
         return install(c,root,repo,gp,key,host,app/'romfs',patched,shader,app/'aoc',app/'font')
 
 def launch(c):
+    from toolchain import require_launch_environment
+    require_launch_environment(c)
     with c.lock('execution'):
         g=c.game(); runtime=c.library/'games'/g['id']/'current'; validate_runtime(runtime)
         c.begin('游戏运行中',1,1)

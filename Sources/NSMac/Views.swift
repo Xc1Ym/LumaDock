@@ -243,11 +243,13 @@ struct SettingsView: View {
                 Toggle(L("导入后自动准备支持的游戏"),isOn:Binding(get:{store.prepareAfterImport},set:{store.prepareAfterImport=$0}))
                 Text(L("仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。")).font(.caption).foregroundStyle(.secondary)
             }
-            Section(L("Apple 工具链")) {
+            Section(L("运行与构建环境")) {
                 TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).onSubmit {store.savePreferences();store.checkEnvironment()}
+                    .onChange(of:store.preferences.developerDir) {_,_ in store.checks=[]}
+                EnvironmentSummary()
                 ToolChecks()
                 ToolchainActions()
-                Text(L("首次安装需完整 Xcode。打开 Xcode 并完成许可及初始组件安装，再安装 Metal 编译组件。")).font(.caption).foregroundStyle(.secondary)
+                Text(L("准备游戏需要完整工具链；启动已准备好的游戏只需要标有“启动”的项目。首次安装请先完成全部检查。")).font(.caption).foregroundStyle(.secondary)
             }
             Section(L("控制与诊断")) {
                 Button(L("设置全局键鼠与手柄映射")) {store.inputGame=nil;store.editingInput=true}
@@ -267,7 +269,71 @@ struct SettingsView: View {
 }
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
-    var body: some View { ForEach(store.checks) { c in HStack(alignment:.top) {Image(systemName:c.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(c.ok ? .teal : .orange);VStack(alignment:.leading) {Text(L(c.name));Text(L(c.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}} }.id(Localization.language) }
+    private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("bundled","应用内置组件"),("storage","游戏库存储")]
+    var body: some View {
+        VStack(alignment:.leading,spacing:18) {
+            ForEach(groups,id:\.0) { group,title in
+                let checks=store.checks.filter{($0.group ?? "system")==group}
+                if !checks.isEmpty {
+                    VStack(alignment:.leading,spacing:12) {
+                        Text(L(title)).font(.headline)
+                        ForEach(checks) { check in EnvironmentCheckRow(check:check) }
+                    }
+                }
+            }
+        }.id(Localization.language)
+    }
+}
+struct EnvironmentCheckRow: View {
+    @EnvironmentObject var store: Store
+    let check: ToolCheck
+    private var actionTitle:String {
+        switch check.action {
+        case "xcodeStore":return "获取 Xcode"
+        case "openXcode":return "打开 Xcode 完成设置"
+        case "installMetal":return "安装 Metal 编译组件"
+        case "reinstall":return "下载完整应用"
+        case "systemUpdate":return "打开软件更新"
+        case "library":return "选择游戏库"
+        default:return ""
+        }
+    }
+    var body:some View {
+        HStack(alignment:.top,spacing:10) {
+            Image(systemName:check.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(check.ok ? .teal : .orange).padding(.top,2)
+            VStack(alignment:.leading,spacing:5) {
+                HStack {
+                    Text(L(check.name)).fontWeight(.medium)
+                    Spacer()
+                    Text(L(check.required(for:"launch") ? "准备与启动" : "准备时需要")).font(.caption2).foregroundStyle(.secondary)
+                }
+                Text(L(check.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if let help=check.help {
+                    DisclosureGroup(L("安装与修复方法")) {
+                        VStack(alignment:.leading,spacing:8) {
+                            Text(L(help)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            if !actionTitle.isEmpty,let action=check.action {
+                                Button(L(actionTitle)){store.repairEnvironment(action)}
+                                    .disabled(store.checkingEnvironment || store.executionBusy || action=="installMetal" && (!store.xcodeInitialized || store.metalInstalled) || action=="library" && !store.queue.isEmpty)
+                            }
+                            if let detail=check.detail,!detail.isEmpty {Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)}
+                        }.padding(.top,6)
+                    }.font(.caption)
+                }
+            }
+        }
+    }
+}
+struct EnvironmentSummary: View {
+    @EnvironmentObject var store:Store
+    var body:some View {
+        HStack {
+            if store.checkingEnvironment {ProgressView().controlSize(.small);Text(L("正在逐项验证环境，请稍候…"))}
+            else if store.environmentReady {Label(L("构建与启动环境均已就绪"),systemImage:"checkmark.shield.fill").foregroundStyle(.teal)}
+            else if store.runtimeReady {Label(L("可启动已准备的游戏，构建环境仍需修复"),systemImage:"checkmark.circle").foregroundStyle(.secondary)}
+            else {Label(L("完成环境检查后再导入游戏"),systemImage:"wrench.and.screwdriver").foregroundStyle(.secondary)}
+        }.font(.callout)
+    }
 }
 struct ToolchainActions: View {
     @EnvironmentObject var store:Store
@@ -276,11 +342,14 @@ struct ToolchainActions: View {
         VStack(alignment:.leading,spacing:12) {
             HStack {
                 Button(L("在 App Store 获取 Xcode"),action:store.openXcodeStore)
+                Button(L("选择 Xcode.app…"),action:store.chooseXcode).disabled(store.checkingEnvironment || store.executionBusy)
                 Button(L("重新检查")) {store.savePreferences();store.checkEnvironment()}.disabled(store.checkingEnvironment || store.executionBusy)
             }
+            Button(L("打开 Xcode 完成设置")){store.repairEnvironment("openXcode")}.disabled(!store.xcodeInstalled)
+            Button(L("环境安装说明")){store.reveal(store.resources.appendingPathComponent(Localization.language == "en" ? "docs/Environment.md" : "docs/环境要求.md"))}
             HStack {
                 Button(L("安装 Metal 编译组件")) {store.manageMetal(remove:false)}
-                    .disabled(!store.canManageToolchain || !store.xcodeInstalled || store.metalInstalled)
+                    .disabled(!store.canManageToolchain || !store.xcodeInitialized || store.metalInstalled)
                 Button(L("卸载 Metal 编译组件…"),role:.destructive) {confirmUninstall=true}
                     .disabled(!store.canManageToolchain || !store.metalInstalled || !store.canUninstallMetal)
                     .help(store.canUninstallMetal ? L("卸载 Apple 管理的共享组件，可重新安装") : L("当前 Xcode 不支持命令行卸载组件"))
@@ -302,15 +371,16 @@ struct EnvironmentSetupView: View {
     var body:some View {
         VStack(alignment:.leading,spacing:16) {
             Text(L("先准备 Mac 运行环境。需要 Apple Silicon、macOS 26 或更新系统、完整 Xcode 和 Metal 编译组件。检查通过后再导入玩家内容。")).foregroundStyle(.secondary)
-            if store.checkingEnvironment {ProgressView(L("正在检查运行环境…")).controlSize(.small)}
-            ToolChecks()
-            Divider()
+            EnvironmentSummary()
             Text(L("缺少环境时，按以下顺序安装：")).font(.headline)
-            Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 在下方填写 Xcode 的 Developer 目录并重新检查。\n3. 缺少 Metal 时点击安装；其余构建依赖已随应用提供。")).font(.callout).foregroundStyle(.secondary)
+            Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。")).font(.callout).foregroundStyle(.secondary)
+            Text(L("Python、Python 扩展、.NET、NSP 读取器和着色器转换工具均随应用提供，并检查实际运行能力。无需另装系统 Python 或 Homebrew；内置组件缺失或损坏时请重装完整应用。")).font(.caption).foregroundStyle(.secondary)
             TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).textFieldStyle(.roundedBorder)
                 .onChange(of:store.preferences.developerDir) { _,_ in store.checks=[] }
                 .onSubmit {store.savePreferences();store.checkEnvironment()}
             ToolchainActions()
+            Divider()
+            ToolChecks()
             if store.environmentReady {Label(L("环境已就绪，可以继续选择游戏库。"),systemImage:"checkmark.circle.fill").foregroundStyle(.teal)}
         }
     }

@@ -42,7 +42,8 @@ def tools_now():
     t['xlate_source'] = subprocess.run([os.path.join(XLATE_DIR, 'dmsh_xlate'), '--source-sha'], capture_output=True, text=True).stdout.strip()
     sc = subprocess.run(['which', 'spirv-cross'], capture_output=True, text=True).stdout.strip()
     t['spirv-cross'] = sha16(sc) if sc else 'missing'
-    for sdk in ('macosx', 'iphoneos'):
+    # LumaDock's Mac pipeline does not depend on another platform's SDK.
+    for sdk in (('macosx',) if os.environ.get('DM_MAC_ONLY') == '1' else ('macosx', 'iphoneos')):
         t['metal_' + sdk] = subprocess.run(['xcrun', '-sdk', sdk, 'metal', '--version'], capture_output=True, text=True).stdout.splitlines()[0:1] or ['missing']
         t['metal_' + sdk] = t['metal_' + sdk][0]
     return t

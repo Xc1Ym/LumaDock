@@ -22,7 +22,11 @@ struct TaskRecord: Codable, Identifiable {
     var active: Bool { ["running","queued","cancelling"].contains(state) }
     var title: String { ["import":L("导入游戏"),"build":L("准备游戏"),"migrate":L("迁移构建"),"launch":L("运行游戏"),"keys":L("导入密钥"),"preflight":L("环境检查"),"installMetal":L("安装 Metal 编译组件"),"uninstallMetal":L("卸载 Metal 编译组件")][operation] ?? operation }
 }
-struct ToolCheck: Decodable, Identifiable { var id: String { name }; var name: String; var ok: Bool; var message: String }
+struct ToolCheck: Decodable, Identifiable {
+    var id: String { name }; var name: String; var ok: Bool; var message: String
+    var help: String?; var action: String?; var group: String?; var requiredFor: [String]?; var detail: String?
+    func required(for scope:String) -> Bool { requiredFor?.contains(scope) ?? true }
+}
 struct GameProfile: Decodable, Identifiable { var id: String; var name: String; var compatibility: String; var version: String }
 struct KeyBinding: Codable, Equatable { var code: Int; var modifiers: Int = 0 }
 struct AxisBinding: Codable, Equatable { var source: String; var invert: Bool = false }

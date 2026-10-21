@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import argparse, json, os, signal, sys, traceback, subprocess, threading, time
 from pathlib import Path
+# The launcher starts Python in isolated mode; only this trusted Worker folder is added.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import Context, Failure, Cancelled
 import library, build, input_config, toolchain
 

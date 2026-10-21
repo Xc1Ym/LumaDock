@@ -67,6 +67,8 @@
 
 逐步说明、迁移已有《旷野之息》构建及数据管理见 [使用说明](docs/使用说明.md)。
 
+[环境要求与修复方法](docs/环境要求.md) 列出全部依赖及安装步骤。首次设置实际验证内置 Python 与扩展、.NET、NSP 读取器、着色器工具、Xcode 初始化、macOS SDK、原生及 Metal 编译、游戏库存储权限。Python 缺失时由原生界面直接提示，不要求玩家另装系统 Python；仅构建所需的工具与已准备游戏的启动条件分别标明。
+
 设置中可卸载当前 Xcode 支持管理的 Metal 编译组件。卸载通过 Apple 的组件管理接口执行，因其为共享组件，需要确认；游戏或准备队列运行时禁止安装和卸载，操作后重新检查状态。卸载不会删除游戏、密钥或存档，再次准备游戏前需重新安装组件。
 
 
@@ -105,7 +107,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 mkdir -p work
 brew install python@3.14 spirv-cross zstd
 "$(brew --prefix python@3.14)/bin/python3.14" -m venv work/python-venv
-work/python-venv/bin/python -m pip install -r requirements-runtime.txt
+work/python-venv/bin/python -m pip install -r requirements-runtime.txt -r requirements-build.txt
 work/python-venv/bin/python -B -m unittest discover -s tests -v
 swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
 swift scripts/make_icons.swift

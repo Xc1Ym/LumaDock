@@ -121,6 +121,81 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "import"})
         await cleanup(root,store)
     }
+    func testDeferringFailedSetupKeepsPrerequisitesAndResumesAfterRelaunch() async throws {
+        let (root,store)=try fixture(toolchainReady:false)
+        try configure(root,games:[],imports:[])
+        store.savePreferences()
+        let saved=try Data(contentsOf:store.privateRoot.appendingPathComponent("preferences.json"))
+        let key=try Data(contentsOf:store.privateRoot.appendingPathComponent("keys/prod.keys"))
+        store.checkEnvironmentAtStartup()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        XCTAssertTrue(store.showOnboarding);XCTAssertFalse(store.environmentReady)
+
+        store.deferOnboarding();store.onboardingDismissed()
+        XCTAssertFalse(store.showOnboarding)
+        XCTAssertFalse(store.preferences.onboardingComplete)
+        XCTAssertEqual(try Data(contentsOf:store.privateRoot.appendingPathComponent("preferences.json")),saved)
+        XCTAssertEqual(try Data(contentsOf:store.privateRoot.appendingPathComponent("keys/prod.keys")),key)
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "import"})
+
+        store.openOnboarding()
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,0)
+        store.deferOnboarding()
+        XCTAssertFalse(store.importPrerequisitesReady())
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,0)
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        store.finishOnboarding(addGames:false)
+        XCTAssertFalse(store.preferences.onboardingComplete)
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+
+        let nextSession=Store(privateRoot:store.privateRoot,resources:store.resources)
+        XCTAssertTrue(nextSession.showOnboarding)
+        XCTAssertFalse(nextSession.preferences.onboardingComplete)
+        try await waitUntil {nextSession.processes.isEmpty}
+        nextSession.terminate()
+        await cleanup(root,store)
+    }
+    func testDeferringSetupDuringCheckDoesNotReopenItOrStartAnotherCheck() async throws {
+        let (root,store)=try fixture(toolchainReady:false)
+        store.checkEnvironmentAtStartup()
+        XCTAssertTrue(store.checkingEnvironment)
+        store.deferOnboarding();store.onboardingDismissed()
+        store.checkEnvironmentAtStartup()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        XCTAssertFalse(store.showOnboarding);XCTAssertFalse(store.preferences.onboardingComplete)
+        XCTAssertFalse(store.environmentReady)
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,1)
+        await cleanup(root,store)
+    }
+    func testDeferringSetupWhenPythonIsMissingDoesNotBypassImportGate() async throws {
+        let (root,store)=try fixture()
+        try FileManager.default.removeItem(at:root.appendingPathComponent("resources/Runtime/python/bin/python3"))
+        store.checkEnvironmentAtStartup()
+        XCTAssertNotNil(store.error)
+        store.error=nil // Acknowledge the bootstrap error, as in the UI.
+        store.deferOnboarding();store.onboardingDismissed()
+        XCTAssertFalse(store.showOnboarding);XCTAssertFalse(store.preferences.onboardingComplete)
+        store.chooseGames()
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,0)
+        XCTAssertFalse(store.environmentReady);XCTAssertTrue(operations(root).isEmpty)
+        await cleanup(root,store)
+    }
+    func testQuitFromIncompleteSetupWaitsForSheetDismissalAndDoesNotFinishSetup() async throws {
+        let (root,store)=try fixture(toolchainReady:false)
+        var terminations=0
+        store.quitApplication {terminations+=1}
+        XCTAssertFalse(store.showOnboarding)
+        XCTAssertEqual(terminations,0,"AppKit must receive quit only after the sheet has detached")
+        XCTAssertFalse(store.preferences.onboardingComplete)
+        store.onboardingDismissed()
+        XCTAssertEqual(terminations,1)
+        store.onboardingDismissed()
+        XCTAssertEqual(terminations,1,"Dismissal must consume the pending quit request")
+        XCTAssertTrue(operations(root).isEmpty)
+        store.quitApplication {terminations+=1}
+        XCTAssertEqual(terminations,2,"Without a sheet, quit is immediate")
+        await cleanup(root,store)
+    }
     func testMetalRemovalIsBlockedWhileBusyAndRechecksAfterMockRemoval() async throws {
         let (root,store)=try fixture()
         try configure(root,games:[],imports:[])

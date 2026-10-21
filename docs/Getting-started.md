@@ -12,6 +12,8 @@ See the [complete environment and repair guide](Environment.md) for every depend
 6. Supported games with all required files are prepared automatically by default. Watch **Tasks** for progress. You can cancel and retry; completed stages are reused only after validation. Preparation and game execution run separately and cannot run simultaneously.
 7. Choose **Launch game** after preparation completes. A failed preparation preserves the previous successful runtime. An engine update requires preparing the game again before using the new engine.
 
+You can leave setup at any step, including while checks are running or a component is missing. Choose **Set up later** or press **Esc** to return to the library; choose **Quit LumaDock** or press **⌘Q** to quit normally. Resume from **Continue setup** in the library or reopen the assistant in Settings. Deferring setup does not mark it complete: unfinished setup returns on the next launch, and required checks still gate importing and preparing games.
+
 In **Settings → Language & appearance**, choose **System default**, **English**, or **简体中文**, and independently select **System default**, **Light**, or **Dark** appearance. Changes apply immediately and are saved. System file-dialog buttons follow the macOS language; raw compiler logs retain their tool language.
 
 Use the toolbar's input mapping button to configure global controls, or game details for a game-specific override. Mapping changes apply on the next launch without rebuilding. Settings also provides diagnostics export and a setup-assistant shortcut.

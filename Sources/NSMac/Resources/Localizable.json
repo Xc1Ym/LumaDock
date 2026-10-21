@@ -1850,5 +1850,17 @@
   {
     "source": "已复制修复命令，请在终端中手动执行。",
     "en": "Repair command copied. Run it manually in Terminal."
+  },
+  {
+    "source": "退出璃游",
+    "en": "Quit LumaDock"
+  },
+  {
+    "source": "稍后设置",
+    "en": "Set up later"
+  },
+  {
+    "source": "可稍后在设置中继续。环境检查通过后才能导入和准备游戏。",
+    "en": "Resume setup in Settings at any time. Environment checks must pass before importing or preparing games."
   }
 ]

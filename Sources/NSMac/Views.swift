@@ -42,7 +42,7 @@ struct ContentView: View {
         }
         .frame(minWidth:1100,minHeight:720)
         .onAppear {store.checkEnvironmentAtStartup()}
-        .sheet(isPresented:$store.showOnboarding,onDismiss:store.onboardingDismissed) { OnboardingView().environmentObject(store).interactiveDismissDisabled(!store.preferences.onboardingComplete) }
+        .sheet(isPresented:$store.showOnboarding,onDismiss:store.onboardingDismissed) { OnboardingView().environmentObject(store) }
         .sheet(isPresented:$store.editingInput) { InputEditor(game:store.inputGame, initial:store.input(for:store.inputGame)).environmentObject(store) }
         .alert(L("操作未完成"),isPresented:Binding(get:{!store.showOnboarding && store.error != nil},set:{if !$0 && !store.showOnboarding {store.error=nil}})) { Button(L("知道了")) { store.error=nil }; Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))} } message: {Text(L(store.error ?? ""))}
         .overlay(alignment:.bottom) { if let notice = store.notice { HStack { Image(systemName:"checkmark.circle.fill").foregroundStyle(Brand.accent); Text(L(notice)); Button {store.notice=nil} label:{Image(systemName:"xmark")}.buttonStyle(.plain).accessibilityLabel(L("关闭提示")) }.padding().glassSurface().padding().onAppear {DispatchQueue.main.asyncAfter(deadline:.now()+6){store.notice=nil}} } }
@@ -451,11 +451,16 @@ struct OnboardingView: View {
             }
             Spacer()
             Divider()
+            Text(L("可稍后在设置中继续。环境检查通过后才能导入和准备游戏。"))
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
+                Button(L("退出璃游")) { store.quitApplication() }
+                    .keyboardShortcut("q",modifiers:.command)
+                Button(store.preferences.onboardingComplete ? L("关闭") : L("稍后设置"),action:store.deferOnboarding)
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
                 if step>0 {Button(L("上一步")){store.onboardingStep-=1}}
                 if step==3 {Button(L("稍后添加")){store.finishOnboarding(addGames:false)}}
-                else if store.preferences.onboardingComplete {Button(L("关闭")){store.showOnboarding=false}}
-                Spacer()
                 Button(step==3 ? L("添加游戏…") : L("继续")) {
                     if step<3 {store.onboardingStep+=1}
                     else {store.finishOnboarding(addGames:true)}

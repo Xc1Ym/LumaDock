@@ -38,6 +38,7 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var showOnboarding = false
     @Published var onboardingStep = 0
     private var addGamesAfterOnboarding = false
+    private var quitAfterOnboardingDismissal: (@MainActor () -> Void)?
     @Published var editingInput = false
     @Published var inputGame: Game?
     @Published var globalInput = InputConfig.standard
@@ -227,7 +228,27 @@ final class WorkerOutput: @unchecked Sendable {
         preferences.onboardingComplete = true; savePreferences()
         addGamesAfterOnboarding = addGames; showOnboarding = false
     }
+    func deferOnboarding() {
+        // Dismissing setup never marks prerequisites as satisfied or opens import.
+        addGamesAfterOnboarding = false
+        quitAfterOnboardingDismissal = nil
+        showOnboarding = false
+    }
+    func quitApplication(terminate: (@MainActor () -> Void)? = nil) {
+        let quit: @MainActor () -> Void = terminate ?? { NSApp.terminate(nil) }
+        addGamesAfterOnboarding = false
+        // AppKit can ignore terminate while a sheet is attached. Wait for SwiftUI
+        // to finish dismissing it, then use the normal delegate/worker shutdown.
+        guard showOnboarding else { quit(); return }
+        quitAfterOnboardingDismissal = quit
+        showOnboarding = false
+    }
     func onboardingDismissed() {
+        if let quit = quitAfterOnboardingDismissal {
+            quitAfterOnboardingDismissal = nil
+            quit()
+            return
+        }
         if addGamesAfterOnboarding { addGamesAfterOnboarding = false; chooseGames() }
     }
     func importKeys() {

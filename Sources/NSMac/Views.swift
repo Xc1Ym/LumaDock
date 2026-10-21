@@ -22,7 +22,7 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Label(store.executionBusy ? L("任务进行中") : L("本地运行"),systemImage:store.executionBusy ? "circle.dotted" : "checkmark.shield")
                     Text(L("游戏与密钥由玩家自行导入")).font(.caption).foregroundStyle(.secondary)
-                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.3")).font(.caption2).foregroundStyle(.tertiary)
+                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.4")).font(.caption2).foregroundStyle(.tertiary)
                 }.font(.caption).padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).padding(.bottom,16)
             }.padding(.horizontal,12).navigationSplitViewColumnWidth(min:205,ideal:225,max:270)
         } detail: {

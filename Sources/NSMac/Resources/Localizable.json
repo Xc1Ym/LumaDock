@@ -1820,8 +1820,8 @@
     "en": "Microsoft.NETCore.App {0} · Bundled with the app"
   },
   {
-    "source": "打开当前选择的 Xcode，完成许可及必需系统组件安装。若打开后仍不通过，请先阅读并同意 Xcode 许可，再复制下方命令到终端手动执行；它会安装系统组件并接受许可。完成后回到璃游点击“重新检查”。",
-    "en": "Open the selected Xcode and complete its license and required system component setup. If the check still fails, read and agree to the Xcode license before manually running the command below in Terminal; it installs system components and accepts the license. Return to LumaDock and click Check again."
+    "source": "打开所选 Xcode，完成许可及必需系统组件设置。若已完成，可先退出并重新打开璃游，或点击“重新检查”。仍未通过时查看下方诊断；确需手动初始化时，先阅读并同意 Xcode 许可再执行修复命令，它会安装系统组件并接受许可。",
+    "en": "Open the selected Xcode and finish its license and required system component setup. If setup is already complete, quit and reopen LumaDock or click Check again first. If it still fails, review the diagnostics below. When manual initialization is needed, read and agree to Xcode's license before running the repair command; it installs system components and accepts the license."
   },
   {
     "source": "请先安装并选择完整 Xcode，再检查初始设置。",

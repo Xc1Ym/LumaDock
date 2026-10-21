@@ -19,7 +19,7 @@ from core import Failure, read
 
 REPAIR_BUNDLE = '这些组件随完整应用提供，无需另装 Python、Homebrew 或 .NET。请从官方 Release 重新下载 DMG，将完整应用复制到“应用程序”后重新检查；不要只复制可执行文件。'
 REPAIR_XCODE = '从 App Store 安装完整 Xcode，打开一次并完成许可及初始组件安装。选择实际 Xcode.app；仅安装 Command Line Tools 不够。'
-REPAIR_XCODE_INITIAL = '打开当前选择的 Xcode，完成许可及必需系统组件安装。若打开后仍不通过，请先阅读并同意 Xcode 许可，再复制下方命令到终端手动执行；它会安装系统组件并接受许可。完成后回到璃游点击“重新检查”。'
+REPAIR_XCODE_INITIAL = '打开所选 Xcode，完成许可及必需系统组件设置。若已完成，可先退出并重新打开璃游，或点击“重新检查”。仍未通过时查看下方诊断；确需手动初始化时，先阅读并同意 Xcode 许可再执行修复命令，它会安装系统组件并接受许可。'
 PROBE_TIMEOUT = '工具检查超时，请重新检查或修复对应组件。'
 
 

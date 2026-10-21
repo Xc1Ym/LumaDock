@@ -57,7 +57,7 @@ Import the base game, the specified update, and any DLC you want to use. Title I
 
 You need an **Apple Silicon Mac, macOS 26 or later, and a full Xcode installation with the Metal compiler component**. The current tested setup is an M5 Pro running macOS 27.0.1 with Xcode 27.1; the app has not been revalidated on a physical Mac running macOS 26. Allow tens of gigabytes of free space for large games; requirements vary with the game and its caches.
 
-**1. Install LumaDock.** Open `LumaDock-0.2.3-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
+**1. Install LumaDock.** Open `LumaDock-0.2.4-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
 
 **2. Prepare the environment first.** The first setup step checks Apple Silicon, macOS, full Xcode, Metal, bundled components, and available space. The Xcode button opens its [Mac App Store page](https://apps.apple.com/app/xcode/id497799835) directly. Install missing Apple tools using the instructions in the wizard, then recheck; the next step stays locked until checks pass. Metal can be installed using [Apple's supported method](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). Other runtime dependencies are bundled; players do not need Homebrew, Python, or .NET.
 
@@ -119,7 +119,7 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 Outputs are placed in `release/`: the app, DMG, source ZIP, `SHA256SUMS`, and a distribution audit. Building a distribution does not require games or keys. Actual bundled dependency versions are recorded in `Runtime/versions.json` inside the app. Homebrew and toolchain versions depend on the build environment; byte-for-byte reproducibility is not currently guaranteed.
 
-[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.3`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
+[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.4`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
 
 Use the ignored `work/` directory for development and private tests. `--data-root <directory>` isolates application data. Do not commit `work/`, `release/`, `Runtime`, or any player data.
 

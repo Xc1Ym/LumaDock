@@ -1,24 +1,24 @@
-## New in 0.2.2
+## New in 0.2.3
 
-- Complete environment checklist in setup and Settings: hardware, system Metal device, bundled Python and extensions, .NET 10, NSP reader, shader tools, Xcode initialization, macOS SDK, native compilation/signing, actual Metal compilation, and library permissions/free space.
-- English and Chinese installation and repair guidance for every item, with actions to get/select/open Xcode, install Metal, reinstall an incomplete app, or change library storage.
-- Isolated bundled Python with no silent Homebrew fallback. Missing Python or a failed Worker bootstrap produces an actionable native check instead of leaving setup stuck.
-- Separate preparation and launch requirements. Already prepared games can launch without build-only tools; incomplete or failed checks cannot enable Continue early.
-- Mac shader-chain checks only require the macOS SDK. Tool and engine changes continue to invalidate affected build caches.
-- Redesigned Retina DMG installer with a light glass-style background, aligned drag-to-Applications icons, bilingual instructions, and organized guides/licenses. Packaging verifies the mounted installer layout and preserves the app signature.
+- Check the environment automatically once per app launch. Settings and reopened setup reuse the current result, including failures; manual rechecks and verification after toolchain/library changes remain available.
+- Explain Xcode initial setup failures with the selected Developer path, the status command, error output and exit status even when the command returns no text. Distinguish missing Xcode, a reported license error, timeout and other initialization/status failures. A copyable repair command uses the selected Xcode; the user runs it manually after reviewing and agreeing to Apple's license. LumaDock does not execute privileged initialization or accept licenses automatically.
+- Open English/Chinese environment instructions and third-party notices in an offline reader inside the app, including from the setup assistant.
+- Show bundled component versions first, with full installation paths in an expandable section. Locate Python, extensions and .NET from the current app bundle.
+- Remove leftover Homebrew runtime search paths and reject external native dependencies/symlinks during packaging. CI verifies actual bundled tool startup after renaming and moving the app into a path containing Chinese characters and spaces.
+- An incomplete packaged app reports its own missing resources instead of falling back to a developer checkout.
 
-Local validation: 38 Python tests, 19 Swift tests, all 18 packaged environment checks, bilingual UI checks, and DMG/source/signature/checksum verification passed on macOS 27.0.1 with Xcode 27.1. No games were run for this update; the historical gameplay evidence is unchanged. Physical macOS 26 testing remains outstanding.
+Local validation: 43 Python tests, 24 Swift tests, native runtime load-path audits, real UI navigation/offline-guide checks, relocation tests, and DMG/source/signature/checksum verification passed on macOS 27.0.1 with Xcode 27.1. No games were run. The reported initialization failure on another Mac cannot be diagnosed from its old screenshot alone; use the updated diagnostics. Physical macOS 26 testing remains outstanding. GitHub Actions builds and publishes this release only after its checks pass; local results do not confirm the remote run.
 
-### 0.2.2 更新
+### 0.2.3 更新
 
-- 首次设置和设置页补齐完整环境检查，实际验证 Python 及扩展、.NET、NSP 读取器、着色器工具、Xcode 初始化、macOS SDK、原生编译与签名、Metal 编译和游戏库存储。
-- 每项提供中英文安装与修复方法，可获取、选择或打开 Xcode，安装 Metal、重装完整应用或切换游戏库存储。
-- 隔离启动内置 Python，不再自动借用 Homebrew Python。Python 缺失或 Worker 启动失败时，原生界面仍能给出修复入口。
-- 区分“准备”和“启动”条件；已准备游戏不依赖仅构建所需的工具，未完成或失败的检查不会提前放行。
-- Mac 着色器链只检查 macOS SDK，工具链或引擎变化仍会使对应缓存失效。
-- 美化 Retina DMG 安装界面，加入浅色玻璃质感背景、固定图标位置、双语拖拽引导及整理后的文档和许可；验证安装盘布局及应用签名。
+- 每次启动自动检查一次；切换设置或重新打开向导复用本次结果，包括失败结果。手动检查、工具链或游戏库变更后的验证保留。
+- Xcode 初始设置失败时显示所选 Developer 路径、检查命令、错误输出及退出码；命令无输出也不会只显示通用说明。区分缺少 Xcode、命令报告的许可错误、超时及其他初始化或状态检查失败。修复命令按实际 Xcode 路径生成，由玩家阅读并同意 Apple 许可后手动执行；应用不自动执行管理员初始化或接受许可。
+- 环境安装说明与第三方许可改为应用内离线阅读，支持中英文，首次运行向导内也能打开。
+- 内置组件默认显示版本，完整位置可展开；Python、扩展及 .NET 根据当前应用包位置定位。
+- 清除 Homebrew 备用搜索目录，打包时拒绝外部原生依赖和符号链接；CI 实际验证应用改名、移动至中文和空格目录后仍能启动内置工具。
+- 应用包缺少资源时报告本包错误，不回退到开发者源码目录。
 
-本地验证通过：38 项 Python 测试、19 项 Swift 测试、18 项发行应用环境检查、中英文界面检查，以及 DMG、源码、签名与校验和验证。实测系统为 macOS 27.0.1 / Xcode 27.1；本次未运行游戏，不扩大历史游玩结论，macOS 26 真机仍未重新验证。
+本地通过 43 项 Python 测试、24 项 Swift 测试、运行库审计、真实界面切换及离线说明检查、搬移验证，以及 DMG、源码、签名和校验和检查。测试系统为 macOS 27.0.1 / Xcode 27.1；本次没有运行游戏，也未在对方 Mac 上确认初始化失败的具体原因。macOS 26 真机验证仍待补充。CI 全部通过才会公开 Release，本地通过不代表此次远程构建已成功。
 
 LumaDock is a native Mac launcher built on [nxnative](https://github.com/seedds/nxnative), for Apple Silicon and macOS 26 or later.
 

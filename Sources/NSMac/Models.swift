@@ -24,7 +24,7 @@ struct TaskRecord: Codable, Identifiable {
 }
 struct ToolCheck: Decodable, Identifiable {
     var id: String { name }; var name: String; var ok: Bool; var message: String
-    var help: String?; var action: String?; var group: String?; var requiredFor: [String]?; var detail: String?
+    var help: String?; var action: String?; var group: String?; var requiredFor: [String]?; var detail: String?; var location:String?; var repairCommand:String?
     func required(for scope:String) -> Bool { requiredFor?.contains(scope) ?? true }
 }
 struct GameProfile: Decodable, Identifiable { var id: String; var name: String; var compatibility: String; var version: String }

@@ -22,7 +22,7 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Label(store.executionBusy ? L("任务进行中") : L("本地运行"),systemImage:store.executionBusy ? "circle.dotted" : "checkmark.shield")
                     Text(L("游戏与密钥由玩家自行导入")).font(.caption).foregroundStyle(.secondary)
-                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.2")).font(.caption2).foregroundStyle(.tertiary)
+                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.3")).font(.caption2).foregroundStyle(.tertiary)
                 }.font(.caption).padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).padding(.bottom,16)
             }.padding(.horizontal,12).navigationSplitViewColumnWidth(min:205,ideal:225,max:270)
         } detail: {
@@ -41,7 +41,7 @@ struct ContentView: View {
                 }
         }
         .frame(minWidth:1100,minHeight:720)
-        .onAppear {store.checkEnvironment()}
+        .onAppear {store.checkEnvironmentAtStartup()}
         .sheet(isPresented:$store.showOnboarding,onDismiss:store.onboardingDismissed) { OnboardingView().environmentObject(store).interactiveDismissDisabled(!store.preferences.onboardingComplete) }
         .sheet(isPresented:$store.editingInput) { InputEditor(game:store.inputGame, initial:store.input(for:store.inputGame)).environmentObject(store) }
         .alert(L("操作未完成"),isPresented:Binding(get:{!store.showOnboarding && store.error != nil},set:{if !$0 && !store.showOnboarding {store.error=nil}})) { Button(L("知道了")) { store.error=nil }; Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))} } message: {Text(L(store.error ?? ""))}
@@ -261,10 +261,10 @@ struct SettingsView: View {
                 Text(L("独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Link(L("上游 nxnative"),destination:URL(string:"https://github.com/seedds/nxnative")!)
-                    Button(L("开源许可与版权说明")){store.reveal(store.resources.appendingPathComponent(Localization.language == "en" ? "docs/Third-party-licenses.md" : "docs/第三方许可.md"))}
+                    Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}
                 }
             }
-        }.formStyle(.grouped).navigationTitle(L("设置")).onAppear {store.checkEnvironment()}
+        }.formStyle(.grouped).navigationTitle(L("设置"))
     }
 }
 struct ToolChecks: View {
@@ -308,6 +308,14 @@ struct EnvironmentCheckRow: View {
                     Text(L(check.required(for:"launch") ? "准备与启动" : "准备时需要")).font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(L(check.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                if let location=check.location {
+                    DisclosureGroup(L("组件位置")) {
+                        VStack(alignment:.leading,spacing:4) {
+                            Text(L("随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
+                            Text(location).font(.caption.monospaced()).textSelection(.enabled)
+                        }.padding(.top,4)
+                    }.font(.caption)
+                }
                 if let help=check.help {
                     DisclosureGroup(L("安装与修复方法")) {
                         VStack(alignment:.leading,spacing:8) {
@@ -317,6 +325,14 @@ struct EnvironmentCheckRow: View {
                                     .disabled(store.checkingEnvironment || store.executionBusy || action=="installMetal" && (!store.xcodeInitialized || store.metalInstalled) || action=="library" && !store.queue.isEmpty)
                             }
                             if let detail=check.detail,!detail.isEmpty {Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)}
+                            if let command=check.repairCommand,!command.isEmpty {
+                                Text(command).font(.caption.monospaced()).textSelection(.enabled)
+                                Button(L("复制修复命令")) {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(command,forType:.string)
+                                    store.notice="已复制修复命令，请在终端中手动执行。"
+                                }
+                            }
                         }.padding(.top,6)
                     }.font(.caption)
                 }
@@ -346,7 +362,7 @@ struct ToolchainActions: View {
                 Button(L("重新检查")) {store.savePreferences();store.checkEnvironment()}.disabled(store.checkingEnvironment || store.executionBusy)
             }
             Button(L("打开 Xcode 完成设置")){store.repairEnvironment("openXcode")}.disabled(!store.xcodeInstalled)
-            Button(L("环境安装说明")){store.reveal(store.resources.appendingPathComponent(Localization.language == "en" ? "docs/Environment.md" : "docs/环境要求.md"))}
+            Button(L("环境安装说明")){store.openDocumentation(.environment)}
             HStack {
                 Button(L("安装 Metal 编译组件")) {store.manageMetal(remove:false)}
                     .disabled(!store.canManageToolchain || !store.xcodeInitialized || store.metalInstalled)
@@ -446,7 +462,7 @@ struct OnboardingView: View {
                 }.buttonStyle(.borderedProminent).tint(.teal).disabled(!store.environmentReady || step==1 && store.preferences.library.isEmpty || step>=2 && (!store.hasImportedKeys || store.importingKeys))
             }
         }.padding(32) .frame(width:900,height:700).background(LibraryBackdrop())
-        .onAppear {if store.checks.isEmpty && !store.checkingEnvironment {store.checkEnvironment()}}
+        .onAppear {store.checkEnvironmentAtStartup()}
         .onChange(of:store.hasImportedKeys) { _,ready in if !ready && step==3 {store.onboardingStep=2} }
         .alert(L("操作未完成"),isPresented:Binding(get:{store.error != nil},set:{if !$0 {store.error=nil}})) {
             Button(L("知道了")) {store.error=nil}

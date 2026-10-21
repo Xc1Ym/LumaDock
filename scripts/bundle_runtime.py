@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import tempfile
 from product import ROOT
+from runtime_audit import SYSTEM_PATHS, rpaths, verify_portable_runtime
 
 
 def run(args, **kw):
@@ -109,6 +110,9 @@ def build(out):
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if p.suffix == '.dylib' or p.name == 'Python':
             run(['install_name_tool', '-id', '@loader_path/'+p.name, p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for search in dict.fromkeys(rpaths(output(['otool','-l',p]))):
+            if search.startswith('/') and not search.startswith(SYSTEM_PATHS):
+                run(['install_name_tool','-delete_rpath',search,p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         run(['codesign', '--force', '--sign', '-', p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     shutil.rmtree(out/'python/include', ignore_errors=True)
     (out/'python/Headers').unlink(missing_ok=True)
@@ -139,6 +143,7 @@ def build(out):
         'import json,sys,importlib.metadata as m; print(json.dumps(dict(python=sys.version.split()[0], **{p:m.version(p) for p in ["capstone","lz4","fonttools"]})))']))
     versions.update(dotnet=version.name, spirvCross=output([brew, 'list', '--versions', 'spirv-cross']), zstd=output([brew, 'list', '--versions', 'zstd']))
     (out/'versions.json').write_text(json.dumps(versions, indent=2))
+    print('Portable native runtime files:',verify_portable_runtime(out))
 
 
 def main():

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import shutil
 import signal
 import subprocess
@@ -18,6 +19,8 @@ from core import Failure, read
 
 REPAIR_BUNDLE = '这些组件随完整应用提供，无需另装 Python、Homebrew 或 .NET。请从官方 Release 重新下载 DMG，将完整应用复制到“应用程序”后重新检查；不要只复制可执行文件。'
 REPAIR_XCODE = '从 App Store 安装完整 Xcode，打开一次并完成许可及初始组件安装。选择实际 Xcode.app；仅安装 Command Line Tools 不够。'
+REPAIR_XCODE_INITIAL = '打开当前选择的 Xcode，完成许可及必需系统组件安装。若打开后仍不通过，请先阅读并同意 Xcode 许可，再复制下方命令到终端手动执行；它会安装系统组件并接受许可。完成后回到璃游点击“重新检查”。'
+PROBE_TIMEOUT = '工具检查超时，请重新检查或修复对应组件。'
 
 
 def probe(c, args, *, timeout=20, cwd=None):
@@ -37,9 +40,12 @@ def probe(c, args, *, timeout=20, cwd=None):
             try: os.killpg(p.pid, signal.SIGKILL)
             except ProcessLookupError: pass
             p.communicate()
-            return False, '工具检查超时，请重新检查或修复对应组件。'
+            return False, PROBE_TIMEOUT
         c.check()
-        return p.returncode == 0, output.strip()[-4000:]
+        output = output.strip()[-4000:]
+        if p.returncode != 0:
+            output = f'Exit status: {p.returncode}\n'+(output or 'No diagnostic output.')
+        return p.returncode == 0, output
     finally:
         c.children.discard(p)
 
@@ -57,11 +63,15 @@ def inspect_environment(c):
     checks = []
     both = ['prepare', 'launch']
 
-    def add(name, ok, message, help, action, group, scopes=None, detail=''):
+    def add(name, ok, message, help, action, group, scopes=None, detail='', location=None, repairCommand=None):
         item = dict(name=name, ok=bool(ok), message=message, help=help, action=action,
                     group=group, requiredFor=scopes or ['prepare'])
         if detail and not ok:
             item['detail'] = detail
+        if location:
+            item['location'] = str(location)
+        if repairCommand:
+            item['repairCommand'] = repairCommand
         checks.append(item)
         c.emit('check', check=item, done=len(checks), total=18)
 
@@ -81,7 +91,7 @@ def inspect_environment(c):
         manifest_ok = isinstance(versions, dict) and all(isinstance(versions.get(k),str) and versions[k] for k in ('python','capstone','lz4','fonttools','dotnet','spirvCross','zstd'))
     except (OSError, ValueError):
         manifest_ok = False
-    add('内置组件清单', manifest_ok, '验证随应用提供的组件版本清单', repair, 'reinstall', 'bundled')
+    add('内置组件清单', manifest_ok, '验证随应用提供的组件版本清单', repair, 'reinstall', 'bundled', location=runtime/'versions.json')
     versions = versions if isinstance(versions, dict) else {}
     py = runtime/'python/bin/python3'
     ok, output = probe(c, [py, '-B', '-I', '-c',
@@ -92,7 +102,7 @@ def inspect_environment(c):
     except (ValueError, KeyError, TypeError):
         ok = False
         data = {}
-    add('内置 Python', ok, ('Python '+str(data.get('version',''))+' · '+str(py)) if ok else '内置 Python 无法运行或版本不匹配', repair, 'reinstall', 'bundled', both, output)
+    add('内置 Python', ok, f'Python {data.get("version", "")} · 应用内置' if ok else '内置 Python 无法运行或版本不匹配', repair, 'reinstall', 'bundled', both, output, py)
     python_ok = ok
     ok, output = probe(c, [py, '-B', '-I', '-c',
         'import capstone,lz4.block,fontTools,json,importlib.metadata as m; '
@@ -105,17 +115,17 @@ def inspect_environment(c):
         ok = ok and all(actual.get(k) == versions.get(k) for k in ('capstone','lz4','fonttools'))
     except (ValueError, AttributeError, TypeError):
         ok = False
-    add('Python 扩展', ok, 'capstone / lz4 / fontTools：加载、版本及基本功能检查', repair, 'reinstall', 'bundled', detail=output)
+    add('Python 扩展', ok, 'capstone / lz4 / fontTools：加载、版本及基本功能检查', repair, 'reinstall', 'bundled', detail=output, location=runtime/'python')
     dotnet = runtime/'bin/dotnet'
     ok, output = probe(c, [dotnet, '--list-runtimes'])
     ok = ok and isinstance(versions.get('dotnet'),str) and versions['dotnet'].startswith('10.') and any(
         line.startswith('Microsoft.NETCore.App '+versions['dotnet']+' ') and str((runtime/'dotnet/shared/Microsoft.NETCore.App').resolve()) in line for line in output.splitlines())
-    add('.NET 10 运行时', ok, output if ok else '内置 .NET 10 运行时不可用', repair, 'reinstall', 'bundled', detail=output)
+    add('.NET 10 运行时', ok, f'Microsoft.NETCore.App {versions["dotnet"]} · 应用内置' if ok else '内置 .NET 10 运行时不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'dotnet')
     nx = runtime/'nx_extract/nx_extract'
     ok, output = probe(c, [nx])
     # nx_extract intentionally exits 2 for its argument-free usage check.
     nx_ok = 'usage: nx_extract <prod.keys>' in output and (nx.parent/'nx_extract.dll').is_file() and (nx.parent/'LibHac.dll').is_file()
-    add('NSP 读取组件', nx_ok, '检查读取程序与 LibHac 能否加载（不读取游戏或密钥）', repair, 'reinstall', 'bundled', detail=output)
+    add('NSP 读取组件', nx_ok, '检查读取程序与 LibHac 能否加载（不读取游戏或密钥）', repair, 'reinstall', 'bundled', detail=output, location=nx)
     xlate = c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
     ok, output = probe(c, [xlate, '--source-sha'])
     try:
@@ -123,19 +133,33 @@ def inspect_environment(c):
         ok = ok and output == expected and all((xlate.parent/n).is_file() for n in ('dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','Ryujinx.Common.dll'))
     except OSError:
         ok = False
-    add('着色器翻译组件', ok, '检查翻译器能否启动，且与固定引擎源码一致', repair, 'reinstall', 'bundled', detail=output)
+    add('着色器翻译组件', ok, '检查翻译器能否启动，且与固定引擎源码一致', repair, 'reinstall', 'bundled', detail=output, location=xlate)
     ok, output = probe(c, [runtime/'bin/spirv-cross', '--revision'])
-    add('SPIRV-Cross', ok and bool(output), output if ok else '着色器转换组件不可用', repair, 'reinstall', 'bundled', detail=output)
+    add('SPIRV-Cross', ok and bool(output), output if ok else '着色器转换组件不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'bin/spirv-cross')
     ok, output = probe(c, [runtime/'bin/zstd', '--version'])
-    add('Zstandard', ok and 'v1.' in output, output if ok else '压缩组件不可用', repair, 'reinstall', 'bundled', detail=output)
+    add('Zstandard', ok and 'v1.' in output, output if ok else '压缩组件不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'bin/zstd')
 
     env = c.env()
     developer = Path(env['DEVELOPER_DIR'])
     ok, output = probe(c, ['/usr/bin/xcodebuild','-version'])
     xcode_ok = ok and (developer/'Platforms/MacOSX.platform').is_dir() and 'Xcode ' in output
     add('Xcode', xcode_ok, output if xcode_ok else '需要完整 Xcode，请检查 Developer 目录，不能仅使用 Command Line Tools', REPAIR_XCODE, 'xcodeStore', 'apple', detail=output)
+    status_args = ['/usr/bin/env',f'DEVELOPER_DIR={developer}','/usr/bin/xcodebuild','-checkFirstLaunchStatus']
     ok, output = probe(c, ['/usr/bin/xcodebuild','-checkFirstLaunchStatus']) if xcode_ok else (False, '')
-    add('Xcode 初始设置', ok, '检查许可及首次启动组件是否就绪', REPAIR_XCODE, 'openXcode', 'apple', detail=output)
+    if not xcode_ok:
+        initial_message = '请先安装并选择完整 Xcode，再检查初始设置。'
+    elif ok:
+        initial_message = 'Xcode 首次启动组件已就绪'
+    elif output == PROBE_TIMEOUT:
+        initial_message = 'Xcode 初始设置检查超时，请稍后重新检查。'
+    elif 'license' in output.lower() and any(phrase in output.lower() for phrase in ('not agreed','have not agreed','has not been accepted','must be accepted')):
+        initial_message = 'Xcode 许可尚未完成，请打开所选 Xcode 阅读并同意许可。'
+    else:
+        initial_message = 'Xcode 首次启动任务未完成，或状态检查命令执行失败。'
+    initial_detail = shlex.join(status_args)+'\n'+(output or 'No diagnostic output.') if xcode_ok else ''
+    manual_command = shlex.join(['sudo','/usr/bin/env',f'DEVELOPER_DIR={developer}','/usr/bin/xcodebuild','-runFirstLaunch']) if xcode_ok and not ok else None
+    add('Xcode 初始设置', ok, initial_message, REPAIR_XCODE_INITIAL if xcode_ok and not ok else REPAIR_XCODE,
+        'openXcode' if xcode_ok else 'xcodeStore', 'apple', detail=initial_detail, repairCommand=manual_command)
     initialized = ok
     ok, output = probe(c, ['/usr/bin/xcrun','--sdk','macosx','--show-sdk-path']) if initialized else (False, '')
     sdk_ok = ok and Path(output).is_dir() and (Path(output)/'System/Library/Frameworks/Metal.framework').is_dir()

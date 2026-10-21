@@ -145,12 +145,54 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
     func testMissingBundledPythonNeverFallsBackToHomebrew() async throws {
         let (root,store)=try fixture()
         try FileManager.default.removeItem(at:root.appendingPathComponent("resources/Runtime/python/bin/python3"))
-        store.checkEnvironment()
+        store.checkEnvironmentAtStartup()
         XCTAssertFalse(store.checkingEnvironment);XCTAssertFalse(store.environmentReady)
         XCTAssertFalse(store.runtimeReady);XCTAssertTrue(store.processes.isEmpty)
         XCTAssertEqual(store.checks.first?.name,"内置 Python")
         XCTAssertEqual(store.checks.first?.action,"reinstall")
+        store.error=nil
+        store.checkEnvironmentAtStartup()
+        XCTAssertNil(store.error,"Reappearing views must not retry a failed startup check")
         XCTAssertTrue(operations(root).isEmpty)
+        await cleanup(root,store)
+    }
+    func testStartupCheckRunsOnceAcrossAppearancesAndAgainInNewSession() async throws {
+        let (root,store)=try fixture()
+        store.checkEnvironmentAtStartup()
+        store.checkEnvironmentAtStartup()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        let firstTasks=store.tasks.filter{$0.operation=="preflight"}.map(\.id)
+        for _ in 0..<3 {store.checkEnvironmentAtStartup()}
+        XCTAssertTrue(store.environmentReady)
+        XCTAssertTrue(store.processes.isEmpty)
+        XCTAssertEqual(firstTasks.count,1)
+        XCTAssertEqual(store.tasks.filter{$0.operation=="preflight"}.map(\.id),firstTasks)
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,1)
+
+        let nextSession=Store(privateRoot:store.privateRoot,resources:store.resources)
+        nextSession.checkEnvironmentAtStartup()
+        try await waitUntil {!nextSession.checkingEnvironment && nextSession.processes.isEmpty}
+        XCTAssertTrue(nextSession.environmentReady)
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,2)
+        nextSession.terminate()
+        await cleanup(root,store)
+    }
+    func testFailedStartupCheckIsReusedUntilExplicitRecheck() async throws {
+        let (root,store)=try fixture(toolchainReady:false)
+        store.checkEnvironmentAtStartup()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        XCTAssertFalse(store.environmentReady)
+        store.checkEnvironmentAtStartup()
+        XCTAssertTrue(store.processes.isEmpty)
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,1)
+
+        try JSONSerialization.data(withJSONObject:true,options:.fragmentsAllowed).write(to:root.appendingPathComponent("tools.json"))
+        store.checkEnvironment()
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        XCTAssertTrue(store.environmentReady)
+        store.checkEnvironmentAtStartup()
+        XCTAssertTrue(store.processes.isEmpty)
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,2)
         await cleanup(root,store)
     }
     func testPythonBootstrapCrashLeavesAnActionableCheckAndDoesNotRemainChecking() async throws {

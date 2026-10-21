@@ -9,9 +9,26 @@ sys.path.insert(0, str(ROOT/'scripts'))
 from package import audit
 from product import PRODUCT
 from verify_release import verify_icons, verify_source
+from runtime_audit import check_load_paths, rpaths, verify_portable_runtime
 
 
 class DistributionTests(unittest.TestCase):
+    def test_runtime_audit_rejects_builder_dependencies_and_search_paths(self):
+        good='binary:\n\t@loader_path/../lib/liblz4.dylib (compatibility version 1.0.0)\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)'
+        commands='cmd LC_RPATH\n cmdsize 48\n path @loader_path/../lib (offset 12)'
+        check_load_paths('fixture',good,commands)
+        check_load_paths('fixture',good+'\n/Users/builder/project/tool (architecture arm64):\n\t/usr/lib/libSystem.B.dylib (compatibility version 1.0.0)',commands)
+        self.assertEqual(rpaths(commands),['@loader_path/../lib'])
+        with self.assertRaisesRegex(RuntimeError,'dependency'):
+            check_load_paths('fixture',good+'\n\t/opt/homebrew/lib/libbad.dylib (compatibility version 1.0.0)','')
+        with self.assertRaisesRegex(RuntimeError,'search path'):
+            check_load_paths('fixture',good,commands.replace('@loader_path/../lib','/Users/builder/project/lib'))
+
+    def test_runtime_audit_rejects_external_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=pathlib.Path(directory);(root/'tool').symlink_to('/usr/bin/true')
+            with self.assertRaisesRegex(RuntimeError,'symlink'):verify_portable_runtime(root)
+
     def test_multi_resolution_icons(self):
         verify_icons()
 

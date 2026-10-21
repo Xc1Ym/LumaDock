@@ -57,7 +57,7 @@
 
 需要 **Apple Silicon Mac、macOS 26 或更新系统，以及完整 Xcode 和 Metal 编译组件**。当前实测环境为 M5 Pro、macOS 27.0.1、Xcode 27.1；macOS 26 真机尚未重新验收。大型游戏请预留数十 GB 空间，实际用量随游戏及缓存变化。
 
-**1. 安装璃游。** 打开 `LumaDock-0.2.2-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
+**1. 安装璃游。** 打开 `LumaDock-0.2.3-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
 
 **2. 先检查并安装环境。** 向导第一步检查 Apple Silicon、macOS、完整 Xcode、Metal、应用组件与可用空间。Xcode 按钮直接打开其 [Mac App Store 页面](https://apps.apple.com/app/xcode/id497799835)。缺少 Apple 工具时按步骤安装，再重新检查；全部通过后才能继续。Metal 组件可按 [Apple 官方方式](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components) 安装。其余运行依赖已随应用提供，玩家不需要安装 Homebrew、Python 或 .NET。
 
@@ -119,7 +119,7 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 产物在 `release/`：应用、DMG、源码 ZIP、`SHA256SUMS` 和发行审计。发行构建不需要游戏或密钥。运行依赖的实际版本记录在应用内 `Runtime/versions.json`；Homebrew 与工具链版本随构建环境变化，目前不保证逐字节可复现。
 
-[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.2`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
+[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.3`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
 
 开发和私有测试使用忽略的 `work/`；`--data-root <目录>` 可隔离应用数据。不要提交 `work/`、`release/`、`Runtime` 或任何玩家数据。
 

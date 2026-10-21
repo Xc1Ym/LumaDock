@@ -24,7 +24,9 @@ final class WorkerOutput: @unchecked Sendable {
     @Published private(set) var checkingEnvironment = false
     @Published var environmentReportComplete = false
     private var environmentCallbacks: [()->Void] = []
+    private var requestedStartupEnvironmentCheck = false
     private var lastWorkerEvent: [String:Date] = [:]
+    private var documentationWindow:NSWindow?
     @Published var canUninstallMetal = false
     @Published var profiles: [GameProfile] = []
     @Published var keyStatus = "尚未导入密钥"
@@ -86,7 +88,7 @@ final class WorkerOutput: @unchecked Sendable {
         else if let i = args.firstIndex(of:"--data-root"), args.count > i+1 { privateRoot = URL(fileURLWithPath:args[i+1]) }
         else { privateRoot = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("NSMac") }
         if let overrideResources { resources = overrideResources }
-        else if let r = Bundle.main.resourceURL, FileManager.default.fileExists(atPath:r.appendingPathComponent("Worker/main.py").path) { resources = r }
+        else if let r = Bundle.main.resourceURL, Bundle.main.bundleURL.pathExtension == "app" || FileManager.default.fileExists(atPath:r.appendingPathComponent("Worker/main.py").path) { resources = r }
         else { resources = URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent() }
         try? FileManager.default.createDirectory(at:privateRoot,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         if let data = try? Data(contentsOf:privateRoot.appendingPathComponent("preferences.json")), let p = try? JSONDecoder().decode(Preferences.self,from:data) { preferences = p }
@@ -121,7 +123,14 @@ final class WorkerOutput: @unchecked Sendable {
             self.preferences.library = result["library"] as? String ?? url.path; self.preferences.libraryId = result["libraryId"] as? String ?? ""; self.savePreferences(); self.refresh(); self.checkEnvironment()
         }
     }
+    func checkEnvironmentAtStartup() {
+        guard !requestedStartupEnvironmentCheck else { return }
+        checkEnvironment()
+    }
     func checkEnvironment(completion: (() -> Void)? = nil) {
+        // Keep this attempt scoped to the Store's app session, including failures.
+        // Reappearing windows and onboarding reuse it; explicit checks still refresh.
+        requestedStartupEnvironmentCheck = true
         if let completion { environmentCallbacks.append(completion) }
         guard !checkingEnvironment else { return }
         checkingEnvironment = true; environmentReportComplete = false; checks = []; canUninstallMetal = false
@@ -176,6 +185,15 @@ final class WorkerOutput: @unchecked Sendable {
         guard panel.runModal() == .OK,let app=panel.url else {return}
         preferences.developerDir=app.appendingPathComponent("Contents/Developer").path
         savePreferences();checkEnvironment()
+    }
+    func openDocumentation(_ guide:AppGuide) {
+        if documentationWindow == nil {
+            let window=NSWindow(contentRect:NSRect(x:0,y:0,width:900,height:720),styleMask:[.titled,.closable,.miniaturizable,.resizable],backing:.buffered,defer:false)
+            window.isReleasedWhenClosed=false;window.center();documentationWindow=window
+        }
+        documentationWindow?.title=guide.title
+        documentationWindow?.contentView=NSHostingView(rootView:DocumentationView(guide:guide).environmentObject(self))
+        documentationWindow?.makeKeyAndOrderFront(nil)
     }
     func openXcodeStore() {
         if !NSWorkspace.shared.open(URL(string:"macappstore://apps.apple.com/app/xcode/id497799835?mt=12")!) {

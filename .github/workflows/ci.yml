@@ -64,7 +64,7 @@ jobs:
           work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt -r requirements-build.txt
       - name: Worker and distribution regression tests
         run: work/python-venv/bin/python -B -m unittest discover -s tests -v
-      - name: Import, localization and appearance regression tests
+      - name: Import, setup, documentation, localization and appearance regression tests
         run: swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
       - name: Native mouse and frame-step regression tests
         run: |
@@ -78,7 +78,7 @@ jobs:
         run: work/python-venv/bin/python -B scripts/bundle_runtime.py
       - name: Build and sign app, then create DMG
         run: work/python-venv/bin/python -B scripts/package.py
-      - name: Export clean source archive and verify artifacts
+      - name: Export sources; verify DMG, signatures and runtime relocation
         run: |
           work/python-venv/bin/python -B scripts/source_archive.py
           work/python-venv/bin/python -B scripts/verify_release.py

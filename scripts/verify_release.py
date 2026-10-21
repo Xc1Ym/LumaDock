@@ -3,6 +3,8 @@
 import hashlib
 import json
 import plistlib
+from pathlib import Path
+import os
 import struct
 import subprocess
 import tempfile
@@ -89,6 +91,48 @@ def verify_dmg(path):
     print('Verified installer: Finder layout, Retina background, documentation, Applications link, clean data and app signature')
 
 
+def verify_runtime_relocation(app):
+    """Run bundled tools from a renamed app in a different Unicode/space path."""
+    from runtime_audit import verify_portable_runtime
+    count=verify_portable_runtime(app/'Contents/Resources/Runtime')
+    with tempfile.TemporaryDirectory(prefix='runtime-relocation-',dir=ROOT/'work') as directory:
+        moved=Path(directory)/'中文 空格目录'/'Renamed LumaDock.app'
+        moved.parent.mkdir()
+        subprocess.run(['cp','-cR',str(app),str(moved)],check=True)
+        resources=moved/'Contents/Resources'
+        private=Path(directory)/'private'
+        script='''
+import sys,json,hashlib
+from pathlib import Path
+resources=Path(sys.argv[1]);sys.path.insert(0,str(resources/'Worker'))
+from core import Context
+from toolchain import probe
+import capstone,lz4.block,fontTools
+c=Context(dict(schema=1,operation='preflight',resources=str(resources),privateRoot=sys.argv[2]))
+paths=[sys.executable,sys.base_prefix,capstone.__file__,lz4.block.__file__,fontTools.__file__]
+assert all(Path(p).resolve().is_relative_to(c.runtime.resolve()) for p in paths),paths
+assert lz4.block.decompress(lz4.block.compress(b'portable'))==b'portable'
+assert next(capstone.Cs(capstone.CS_ARCH_ARM64,capstone.CS_MODE_ARM).disasm(bytes.fromhex('1f2003d5'),0)).mnemonic=='nop'
+ok,dotnet=probe(c,[c.runtime/'bin/dotnet','--list-runtimes'])
+assert ok and str(c.runtime/'dotnet/shared/Microsoft.NETCore.App') in dotnet,dotnet
+_,usage=probe(c,[c.nx()]);assert 'usage: nx_extract <prod.keys>' in usage,usage
+translator=c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
+ok,source=probe(c,[translator,'--source-sha'])
+expected=hashlib.sha256(b''.join((c.engine/'dm/gfx/tools/dmsh_xlate'/name).read_bytes() for name in ('Program.cs','dmsh_xlate.csproj'))).hexdigest()[:16]
+assert ok and source==expected,source
+for name,args in [('spirv-cross',['--revision']),('zstd',['--version'])]:
+ ok,text=probe(c,[c.runtime/'bin'/name,*args]);assert ok and text,text
+print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet,translator=source)))
+'''
+        env=dict(os.environ,PATH='/usr/bin:/bin:/usr/sbin:/sbin',PYTHONHOME='/invalid-builder-python',PYTHONPATH='/invalid-builder-modules',PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
+        result=subprocess.run([resources/'Runtime/python/bin/python3','-B','-I','-c',script,str(resources),str(private)],env=env,text=True,capture_output=True,timeout=100)
+        assert result.returncode==0,result.stderr+'\n'+result.stdout
+        report=json.loads(result.stdout)
+        assert all(str(moved) in path for path in report['paths'])
+        assert str(moved) in report['dotnet']
+    print(f'Verified runtime relocation: {count} native files, relative symlinks, Python/extensions, .NET, NSP reader and shader tools')
+
+
 def main():
     verify_icons()
     app = RELEASE/(PRODUCT['name']+'.app')
@@ -111,6 +155,7 @@ def main():
     report = json.loads((RELEASE/'distribution-audit.json').read_text())
     assert report['privateData'] is False and report['fileCount'] == len(files)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', app], check=True)
+    verify_runtime_relocation(app)
     source = RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-source.zip"
     verify_source(source)
     dmg = RELEASE/f"{PRODUCT['name']}-{PRODUCT['version']}-arm64.dmg"

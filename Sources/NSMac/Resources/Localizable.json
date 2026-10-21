@@ -1782,5 +1782,73 @@
   {
     "source": "环境安装说明",
     "en": "Environment installation guide"
+  },
+  {
+    "source": "应用内置",
+    "en": "Bundled with the app"
+  },
+  {
+    "source": "组件位置",
+    "en": "Component location"
+  },
+  {
+    "source": "随应用安装位置动态解析，以下是当前完整路径。",
+    "en": "Resolved from the current app location. The full path below is for this installation."
+  },
+  {
+    "source": "随应用提供，可离线阅读",
+    "en": "Included with the app for offline reading"
+  },
+  {
+    "source": "在 Finder 中显示",
+    "en": "Show in Finder"
+  },
+  {
+    "source": "无法读取说明文件",
+    "en": "Unable to read the guide"
+  },
+  {
+    "source": "说明文件缺失或损坏，请重新安装完整应用。",
+    "en": "The guide is missing or damaged. Reinstall the complete app."
+  },
+  {
+    "source": "Python {0} · 应用内置",
+    "en": "Python {0} · Bundled with the app"
+  },
+  {
+    "source": "Microsoft.NETCore.App {0} · 应用内置",
+    "en": "Microsoft.NETCore.App {0} · Bundled with the app"
+  },
+  {
+    "source": "打开当前选择的 Xcode，完成许可及必需系统组件安装。若打开后仍不通过，请先阅读并同意 Xcode 许可，再复制下方命令到终端手动执行；它会安装系统组件并接受许可。完成后回到璃游点击“重新检查”。",
+    "en": "Open the selected Xcode and complete its license and required system component setup. If the check still fails, read and agree to the Xcode license before manually running the command below in Terminal; it installs system components and accepts the license. Return to LumaDock and click Check again."
+  },
+  {
+    "source": "请先安装并选择完整 Xcode，再检查初始设置。",
+    "en": "Install and select the full Xcode app before checking initial setup."
+  },
+  {
+    "source": "Xcode 首次启动组件已就绪",
+    "en": "Xcode first-launch components are ready"
+  },
+  {
+    "source": "Xcode 初始设置检查超时，请稍后重新检查。",
+    "en": "The Xcode initial setup check timed out. Check again later."
+  },
+  {
+    "source": "Xcode 许可尚未完成，请打开所选 Xcode 阅读并同意许可。",
+    "en": "Xcode license acceptance is pending. Open the selected Xcode to read and agree to its license."
+  },
+  {
+    "source": "Xcode 首次启动任务未完成，或状态检查命令执行失败。",
+    "en": "Xcode first-launch tasks are incomplete, or its status check command failed."
+  },
+  {
+    "source": "复制修复命令",
+    "en": "Copy repair command"
+  },
+  {
+    "source": "已复制修复命令，请在终端中手动执行。",
+    "en": "Repair command copied. Run it manually in Terminal."
   }
 ]

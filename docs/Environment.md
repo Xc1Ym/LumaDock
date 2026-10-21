@@ -2,6 +2,8 @@
 
 The first setup step and **Settings → Runtime and build environment** use the same live checklist. Every item has an **Installation and repair** disclosure. Checks run locally, use disposable original test programs, and never read games or keys, install software, or accept Apple's license automatically.
 
+LumaDock checks automatically once per app launch. Opening Settings or reopening setup reuses that session's result, including failed checks. Use **Check again** to refresh it; changing Xcode or the library, or installing/removing components, also triggers verification.
+
 | Requirement | How it is provided or installed | What LumaDock verifies | Needed for |
 | --- | --- | --- | --- |
 | Apple Silicon, macOS 26+ | Use an Apple Silicon Mac; update in System Settings → General → Software Update | Native arm64 process and OS version; Rosetta is unsupported | Preparation and launch |
@@ -29,8 +31,22 @@ The generic storage check requires at least 5 GB free. Preparation checks the se
 
 Only the macOS SDK/compiler is used by this pipeline. No simulator runtime, `xcodegen`, separate Vulkan SDK, Homebrew, system Python, or .NET SDK installation is required for players. Apple frameworks, libvpx, libdeflate and Vulkan headers come from macOS/Xcode or the bundled engine source.
 
+### If Xcode initial setup still fails
+
+Expand **Installation and repair** for **Xcode initial setup**. LumaDock shows the selected Developer directory, the status command, and its error output. A command that fails silently also shows its exit status. Incomplete first-launch tasks, a reported license error and a timeout have distinct messages.
+
+Open the selected Xcode and finish its license and required component setup, then return and click **Check again**. If that does not resolve it, read and agree to Xcode's license before using **Copy repair command**. Run that command yourself in Terminal; Apple's `-runFirstLaunch` installs system components and accepts the license. LumaDock never runs this privileged command automatically. It uses the selected Xcode path and does not change the global `xcode-select` setting. See [Apple's component installation instructions](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components).
+
 ## Repairing an incomplete app
 
 Do not try to repair the bundled Python with `pip` or copy executables between apps. Download a complete DMG from the [official LumaDock releases](https://github.com/Xc1Ym/LumaDock/releases/latest), copy the full app into Applications, reopen it and check again. Keep the existing library and private player data. A packaged app never silently falls back to Homebrew Python; missing Python is reported by the native launcher even when the Worker cannot start.
 
 Existing prepared games can launch without Xcode, Metal compiler, .NET or build-only Python extensions, as long as their runtime files are intact and all launch checks pass. Python is still needed to supervise the game process. Preparing, updating or rebuilding a game requires the complete build checklist. Source development and release packaging have additional maintainer dependencies listed separately in the README.
+
+## Component locations and offline instructions
+
+Bundled components are located relative to the current app: `LumaDock.app/Contents/Resources/Runtime/`. At runtime, the launcher resolves this to the app's current absolute path and supplies it to Python and .NET. A path printed by `.NET --list-runtimes` describes this installation; it is not a fixed developer-machine path. Native dependencies use relative loader paths, and packaging rejects external runtime links or builder search paths.
+
+The checklist shows the component name/version first. Expand **Component location** to see its current full path. Moving the complete app to another folder or renaming it does not require reinstalling Python or .NET. Keep the app bundle intact.
+
+**Environment installation guide** opens an offline reader inside LumaDock, including from the setup assistant. It does not depend on a Markdown editor or Finder. The same reader displays third-party licenses; **Show in Finder** is a separate optional action.

@@ -1,8 +1,8 @@
 {
   "name": "LumaDock",
   "displayName": "璃游 LumaDock",
-  "version": "0.2.2",
-  "build": "4",
+  "version": "0.2.3",
+  "build": "5",
   "executable": "NSMac",
   "bundleIdentifier": "org.nsmac.launcher",
   "minimumSystemVersion": "26.0",

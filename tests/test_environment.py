@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -71,6 +72,9 @@ class EnvironmentTests(unittest.TestCase):
         self.assertTrue(any('rcs' in call for call in self.calls))
         self.assertFalse(any('downloadComponent' in call or '-runFirstLaunch' in call for call in self.calls))
         self.assertFalse(list(self.c.private.glob('environment-*')))
+        for name in ('内置 Python','.NET 10 运行时'):
+            self.assertNotIn(str(self.root),checks[name]['message'])
+            self.assertTrue(checks[name]['location'].startswith(str(self.c.runtime)))
     def test_broken_python_and_extensions_are_reported_individually(self):
         self.fail={'python'};checks=self.inspect()
         self.assertFalse(checks['内置 Python']['ok']);self.assertFalse(checks['Python 扩展']['ok'])
@@ -99,6 +103,46 @@ class EnvironmentTests(unittest.TestCase):
         self.fail={'metallib'};checks=self.inspect();self.assertFalse(checks['Metal 编译组件']['ok'])
         self.assertTrue(checks['原生编译与本地签名']['ok'])
         self.assertNotIn('launch',checks['Metal 编译组件']['requiredFor'])
+    def test_silent_initial_setup_failure_has_diagnostics_and_selected_xcode_repair(self):
+        developer=self.root/"Xcode 中文's Beta.app/Contents/Developer"
+        (developer/'Platforms/MacOSX.platform').mkdir(parents=True)
+        self.c.r['developerDir']=str(developer)
+        original=self.fake_probe
+        def silent(c,args,**kw):
+            if '-checkFirstLaunchStatus' in args:
+                self.calls.append(list(map(str,args)));return False,''
+            return original(c,args,**kw)
+        with patch.object(self,'fake_probe',side_effect=silent):
+            item=self.inspect()['Xcode 初始设置']
+        self.assertFalse(item['ok'])
+        self.assertIn('状态检查命令执行失败',item['message'])
+        self.assertIn('No diagnostic output.',item['detail'])
+        self.assertIn(shlex.quote('DEVELOPER_DIR='+str(developer)),item['detail'])
+        self.assertEqual(shlex.split(item['repairCommand']),['sudo','/usr/bin/env','DEVELOPER_DIR='+str(developer),'/usr/bin/xcodebuild','-runFirstLaunch'])
+        self.assertIn('接受许可',item['help'])
+        self.assertFalse(any('-runFirstLaunch' in args or 'sudo' in args for args in self.calls))
+        self.assertEqual(item['requiredFor'],['prepare'])
+    def test_initial_setup_distinguishes_missing_xcode_license_and_timeout(self):
+        (self.developer/'Platforms/MacOSX.platform').rmdir()
+        item=self.inspect()['Xcode 初始设置']
+        self.assertEqual(item['action'],'xcodeStore');self.assertNotIn('repairCommand',item)
+        (self.developer/'Platforms/MacOSX.platform').mkdir()
+        original=self.fake_probe
+        for output,expected in [('You have not agreed to the Xcode license agreements.','许可尚未完成'),('工具检查超时，请重新检查或修复对应组件。','检查超时')]:
+            def status(c,args,**kw):
+                if '-checkFirstLaunchStatus' in args:return False,output
+                return original(c,args,**kw)
+            with patch.object(self,'fake_probe',side_effect=status):
+                item=self.inspect()['Xcode 初始设置']
+            self.assertFalse(item['ok']);self.assertIn(expected,item['message'])
+            self.assertIn(output,item['detail'])
+        item=self.inspect()['Xcode 初始设置']
+        self.assertTrue(item['ok']);self.assertIn('已就绪',item['message'])
+        self.assertNotIn('repairCommand',item)
+    def test_silent_failed_probe_reports_exit_status(self):
+        ok,diagnostic=toolchain.probe(self.c,[sys.executable,'-c','raise SystemExit(17)'])
+        self.assertFalse(ok);self.assertIn('Exit status: 17',diagnostic)
+        self.assertIn('No diagnostic output.',diagnostic)
     def test_disconnected_library_is_reported_without_creating_a_replacement(self):
         self.c.r['storageLibraryId']='external-drive'
         self.c.library=self.root/'offline'

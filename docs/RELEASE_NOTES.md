@@ -1,24 +1,24 @@
-## New in 0.2.1
+## New in 0.2.2
 
-- Sync nxnative to `4e2dcdc749668ddd4d61361117ad4a6980fabcf7`, preserving the Mac metadata, packaging, and configurable input patches. Existing working runtimes are retained and marked for re-preparation.
-- Independent System / Light / Dark appearance settings, with immediate updates and persistence.
-- Refreshed bilingual READMEs with real light-mode app screenshots and no Controls chapter.
-- English and Simplified Chinese throughout the app, setup assistant, input editor, progress, and application error messages.
-- System language by default, with an immediate, persistent override in Settings and setup. Existing task records translate when displayed; game content and raw tool logs remain unchanged.
-- Localized application metadata and bundled translation resources checked during packaging.
+- Complete environment checklist in setup and Settings: hardware, system Metal device, bundled Python and extensions, .NET 10, NSP reader, shader tools, Xcode initialization, macOS SDK, native compilation/signing, actual Metal compilation, and library permissions/free space.
+- English and Chinese installation and repair guidance for every item, with actions to get/select/open Xcode, install Metal, reinstall an incomplete app, or change library storage.
+- Isolated bundled Python with no silent Homebrew fallback. Missing Python or a failed Worker bootstrap produces an actionable native check instead of leaving setup stuck.
+- Separate preparation and launch requirements. Already prepared games can launch without build-only tools; incomplete or failed checks cannot enable Continue early.
+- Mac shader-chain checks only require the macOS SDK. Tool and engine changes continue to invalidate affected build caches.
+- Redesigned Retina DMG installer with a light glass-style background, aligned drag-to-Applications icons, bilingual instructions, and organized guides/licenses. Packaging verifies the mounted installer layout and preserves the app signature.
 
-Engine validation scope: Odyssey completed preparation with `4e2dcdc`. Breath of the Wild's rebuild was cancelled at the player's request; new startup and gameplay checks were not performed. The longer player gameplay record below belongs to the previous `10b33338` baseline.
+Local validation: 38 Python tests, 19 Swift tests, all 18 packaged environment checks, bilingual UI checks, and DMG/source/signature/checksum verification passed on macOS 27.0.1 with Xcode 27.1. No games were run for this update; the historical gameplay evidence is unchanged. Physical macOS 26 testing remains outstanding.
 
-### 0.2.1 更新
+### 0.2.2 更新
 
-- 同步 nxnative `4e2dcdc`，保留 Mac 补丁；引擎更新后提示重新准备，旧的成功运行版本保留。
-- 新增独立的跟随系统／浅色／深色外观设置，立即生效并持久化。
-- 中英文 README 删除操作映射章节，增加真实浅色界面截图。
-- 应用、首次运行向导、输入映射、任务进度和应用错误提示支持英文及简体中文。
-- 默认跟随系统，可在设置和向导中立即切换并记住选择；已有任务记录按显示语言翻译，游戏内容与原始工具日志保持原样。
-- 打包时检查应用语言元数据和翻译资源。
+- 首次设置和设置页补齐完整环境检查，实际验证 Python 及扩展、.NET、NSP 读取器、着色器工具、Xcode 初始化、macOS SDK、原生编译与签名、Metal 编译和游戏库存储。
+- 每项提供中英文安装与修复方法，可获取、选择或打开 Xcode，安装 Metal、重装完整应用或切换游戏库存储。
+- 隔离启动内置 Python，不再自动借用 Homebrew Python。Python 缺失或 Worker 启动失败时，原生界面仍能给出修复入口。
+- 区分“准备”和“启动”条件；已准备游戏不依赖仅构建所需的工具，未完成或失败的检查不会提前放行。
+- Mac 着色器链只检查 macOS SDK，工具链或引擎变化仍会使对应缓存失效。
+- 美化 Retina DMG 安装界面，加入浅色玻璃质感背景、固定图标位置、双语拖拽引导及整理后的文档和许可；验证安装盘布局及应用签名。
 
-新版引擎的验证范围：《奥德赛》完整准备通过；《旷野之息》重建按玩家要求取消，未执行新版启动及游玩检查。较长时间的玩家游玩记录基于此前的 `10b33338`。
+本地验证通过：38 项 Python 测试、19 项 Swift 测试、18 项发行应用环境检查、中英文界面检查，以及 DMG、源码、签名与校验和验证。实测系统为 macOS 27.0.1 / Xcode 27.1；本次未运行游戏，不扩大历史游玩结论，macOS 26 真机仍未重新验证。
 
 LumaDock is a native Mac launcher built on [nxnative](https://github.com/seedds/nxnative), for Apple Silicon and macOS 26 or later.
 

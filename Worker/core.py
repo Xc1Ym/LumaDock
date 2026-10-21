@@ -2,7 +2,6 @@
 from __future__ import annotations
 import contextlib, ctypes, fcntl, hashlib, json, os, re, shutil, signal, subprocess, sys, threading, time, uuid
 from pathlib import Path
-ENGINE_REV = '4e2dcdc749668ddd4d61361117ad4a6980fabcf7'
 SCHEMA = 1
 class Failure(Exception): pass
 class Cancelled(Exception): pass
@@ -60,7 +59,8 @@ class Context:
         for field in ('ended','message','done','total','elapsed'): self.job.pop(field,None)
         atomic(self.jobpath, self.job)
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
-        self.engine = self.resource / 'Vendor/nxnative'
+        selected = request.get('engineDir', '').strip()
+        self.engine = Path(selected).expanduser().resolve() if selected else None
         self.runtime = self.resource / 'Runtime'
         if not self.runtime.exists() and (self.resource/'work/Runtime/versions.json').is_file():
             self.runtime = self.resource/'work/Runtime'
@@ -121,10 +121,8 @@ class Context:
             Path(env['WORK']).mkdir(parents=True, exist_ok=True)
         return env
     def nx(self):
-        p = self.runtime / 'nx_extract/nx_extract'
-        if not p.exists(): p = self.resource / 'work/nx_extract/nx_extract'
-        if not p.exists(): raise Failure('应用缺少 NSP 读取组件，请重新安装完整版本。')
-        return p
+        from engine import prepared_tools
+        return prepared_tools(self) / 'tools/nx_extract/nx_extract'
     def run(self, args, log=None, env=None, cwd=None, on_line=None):
         self.check(); log = Path(log or self.private / 'logs' / (self.task + '.log')); log.parent.mkdir(parents=True, exist_ok=True)
         with log.open('a') as f:
@@ -175,10 +173,11 @@ class Context:
 
 def profiles(engine):
     result = {}
+    if engine is None: return result
     for path in sorted((Path(engine) / 'dm/games').glob('*/game.tsv')):
         rows = [l.split('\t') for l in path.read_text().splitlines() if l.strip() and not l.startswith('#')]
         g = {r[0]: '\t'.join(r[1:]) for r in rows}; g['builds'] = {r[1]: {'display': r[2], **dict(m.split('=',1) for m in r[3:])} for r in rows if r[0]=='build'}
-        g['id'] = path.parent.name; g['compatibility'] = 'startup' if g['id']=='01007EF00011E000' else 'experimental'; result[g['id']] = g
+        g['id'] = path.parent.name; g['compatibility'] = 'experimental'; result[g['id']] = g
     return result
 
 def validate_keys(path):

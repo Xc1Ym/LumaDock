@@ -15,7 +15,13 @@
 
 可在**设置 → 语言与外观**中选择“跟随系统、浅色、深色”，独立控制璃游的显示风格，立即生效并记住选择。
 
+游戏详情可选择**启动语言**；**设置 → 游戏语言 → 默认游戏语言**控制未单独设置的游戏，初始默认为简体中文。游戏语言与启动器界面语言独立，下次启动游戏时生效，无需重新准备或导入固件。可用语言取决于游戏自身支持。
+
+**应用、DMG 和源码包均不包含 nxnative，也不提供引擎下载按钮或自动下载。请玩家自行获取并解压完整源码，再在首次设置或设置中选择根目录。**
+
 ## 功能
+
+- **外部引擎。** 验证所选目录和接口，在私有缓存中准备读取工具；原源码不变，源码内容指纹隔离不同引擎的构建。
 
 - **一个游戏库**：导入 NSP 或扫描文件夹，按内容元数据识别本体、更新和 DLC，支持拖入、多选、中文路径及重复文件检查。
 - **自动准备**：解包、合并更新、处理 DLC、重写代码、转换并编译着色器，再构建 Mac 主程序。提供阶段进度、取消、缓存校验和重试。
@@ -40,6 +46,8 @@
 
 ## 已在 Mac 测试的游戏
 
+以下为此前内置引擎版本的历史测试，不代表任意外部 nxnative 源码已经通过验证。
+
 **本 README 仅列出实际在 Mac 上测试过的游戏。** 测试记录日期为 2026 年 10 月 20 日，环境为 Apple M5 Pro、macOS 27.0.1、Xcode 27.1。
 
 | 游戏 | 实测版本 | 结果与范围 |
@@ -49,7 +57,7 @@
 
 以上结果均不代表通关验证。《奥德赛》仍有 3 个雷电效果几何着色器的已知转换缺口，相关效果及后续全部场景尚未完整检查。证据和未测范围见 [验收记录](docs/验收记录.md)。
 
-导入时请提供本体、指定更新及需要使用的 DLC。Title ID 和程序构建标识必须匹配固定游戏配置；应用会在准备前检查所需内容。
+导入时请提供本体、指定更新及需要使用的 DLC。Title ID 和程序构建标识必须匹配所选引擎的游戏配置；应用会在准备前检查所需内容。
 
 《奥德赛》的玩家游玩记录基于此前的 `10b33338` 引擎。在更新后的 `4e2dcdc` 引擎上，《奥德赛》完整准备通过；《旷野之息》重建按玩家要求取消，未执行新版游戏启动检查。新版引擎的实际游玩尚未重新验证，也不增加其他游戏的兼容性声明。
 
@@ -57,9 +65,9 @@
 
 需要 **Apple Silicon Mac、macOS 26 或更新系统，以及完整 Xcode 和 Metal 编译组件**。当前实测环境为 M5 Pro、macOS 27.0.1、Xcode 27.1；macOS 26 真机尚未重新验收。大型游戏请预留数十 GB 空间，实际用量随游戏及缓存变化。
 
-**1. 安装璃游。** 打开 `LumaDock-0.2.4-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
+**1. 安装璃游。** 打开 `LumaDock-0.2.5-arm64.dmg`，将 `LumaDock.app` 拖入“应用程序”。当前安装包采用本地 ad-hoc 签名，尚未进行 Developer ID 签名和公证。首次打开如被系统拦截，请先核对来源和 `SHA256SUMS`，再使用系统“隐私与安全性”提供的打开流程。
 
-**2. 先检查并安装环境。** 向导第一步检查 Apple Silicon、macOS、完整 Xcode、Metal、应用组件与可用空间。Xcode 按钮直接打开其 [Mac App Store 页面](https://apps.apple.com/app/xcode/id497799835)。缺少 Apple 工具时按步骤安装，再重新检查；全部通过后才能继续。Metal 组件可按 [Apple 官方方式](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components) 安装。其余运行依赖已随应用提供，玩家不需要安装 Homebrew、Python 或 .NET。
+**2. 先检查并安装环境。** 向导第一步检查 Apple Silicon、macOS、完整 Xcode、Metal、应用组件与可用空间。Xcode 按钮直接打开其 [Mac App Store 页面](https://apps.apple.com/app/xcode/id497799835)。缺少 Apple 工具时按步骤安装，再重新检查；全部通过后才能继续。Metal 组件可按 [Apple 官方方式](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components) 安装。通用 Python、扩展、.NET 运行时、SPIRV-Cross 和 Zstandard 随应用提供。nxnative 及其翻译器由玩家提供：选择包含 `dm` 和 `scripts` 的源码根目录，再点击“准备引擎工具”。首次编译读取工具需要官方 **.NET 10 SDK（macOS Arm64）**，并可能从 NuGet 恢复 LibHac 依赖；已有完整缓存后不再需要 SDK。璃游不会下载或安装 nxnative。
 
 **3. 选择游戏库、导入密钥，再添加游戏。** 按向导顺序操作。支持外置硬盘；准备和运行时请保持连接。先导入自己的 `prod.keys`，通常只需导入一次，多款游戏可共用；导入时检查格式，读取游戏时验证解密能力。添加按钮、菜单和拖入入口会引导回尚未完成的设置步骤。点击“添加游戏”，选择本体、更新和 DLC 的 NSP 文件，或者包含它们的文件夹，也可以直接拖入。璃游按内容识别文件，文件名无需符合特定格式。文件会复制到托管游戏库，复制成功后移动原文件不影响该副本。
 
@@ -89,6 +97,8 @@
 
 ## 已知限制
 
+- 引擎接口可能变化，不完整或不兼容的目录会被拒绝。未实现 `DM_INPUT_CONFIG` 的外部引擎使用自己的默认操作，映射编辑器会明确提示。
+
 - 不支持 Intel Mac、XCI / NSZ、通用模拟器后端、联网游戏、体感或震动。
 - 首次进入新场景仍可能编译图形管线并出现卡顿；离线着色器处理不能消除所有首次卡顿。
 - 适配中的游戏可能无法启动、存在画面或音频异常，或在后续场景崩溃。“准备完成”不是完整可玩保证。
@@ -98,7 +108,7 @@
 
 ## 开发与构建
 
-启动器使用 SwiftUI / AppKit，Python Worker 调度构建，固定 nxnative 提交为 [`4e2dcdc749668ddd4d61361117ad4a6980fabcf7`](https://github.com/seedds/nxnative/tree/4e2dcdc749668ddd4d61361117ad4a6980fabcf7)，不自动跟随上游分支。[架构说明](docs/架构说明.md) 和 [引擎修改清单](docs/引擎修改.md) 记录了接口及本地改动。
+启动器使用 SwiftUI / AppKit，Python Worker 调度构建，运行引擎改为玩家指定的外部 nxnative 目录，不再内置源码或二进制。使用结构、接口检查及源码指纹替代原有固定内置版本。[架构说明](docs/架构说明.md) 与 [外部引擎接口](docs/引擎修改.md) 记录具体边界。
 
 维护者需完整 Xcode、Homebrew，以及 PATH 中可用的 [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)。以下命令在项目根目录执行；Xcode 位于其他位置时请调整 `DEVELOPER_DIR`：
 
@@ -119,7 +129,7 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 产物在 `release/`：应用、DMG、源码 ZIP、`SHA256SUMS` 和发行审计。发行构建不需要游戏或密钥。运行依赖的实际版本记录在应用内 `Runtime/versions.json`；Homebrew 与工具链版本随构建环境变化，目前不保证逐字节可复现。
 
-[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.4`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
+[GitHub CI](.github/workflows/ci.yml) 在 main/master push、版本标签、PR 或手动触发时，使用 macOS ARM64 runner 执行测试、构建、ad-hoc 签名及打包校验，保留构建附件 14 天。与 `product.json` 匹配的版本标签（例如 `v0.2.5`）只在 Mac 构建及校验通过后自动上传 GitHub Release；普通分支和 PR 不发布。CI 不运行商业游戏，也不替代真实硬件验收。更多说明见 [发布准备](docs/发布准备.md)。
 
 开发和私有测试使用忽略的 `work/`；`--data-root <目录>` 可隔离应用数据。不要提交 `work/`、`release/`、`Runtime` 或任何玩家数据。
 
@@ -129,9 +139,9 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 各上游项目的贡献与许可如下：
 
-- **[nxnative](https://github.com/seedds/nxnative)**（MIT，Copyright © 2026 jhaizhou）：直接上游，提供原生执行、NSO 重写、系统服务运行时和图形转换等核心能力。璃游增加游戏库、图形化流程、Worker、输入配置和 Mac 发行工具；上游源码及许可保留在 [`Vendor/nxnative`](Vendor/nxnative/LICENSE)。
-- **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)**（MIT）：nxnative 原生执行方案的来源之一，见 [上游致谢](Vendor/nxnative/README.md#acknowledgements)。
-- **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)**（MIT）：经 nxnative 引入部分图形及着色器改进，范围和许可证见 [上游第三方说明](Vendor/nxnative/dm/third_party/README.md) 及 [许可文件](Vendor/nxnative/dm/third_party/macnativegames/LICENSE)。
+- **[nxnative](https://github.com/seedds/nxnative)**（MIT，Copyright © 2026 jhaizhou）：直接上游，提供原生执行、NSO 重写、系统服务运行时和图形转换等核心能力。璃游增加游戏库、图形化流程、Worker、输入配置和 Mac 发行工具；引擎及其许可证留在玩家选择的目录中，不随璃游再分发。
+- **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)**（MIT）：nxnative 原生执行方案的来源之一，见 [上游致谢](https://github.com/seedds/nxnative#acknowledgements)。
+- **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)**（MIT）：经 nxnative 引入部分图形及着色器改进，范围和许可证见 [上游第三方说明](https://github.com/seedds/nxnative/tree/main/dm/third_party) 及 [许可文件](https://github.com/ly05010419/MacNativeGames/blob/main/LICENSE)。
 - **Ryujinx / Spv.Generator、[LibHac](https://github.com/Thealexbarney/LibHac)、[SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)**：经上游使用其着色器翻译、NSP 内容读取和 SPIR-V 到 Metal 转换能力。
 - **CPython、.NET、Capstone、lz4、fontTools、Zstandard** 及上游包含的其他组件：各自许可证随源码或运行环境保留，见 [第三方许可](docs/第三方许可.md)。
 

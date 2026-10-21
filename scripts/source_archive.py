@@ -3,7 +3,7 @@
 import pathlib,zipfile,os
 from product import ROOT,RELEASE,PRODUCT,checksums
 EXCLUDED={'work','release','.build','.git','Runtime','__pycache__','bin','obj','gen','.agents','.codex'}
-SOURCE_DIRS={'Sources','Worker','Vendor','Assets','scripts','tests','docs','.github'}
+SOURCE_DIRS={'Sources','Worker','Assets','scripts','tests','docs','.github'}
 SOURCE_ARTWORK={f'Assets/LumaDock{x}' for x in ('.png','.svg','.icns','.ico')} | {f'docs/screenshots/{screen}-{language}.jpg' for screen in ('library','setup','settings') for language in ('en','zh')}
 SOURCE_FILES={'Package.swift','product.json','requirements-runtime.txt','requirements-build.txt','README.md','README.zh-CN.md','LICENSE','.gitignore'}
 def main():

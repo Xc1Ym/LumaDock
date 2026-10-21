@@ -28,6 +28,7 @@ final class WorkerOutput: @unchecked Sendable {
     private var lastWorkerEvent: [String:Date] = [:]
     private var documentationWindow:NSWindow?
     @Published var canUninstallMetal = false
+    @Published var engineSupportsInput = false
     @Published var profiles: [GameProfile] = []
     @Published var keyStatus = "尚未导入密钥"
     @Published var hasImportedKeys = false
@@ -82,6 +83,22 @@ final class WorkerOutput: @unchecked Sendable {
             savePreferences()
         }
     }
+    var defaultGameLanguage: GameLanguage {
+        get { GameLanguage(rawValue:preferences.gameLanguage ?? "") ?? .simplifiedChinese }
+        set { preferences.gameLanguage = newValue.rawValue; savePreferences() }
+    }
+    func gameLanguageOverride(for id:String) -> GameLanguage? {
+        preferences.gameLanguages?[id].flatMap(GameLanguage.init(rawValue:))
+    }
+    func gameLanguage(for id:String) -> GameLanguage {
+        gameLanguageOverride(for:id) ?? defaultGameLanguage
+    }
+    func setGameLanguage(_ language:GameLanguage?, for id:String) {
+        var overrides = preferences.gameLanguages ?? [:]
+        overrides[id] = language?.rawValue
+        preferences.gameLanguages = overrides.isEmpty ? nil : overrides
+        savePreferences()
+    }
     var selected: Game? { games.first { $0.id == selectedGame } }
     init(privateRoot overrideRoot: URL? = nil, resources overrideResources: URL? = nil) {
         let args = CommandLine.arguments
@@ -135,13 +152,14 @@ final class WorkerOutput: @unchecked Sendable {
         if let completion { environmentCallbacks.append(completion) }
         guard !checkingEnvironment else { return }
         checkingEnvironment = true; environmentReportComplete = false; checks = []; canUninstallMetal = false
-        let developerDir=preferences.developerDir,libraryId=preferences.libraryId
+        let developerDir=preferences.developerDir,libraryId=preferences.libraryId,engineDir=preferences.engineDir
         worker("preflight") { r in
-        if self.preferences.developerDir != developerDir || self.preferences.libraryId != libraryId {
+        if self.preferences.developerDir != developerDir || self.preferences.libraryId != libraryId || self.preferences.engineDir != engineDir {
             self.checkingEnvironment=false;self.checkEnvironment();return
         }
         if let checks = Self.decode([ToolCheck].self,r["checks"]) { self.checks = checks;self.environmentReportComplete=true }
         self.canUninstallMetal = r["canUninstallMetal"] as? Bool == true
+        self.engineSupportsInput = (r["engineInfo"] as? [String:Any])?["inputConfig"] as? Bool == true
         self.checkingEnvironment = false
         let callbacks = self.environmentCallbacks; self.environmentCallbacks = []
         callbacks.forEach { $0() }
@@ -169,6 +187,8 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func repairEnvironment(_ action:String) {
         switch action {
+        case "chooseEngine": chooseEngine()
+        case "prepareEngine": prepareEngine()
         case "xcodeStore": openXcodeStore()
         case "openXcode":
             let app = URL(fileURLWithPath:preferences.developerDir).deletingLastPathComponent().deletingLastPathComponent()
@@ -186,6 +206,23 @@ final class WorkerOutput: @unchecked Sendable {
         guard panel.runModal() == .OK,let app=panel.url else {return}
         preferences.developerDir=app.appendingPathComponent("Contents/Developer").path
         savePreferences();checkEnvironment()
+    }
+    func chooseEngine() {
+        guard canManageToolchain else { return }
+        let panel=NSOpenPanel();panel.title=L("选择 nxnative 源码根目录");panel.canChooseDirectories=true;panel.canChooseFiles=false
+        guard panel.runModal() == .OK,let folder=panel.url else {return}
+        selectEngine(folder)
+    }
+    func selectEngine(_ folder:URL) {
+        guard canManageToolchain else { return }
+        preferences.engineDir=folder.path;savePreferences()
+        checks=[];environmentReportComplete=false;engineSupportsInput=false
+        refresh();checkEnvironment()
+    }
+    func prepareEngine() {
+        guard canManageToolchain,!(preferences.engineDir ?? "").isEmpty else {return}
+        savePreferences()
+        executionTask=worker("prepareEngine") { _ in self.notice="外部引擎工具已就绪。" }
     }
     func openDocumentation(_ guide:AppGuide) {
         if documentationWindow == nil {
@@ -280,7 +317,7 @@ final class WorkerOutput: @unchecked Sendable {
                 guard prepare, !candidates.isEmpty else { return }
                 self.checkEnvironment {
                     guard libraryId == self.preferences.libraryId else { return }
-                    guard !self.checks.isEmpty, self.checks.allSatisfy(\.ok) else {
+                    guard self.environmentReady else {
                         self.selection = "settings"; self.notice = "游戏已导入，请完成工具链检查后准备运行文件。"; return
                     }
                     candidates.forEach { self.enqueue($0) }
@@ -315,10 +352,10 @@ final class WorkerOutput: @unchecked Sendable {
     }
     @discardableResult func worker(_ operation: String, extra: [String:Any] = [:], visible: Bool = true, completion: (([String:Any])->Void)? = nil) -> String {
         let id = UUID().uuidString.lowercased()
-        var req: [String:Any] = ["schema":1,"taskId":id,"operation":operation,"privateRoot":privateRoot.path,"resources":resources.path,"library":preferences.library.isEmpty ? privateRoot.appendingPathComponent("unconfigured").path : preferences.library,"libraryId":preferences.libraryId,"developerDir":preferences.developerDir,"parentPid":ProcessInfo.processInfo.processIdentifier]
+        var req: [String:Any] = ["schema":1,"taskId":id,"operation":operation,"privateRoot":privateRoot.path,"resources":resources.path,"engineDir":preferences.engineDir ?? "","library":preferences.library.isEmpty ? privateRoot.appendingPathComponent("unconfigured").path : preferences.library,"libraryId":preferences.libraryId,"developerDir":preferences.developerDir,"parentPid":ProcessInfo.processInfo.processIdentifier]
         extra.forEach { req[$0] = $1 }
         // Environment setup must remain available when an old library drive is offline.
-        if ["preflight","installMetal","uninstallMetal"].contains(operation) {
+        if ["preflight","prepareEngine","installMetal","uninstallMetal"].contains(operation) {
             req["libraryId"] = ""
             req["storageLibraryId"] = preferences.libraryId
         }
@@ -353,9 +390,9 @@ final class WorkerOutput: @unchecked Sendable {
                     self.callbacks[id] = nil
                     if self.executionTask == id {
                         self.executionTask = nil
-                        if !["installMetal","uninstallMetal"].contains(operation) { self.startNext() }
+                        if !["prepareEngine","installMetal","uninstallMetal"].contains(operation) { self.startNext() }
                     }
-                    if ["installMetal","uninstallMetal"].contains(operation) { self.checkEnvironment() }
+                    if ["prepareEngine","installMetal","uninstallMetal"].contains(operation) { self.checkEnvironment() }
                     if visible { self.refresh() }
                 }
             }
@@ -420,7 +457,7 @@ final class WorkerOutput: @unchecked Sendable {
             }
             return
         }
-        executionTask = worker("launch",extra:["gameId":game.id])
+        executionTask = worker("launch",extra:["gameId":game.id,"gameLanguage":gameLanguage(for:game.id).rawValue])
     }
     func migrate(_ game: Game) {
         guard !executionBusy else { return }

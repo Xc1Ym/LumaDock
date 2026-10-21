@@ -16,6 +16,8 @@ def audit(root):
     for p in root.rglob('*'):
         if not p.is_file():continue
         rel=p.relative_to(root)
+        if any(part.lower() in ('vendor','nxnative','nx_extract','dmsh_xlate_bin') for part in rel.parts) or p.name in ('nx_extract.dll','dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','LibHac.dll'):
+            raise RuntimeError('Bundled external engine in distribution: '+str(rel))
         if p.suffix.lower() in banned or p.name in ('prod.keys','catalog.json','preferences.json','control.nacp','romfs_manifest.tsv') or any(x in rel.parts for x in ('romfs','RomFS','ExeFS','save','saves','pso_user','shader','extract')):
             raise RuntimeError('Private data in distribution: '+str(rel))
         if p.suffix.lower() in ('.jpg','.jpeg','.png','.webp') and 'Runtime' not in rel.parts: raise RuntimeError('Unexpected artwork in release: '+str(rel))
@@ -41,7 +43,6 @@ def main():
     (contents/'Info.plist').write_bytes(plistlib.dumps(info))
     ignore=shutil.ignore_patterns('__pycache__','*.pyc','.git','gen','bin','obj','dmhost')
     shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
-    shutil.copytree(ROOT/'Vendor/nxnative',resources/'Vendor/nxnative',ignore=ignore)
     shutil.copytree(ROOT/'work/Runtime',resources/'Runtime',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     shutil.copytree(ROOT/'docs',resources/'docs',ignore=shutil.ignore_patterns('screenshots'))
     shutil.copytree(pathlib.Path(result)/'NSMac_NSMac.bundle',resources/'NSMac_NSMac.bundle')
@@ -59,7 +60,7 @@ def main():
     run(['codesign','--force','--sign','-',APP],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     run(['codesign','--verify','--deep','--strict',APP])
     files=audit(APP)
-    (RELEASE/'distribution-audit.json').write_text(json.dumps({'product':PRODUCT['name'],'version':PRODUCT['version'],'engine':PRODUCT['engine'],'fileCount':len(files),'privateData':False,'files':files},indent=2))
+    (RELEASE/'distribution-audit.json').write_text(json.dumps({'product':PRODUCT['name'],'version':PRODUCT['version'],'engineMode':PRODUCT['engineMode'],'fileCount':len(files),'privateData':False,'files':files},indent=2))
     # Verify the packaged Python from its final location with user site packages disabled.
     run([resources/'Runtime/python/bin/python3','-B','-I','-c','import capstone,lz4.block,fontTools; print("Packaged runtime OK")'],env=dict(env,PYTHONNOUSERSITE='1'))
     run(['codesign','--verify','--deep','--strict',APP])

@@ -55,59 +55,28 @@ def tools(c):
     result['spirv-cross']=digest(sc)
     result['runtime']=digest(c.runtime/'versions.json')
     result['macos-sdk']=subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-version'],env=env,text=True).strip()
-    # Every application-controlled source is part of the cache identity, including input runtime changes.
-    h=hashlib.sha256()
-    for p in sorted(c.engine.rglob('*')):
-        if p.is_file() and not any(x in p.parts for x in ('bin','obj','gen','__pycache__','.git')):
-            h.update(str(p.relative_to(c.engine)).encode()); h.update(bytes.fromhex(digest(p)))
-    result['engineSource']=h.hexdigest(); result['engine']=ENGINE_REV
+    from engine import inspect_source, prepared_tools
+    info = inspect_source(c)
+    prepared = prepared_tools(c,info)
+    result['engineSource'] = info['fingerprint']; result['engine'] = info['fingerprint']
+    result['inputConfig'] = info['inputConfig']
+    result['reader'] = digest(prepared/'tools/nx_extract/nx_extract.dll')
     return result
 
-def reuse_frontend_cache(c,root,identity):
-    """A frontend-only patch can reuse checked artifacts; the host must be rebuilt."""
-    if (root/'checkpoints.json').exists():return
-    allowed={'dm/host/front_mac.m','dm/host/input_config_mac.h','dm/host/mouse_mac.h','dm/host/Makefile'}
-    def sources(repo):
-        result={}
-        for p in repo.rglob('*'):
-            rel=p.relative_to(repo)
-            if not p.is_file() or any(x in rel.parts for x in ('bin','obj','gen','__pycache__','.git')) or p.name=='.source-ready':continue
-            if str(rel)=='dm/gfx/tools/dmsh_chain.lock' or (p.name=='dmsh_chain.h' and rel.parts[:2]==('dm','games')):continue
-            result[str(rel)]=digest(p)
-        return result
-    current=None
-    for old in sorted(root.parent.iterdir(),key=lambda p:p.stat().st_mtime,reverse=True):
-        if old==root or not (old/'checkpoints.json').exists():continue
-        prev=read(old/'identity.json',{})
-        if prev.get('sources')!=identity['sources'] or prev.get('game')!=identity['game']:continue
-        before={k:v for k,v in prev.get('tools',{}).items() if k!='engineSource'}
-        after={k:v for k,v in identity['tools'].items() if k!='engineSource'}
-        if before!=after:continue
-        if current is None:current=sources(c.engine)
-        prior=sources(old/'engine');changed={k for k in current.keys()|prior.keys() if current.get(k)!=prior.get(k)}
-        if not changed<=allowed:continue
-        stages={k:v for k,v in read(old/'checkpoints.json',{}).items() if k!='编译 Mac 主程序'}
-        if not stages:continue
-        components={Path(p).parts[0] for files in stages.values() for p in files}
-        if any(p not in ('extract','aoc','shader') and not p.startswith('patched_') for p in components):continue
-        c.emit('message','检测到仅输入前端更新，迁移已有阶段后逐项验证；主程序重新编译。')
-        for name in sorted(components):
-            dest=root/name
-            if dest.exists():shutil.rmtree(dest)
-            clone_tree(old/name,dest,c.progress)
-        atomic(root/'checkpoints.json',stages);return
 
 def prepare(c,g):
+    from engine import inspect_source
+    inspect_source(c)
     ps=profiles(c.engine); profile=ps.get(g['id']); missing=requirements(g,profile)
     if missing: raise Failure('；'.join(missing))
     tc=tools(c); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'schema':1}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()[:24]
     root=c.library/'cache'/g['id']/key; root.mkdir(parents=True,exist_ok=True)
-    reuse_frontend_cache(c,root,identity)
     repo=root/'engine'
     if not (repo/'.source-ready').exists():
         tmp=root/'engine.partial'; shutil.rmtree(tmp,ignore_errors=True)
-        shutil.copytree(c.engine,tmp,ignore=shutil.ignore_patterns('bin','obj','gen','__pycache__','.git','dmhost'))
+        from engine import prepared_tools
+        shutil.copytree(prepared_tools(c)/'source',tmp,ignore=shutil.ignore_patterns('bin','obj','gen','__pycache__','.git','dmhost'))
         (tmp/'.source-ready').write_text(tc['engineSource'])
         if repo.exists(): shutil.rmtree(repo)
         tmp.rename(repo)
@@ -163,7 +132,7 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
         if not fontpath: raise Failure('找不到本机系统字体。')
         clone(fontpath,stage/'font/standard.ttf')
         c.run([sys.executable,repo/'dm/tools/make_ext_font.py',stage/'font/nintendo_ext.ttf'],root/'logs/font.log',c.env(gp.id,root))
-    manifest={'schema':1,'gameId':gp.id,'engine':ENGINE_REV,'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'created':time.time()}
+    manifest={'schema':1,'gameId':gp.id,'engine':read(root/'identity.json',{}).get('tools',{}).get('engine','external'),'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'inputConfig':read(root/'identity.json',{}).get('tools',{}).get('inputConfig',False),'created':time.time()}
     atomic(stage/'manifest.json',manifest)
     validate_runtime(stage,gp)
     # A symlink switch is atomic; the old successful release remains intact on every failure.
@@ -272,7 +241,13 @@ def migrate(c):
         c.begin('安装独立运行版本',4,4)
         return install(c,root,repo,gp,key,host,app/'romfs',patched,shader,app/'aoc',app/'font')
 
+# nn::settings::LanguageCode values; no arbitrary host locale or UI language tags.
+GAME_LANGUAGES=frozenset(('ja','en-US','fr','de','it','es','zh-CN','ko','nl','pt','ru','zh-TW','en-GB','fr-CA','es-419','zh-Hans','zh-Hant','pt-BR'))
+
 def launch(c):
+    language=c.r.get('gameLanguage','zh-Hans')
+    if not isinstance(language,str) or language not in GAME_LANGUAGES:
+        raise Failure('游戏语言代码无效，请在游戏详情中重新选择启动语言。')
     from toolchain import require_launch_environment
     require_launch_environment(c)
     with c.lock('execution'):
@@ -281,11 +256,12 @@ def launch(c):
         save=c.library/'saves'/g['id']; temp=c.library/'temp'/g['id']; pso=c.library/'games'/g['id']/'pso_user/pipelines.tsv'
         for p in (save,temp,pso.parent): p.mkdir(parents=True,exist_ok=True)
         config=c.r.get('inputConfig') or read(c.library/'mappings'/f"{g['id']}.json") or read(c.private/'default-input.json')
+        if read(runtime/'manifest.json',{}).get('inputConfig') is False: config=None
         if config:
             from input_config import validate
             validate(config); cfg=c.private/'runtime-input'/f'{g["id"]}.json'; atomic(cfg,config)
         else: cfg=None
-        env=c.env(g['id'],temp); env.update(DM_WINDOW='1',DM_AUDIO='1',DM_LANG='zhHans',DM_ROMFS=str(runtime/'romfs'),DM_SAVE=str(save),DM_TEMP=str(temp),DM_AOC_DIR=str(runtime/'aoc'),DM_FONT_DIR=str(runtime/'font'),DM_MSL_DIR=str(runtime/'shaders'),DM_NVN_SHMAP=str(runtime/'profile/shader_map.tsv'),DM_PSO_USER=str(pso))
+        env=c.env(g['id'],temp); env.update(DM_WINDOW='1',DM_AUDIO='1',DM_LANG=language,DM_ROMFS=str(runtime/'romfs'),DM_SAVE=str(save),DM_TEMP=str(temp),DM_AOC_DIR=str(runtime/'aoc'),DM_FONT_DIR=str(runtime/'font'),DM_MSL_DIR=str(runtime/'shaders'),DM_NVN_SHMAP=str(runtime/'profile/shader_map.tsv'),DM_PSO_USER=str(pso))
         if cfg: env['DM_INPUT_CONFIG']=str(cfg)
         log=c.private/'logs'/f'game-{g["id"]}.log'
         try: c.run([runtime/'dmhost',runtime/'modules'],log,env,cwd=temp)

@@ -7,7 +7,7 @@
 <p align="center">Apple Silicon · macOS 26+ · Native Liquid Glass interface</p>
 <p align="center"><a href="https://github.com/Xc1Ym/LumaDock/releases/latest">Download for Mac</a> · <a href="https://github.com/Xc1Ym/LumaDock/actions/workflows/ci.yml">Build status</a></p>
 
-LumaDock is a game launcher exclusively for Apple Silicon Macs, built on **[nxnative](https://github.com/seedds/nxnative)**. Bring your authorized NSP game files and `prod.keys`, then import, prepare, and launch from a graphical interface.
+LumaDock is a game launcher exclusively for Apple Silicon Macs, using a player-selected external **[nxnative](https://github.com/seedds/nxnative)** directory. Bring your authorized NSP game files and `prod.keys`, then import, prepare, and launch from a graphical interface.
 
 Through nxnative's code rewriting and runtime, the game's code executes natively on Apple Silicon, with graphics rendered through Metal. LumaDock organizes your library and runs the preparation steps, producing runtime files directly for macOS.
 
@@ -15,8 +15,13 @@ Through nxnative's code rewriting and runtime, the game's code executes natively
 
 Choose **System default, Light, or Dark** in **Settings → Language & appearance** to change LumaDock’s appearance independently of macOS. The choice takes effect immediately and is saved.
 
+Set **Launch language** in game details, or choose **Settings → Game language → Default game language** for games without an override. The default is Simplified Chinese. Game language is independent of the launcher interface; changes apply on the next game launch without preparing again or importing firmware. Available languages depend on the game's own language support.
+
+**nxnative is not included in the app, DMG, or source archive. LumaDock has no engine download button and never downloads an engine. Obtain its complete sources yourself, then choose their root directory in setup or Settings.**
+
 ## Features
 
+- **External engine selection.** Validate the directory and prepare its reader in a private cache. Your sources stay unchanged; content fingerprints isolate builds when engines change.
 - **One game library.** Import NSPs or scan a folder. Identify base games, updates, and DLC from their content metadata. Drag and drop, multiple selection, Unicode paths, and duplicate checks are supported.
 - **Automated preparation.** Extract, merge updates, process DLC, rewrite code, translate and compile shaders, then build the Mac host. Track stages, cancel tasks, validate caches, and retry.
 - **A native Mac interface.** SwiftUI / AppKit, Liquid Glass, light and dark appearance, and an opaque fallback for Reduce Transparency.
@@ -49,17 +54,19 @@ All screenshots use Light appearance and an empty library. They contain no game 
 
 Neither result is a full-game completion claim. Odyssey retains three known geometry-shader conversion gaps affecting thunder effects; those effects and all later scenes have not been fully checked. See the [validation record](docs/验收记录.md) (Chinese) for evidence and remaining test boundaries.
 
+**These historical tests used earlier bundled-engine builds; they do not validate an arbitrary externally selected checkout.**
+
 The player gameplay result was recorded with the previous `10b33338` engine baseline. With the updated `4e2dcdc` engine, Odyssey completed full preparation; Breath of the Wild's rebuild was cancelled at the player's request, and new game-startup checks were not performed. Gameplay on the updated engine has not been revalidated, and no compatibility claim is added for other games.
 
-Import the base game, the specified update, and any DLC you want to use. Title IDs and executable build IDs must match the fixed game profile; the app checks requirements before preparation.
+Import the base game, the specified update, and any DLC you want to use. Title IDs and executable build IDs must match the selected engine’s game profile; the app checks requirements before preparation.
 
 ## Get started
 
 You need an **Apple Silicon Mac, macOS 26 or later, and a full Xcode installation with the Metal compiler component**. The current tested setup is an M5 Pro running macOS 27.0.1 with Xcode 27.1; the app has not been revalidated on a physical Mac running macOS 26. Allow tens of gigabytes of free space for large games; requirements vary with the game and its caches.
 
-**1. Install LumaDock.** Open `LumaDock-0.2.4-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
+**1. Install LumaDock.** Open `LumaDock-0.2.5-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
 
-**2. Prepare the environment first.** The first setup step checks Apple Silicon, macOS, full Xcode, Metal, bundled components, and available space. The Xcode button opens its [Mac App Store page](https://apps.apple.com/app/xcode/id497799835) directly. Install missing Apple tools using the instructions in the wizard, then recheck; the next step stays locked until checks pass. Metal can be installed using [Apple's supported method](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). Other runtime dependencies are bundled; players do not need Homebrew, Python, or .NET.
+**2. Prepare the environment first.** The first setup step checks Apple Silicon, macOS, full Xcode, Metal, bundled components, and available space. The Xcode button opens its [Mac App Store page](https://apps.apple.com/app/xcode/id497799835) directly. Install missing Apple tools using the instructions in the wizard, then recheck; the next step stays locked until checks pass. Metal can be installed using [Apple's supported method](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). Generic Python, Python extensions, the .NET runtime, SPIRV-Cross and Zstandard are bundled. nxnative and its translator are external. Select the source root containing `dm` and `scripts`, then choose **Prepare engine tools**. The first reader build needs the official **.NET 10 SDK for macOS Arm64** and may restore LibHac from NuGet. The SDK is not needed once a complete tool cache is available. LumaDock does not install or download nxnative.
 
 **3. Choose a library, import keys, then add your game.** Follow the wizard in that order. External drives are supported; keep the drive connected while preparing or running games. Import your own `prod.keys` once before adding games; its format is checked locally, and decryption is verified when a game is read. The button, menu, and drag-and-drop entry points return to the missing setup step when needed. Choose **Add games**, select the base, update, and DLC NSPs or their containing folder, or drag them into the library. Identification uses file contents, so no particular filename format is required. Files are copied into the managed library; once copying succeeds, moving the originals does not affect those copies.
 
@@ -89,6 +96,8 @@ Removing a game from the library removes its registration while retaining files 
 
 ## Known limitations
 
+- Engine interfaces can change. Incomplete or incompatible directories are rejected. A checkout without `DM_INPUT_CONFIG` uses its own controls; the mapping editor explicitly reports this limitation.
+
 - No Intel Mac support, XCI / NSZ, general-purpose emulator backend, online play, motion controls, or vibration.
 - Entering a new scene may still compile graphics pipelines and cause brief stutters. Offline shader processing cannot eliminate every first-use stall.
 - Experimental games may fail to launch, display graphics or audio issues, or crash in later scenes. Successful preparation does not guarantee a fully playable game.
@@ -98,7 +107,7 @@ When reporting a problem, include the app version, chip, macOS / Xcode versions,
 
 ## Development and building
 
-The launcher uses SwiftUI / AppKit with a Python build worker. nxnative is pinned to [`4e2dcdc749668ddd4d61361117ad4a6980fabcf7`](https://github.com/seedds/nxnative/tree/4e2dcdc749668ddd4d61361117ad4a6980fabcf7) and does not automatically follow upstream branches. The [architecture](docs/架构说明.md) and [engine change list](docs/引擎修改.md) document interfaces and local changes (Chinese).
+The launcher uses SwiftUI / AppKit with a Python build worker and a user-selected external nxnative checkout. No engine sources or engine binaries are shipped. Structural/API checks and source fingerprints replace the old bundled revision pin. The [architecture](docs/架构说明.md) and [external engine interface](docs/引擎修改.md) document interfaces and local changes (Chinese).
 
 Maintainers need full Xcode, Homebrew, and the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) on PATH. Run the following from the project root; adjust `DEVELOPER_DIR` if Xcode is installed elsewhere:
 
@@ -117,9 +126,9 @@ work/python-venv/bin/python -B scripts/source_archive.py
 work/python-venv/bin/python -B scripts/verify_release.py
 ```
 
-Outputs are placed in `release/`: the app, DMG, source ZIP, `SHA256SUMS`, and a distribution audit. Building a distribution does not require games or keys. Actual bundled dependency versions are recorded in `Runtime/versions.json` inside the app. Homebrew and toolchain versions depend on the build environment; byte-for-byte reproducibility is not currently guaranteed.
+Outputs are placed in `release/`: the app, DMG, source ZIP, `SHA256SUMS`, and a distribution audit. Building a distribution does not require nxnative, games, or keys. CI uses original synthetic engine-interface fixtures and does not fetch an engine. Actual bundled dependency versions are recorded in `Runtime/versions.json` inside the app. Homebrew and toolchain versions depend on the build environment; byte-for-byte reproducibility is not currently guaranteed.
 
-[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.4`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
+[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.5`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
 
 Use the ignored `work/` directory for development and private tests. `--data-root <directory>` isolates application data. Do not commit `work/`, `release/`, `Runtime`, or any player data.
 
@@ -129,9 +138,9 @@ Use the ignored `work/` directory for development and private tests. `--data-roo
 
 The upstream contributions and their licenses are credited here:
 
-- **[nxnative](https://github.com/seedds/nxnative)** (MIT, Copyright © 2026 jhaizhou) is the direct upstream. It provides native execution, NSO rewriting, the system-service runtime, and graphics translation. LumaDock adds the library, graphical workflow, worker, configurable input, and Mac distribution tools. Upstream source and its license are retained in [`Vendor/nxnative`](Vendor/nxnative/LICENSE).
-- **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** (MIT) is an origin of nxnative's native-execution approach; see [upstream acknowledgements](Vendor/nxnative/README.md#acknowledgements).
-- **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** (MIT) contributed graphics and shader improvements incorporated through nxnative. See the [upstream third-party notes](Vendor/nxnative/dm/third_party/README.md) and [license](Vendor/nxnative/dm/third_party/macnativegames/LICENSE) for scope and terms.
+- **[nxnative](https://github.com/seedds/nxnative)** (MIT, Copyright © 2026 jhaizhou) is the direct upstream. It provides native execution, NSO rewriting, the system-service runtime, and graphics translation. LumaDock adds the library, graphical workflow, worker, configurable input, and Mac distribution tools. The engine and its license remain in the user-selected directory; they are not redistributed with LumaDock.
+- **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** (MIT) is an origin of nxnative's native-execution approach; see [upstream acknowledgements](https://github.com/seedds/nxnative#acknowledgements).
+- **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** (MIT) contributed graphics and shader improvements incorporated through nxnative. See the [upstream third-party notes](https://github.com/seedds/nxnative/tree/main/dm/third_party) and [license](https://github.com/ly05010419/MacNativeGames/blob/main/LICENSE) for scope and terms.
 - **Ryujinx / Spv.Generator, [LibHac](https://github.com/Thealexbarney/LibHac), and [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross)** provide shader translation, NSP content reading, and SPIR-V to Metal conversion through upstream.
 - **CPython, .NET, Capstone, lz4, fontTools, Zstandard**, and other upstream components retain their respective licenses in source or bundled runtime files. See [third-party notices](docs/Third-party-licenses.md).
 

@@ -75,8 +75,6 @@ def build(out):
     cp(dotnet/'host', out/'dotnet/host')
     cp(dotnet/'dotnet', out/'dotnet/dotnet')
     (out/'bin/dotnet').symlink_to('../dotnet/dotnet')
-    run([dotnet_bin, 'publish', ROOT/'Vendor/nxnative/dm/tools/nx_extract', '-c', 'Release',
-         '-r', 'osx-arm64', '--self-contained', 'false', '-o', out/'nx_extract', '--force', '-v', 'quiet'])
     libs = out/'lib'
     libs.mkdir()
     todo = [p for root in (out/'python', out/'bin') for p in root.rglob('*')
@@ -136,9 +134,6 @@ def build(out):
         for p in prefix.glob('*'):
             if p.is_file() and any(x in p.name.upper() for x in ('LICENSE', 'COPYING', 'NOTICE')):
                 shutil.copy2(p, licenses/(name+'-'+p.name))
-    nuget = pathlib.Path(os.environ.get('NUGET_PACKAGES', str(pathlib.Path.home()/'.nuget/packages')))/'libhac/0.19.0/libhac.nuspec'
-    if nuget.exists():
-        shutil.copy2(nuget, licenses/'LibHac-package-license.nuspec')
     versions = json.loads(output([out/'python/bin/python3', '-B', '-I', '-c',
         'import json,sys,importlib.metadata as m; print(json.dumps(dict(python=sys.version.split()[0], **{p:m.version(p) for p in ["capstone","lz4","fonttools"]})))']))
     versions.update(dotnet=version.name, spirvCross=output([brew, 'list', '--versions', 'spirv-cross']), zstd=output([brew, 'list', '--versions', 'zstd']))

@@ -2,11 +2,12 @@ import contextlib,io,json,os,pathlib,signal,subprocess,sys,tempfile,time,unittes
 from unittest.mock import patch
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'Worker'))
 from core import *
-import library,build,input_config,toolchain
+import library,build,input_config,toolchain,engine
+from engine_fixture import make_engine
 class WorkerTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(dir=ROOT/'work');self.root=Path(self.tmp.name)
-        self.ctx=Context({'schema':1,'taskId':'test','operation':'setup','privateRoot':str(self.root/'private'),'resources':str(ROOT),'library':str(self.root/'中文 空格 游戏库')})
+        self.ctx=Context({'schema':1,'taskId':'test','operation':'setup','privateRoot':str(self.root/'private'),'resources':str(ROOT),'engineDir':str(make_engine(self.root/'External 引擎')),'library':str(self.root/'中文 空格 游戏库')})
         with contextlib.redirect_stdout(io.StringIO()):library.setup(self.ctx)
     def tearDown(self):self.tmp.cleanup()
     def quiet(self,fn,*args):
@@ -39,7 +40,7 @@ class WorkerTests(unittest.TestCase):
         self.ctx.r['libraryId']='not-this-disk'
         with self.assertRaises(Failure):self.ctx.check()
     def test_05_profiles_and_missing_version(self):
-        ps=profiles(self.ctx.engine);self.assertGreaterEqual(len(ps),15);self.assertIn('01007EF00011E000',ps);self.assertIn('0100000000010000',ps)
+        ps=profiles(self.ctx.engine);self.assertEqual(len(ps),2);self.assertIn('01007EF00011E000',ps);self.assertIn('0100000000010000',ps)
         missing=library.requirements({'packages':[{'type':'base','version':0,'builds':{}}]},ps['01007EF00011E000'])
         self.assertTrue(any('v1114112' in s for s in missing))
         self.assertEqual(library.requirements({'packages':[]},None),['此游戏尚无原生适配配置'])
@@ -120,6 +121,7 @@ class WorkerTests(unittest.TestCase):
         (watch.path/'key2_b.metallib').write_bytes(b'library');self.assertEqual(watch()['done'],1);self.assertEqual(watch()['total'],2)
 
     def test_17_pipeline_records_use_a_persistent_file(self):
+        self.ctx.engine=None # Prepared runtimes must not depend on the selected sources.
         self.ctx.save_catalog({'games':[{'id':'g','packages':[]}]});self.ctx.r['gameId']='g'
         seen=[]
         def run(args,log=None,env=None,cwd=None,on_line=None):
@@ -139,6 +141,35 @@ class WorkerTests(unittest.TestCase):
         self.ctx.keys.unlink()
         self.assertFalse(self.quiet(library.catalog,self.ctx)['keys']['ready'])
 
+    def test_game_language_reaches_native_process_without_touching_runtime_or_cache(self):
+        self.ctx.save_catalog({'games':[{'id':'g','packages':[]}]});self.ctx.r['gameId']='g'
+        runtime=self.ctx.library/'games/g/current';runtime.mkdir(parents=True)
+        atomic(runtime/'manifest.json',{'chain':'fixture'})
+        cache=self.ctx.library/'cache/identity.json';atomic(cache,{'unchanged':True})
+        before={p:p.read_bytes() for p in (runtime/'manifest.json',cache)}
+        seen=[]
+        def run(args,log=None,env=None,cwd=None,on_line=None):seen.append(env['DM_LANG'])
+        codes=sorted(build.GAME_LANGUAGES)
+        with patch('toolchain.require_launch_environment'),patch('build.validate_runtime'),patch.object(self.ctx,'run',side_effect=run),patch.dict(os.environ,{'DM_LANG':'ja'}):
+            self.quiet(build.launch,self.ctx) # Old callers get a valid Simplified Chinese default.
+            for code in codes:
+                self.ctx.r['gameLanguage']=code;self.quiet(build.launch,self.ctx)
+        self.assertEqual(seen,['zh-Hans']+codes)
+        for p,data in before.items():self.assertEqual(p.read_bytes(),data)
+
+    def test_invalid_game_language_is_rejected_before_starting_any_process(self):
+        for invalid in ('zhHans','zh-Hans-CN','en',None,[],{},1,'ja\nDM_SAVE=/tmp/wrong'):
+            with self.subTest(language=invalid),patch('toolchain.require_launch_environment') as check,patch.object(self.ctx,'run') as run:
+                self.ctx.r['gameLanguage']=invalid
+                with self.assertRaisesRegex(Failure,'游戏语言代码无效'):self.quiet(build.launch,self.ctx)
+                check.assert_not_called();run.assert_not_called()
+
+    def test_launcher_and_worker_accept_the_same_switch_language_codes(self):
+        source=(ROOT/'Sources/NSMac/GameLanguage.swift').read_text()
+        codes=set(re.findall(r'\b\w+\s*=\s*"([a-z]{2}(?:-[A-Za-z0-9]+)?)"',source))
+        self.assertEqual(codes,build.GAME_LANGUAGES)
+        self.assertEqual(len(codes),18)
+
     def test_19_import_without_keys_does_not_scan_or_copy(self):
         src=self.root/'source.nsp';src.write_bytes(b'unchanged');self.ctx.r['paths']=[str(src)]
         with patch('library.inspect') as inspect_mock:
@@ -149,11 +180,14 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(self.ctx.catalog()['games'],[])
 
     def test_20_preflight_preserves_separate_prepare_and_launch_requirements(self):
-        checks=[dict(name='Xcode',ok=False,requiredFor=['prepare']),dict(name='Python',ok=True,requiredFor=['prepare','launch'])]
+        checks=[dict(name='Xcode',ok=False,requiredFor=['prepare']),dict(name='Python',ok=True,requiredFor=['prepare','launch']),dict(name='SDK',ok=False,requiredFor=[])]
         with patch('toolchain.inspect_environment',return_value=checks),patch('toolchain.supports_removal',return_value=False):
             result=self.quiet(library.preflight,self.ctx)
         self.assertFalse(result['ready']);self.assertTrue(result['launchReady'])
         self.assertEqual(result['checks'],checks)
+        checks[0]['ok']=True
+        with patch('toolchain.inspect_environment',return_value=checks),patch('toolchain.supports_removal',return_value=False):
+            self.assertTrue(self.quiet(library.preflight,self.ctx)['ready'])
 
     def test_21_metal_removal_requires_confirmation_and_supported_xcode(self):
         with patch.object(self.ctx,'run') as run:
@@ -193,7 +227,7 @@ class WorkerTests(unittest.TestCase):
         atomic(runtime/'manifest.json',manifest)
         game=self.quiet(library.catalog,self.ctx)['games'][0]
         self.assertTrue(game['ready']);self.assertTrue(game['needsPreparation'])
-        atomic(runtime/'manifest.json',dict(manifest,engine=ENGINE_REV))
+        atomic(runtime/'manifest.json',dict(manifest,engine=engine.inspect_source(self.ctx)['fingerprint']))
         self.assertFalse(self.quiet(library.catalog,self.ctx)['games'][0]['needsPreparation'])
         self.assertEqual((runtime/'sentinel').read_text(),'last successful version')
 

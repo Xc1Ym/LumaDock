@@ -17,7 +17,7 @@ import json, pathlib, sys
 r=json.loads(pathlib.Path(sys.argv[2]).read_text())
 root=pathlib.Path(r['resources']).parent
 with (root/'operations.jsonl').open('a') as f:
-    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed')})+'\n')
+    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed'),'engineDir':r.get('engineDir'),'gameLanguage':r.get('gameLanguage')})+'\n')
 if r['operation']=='catalog':
     result=json.loads((root/'catalog.json').read_text())
 elif r['operation']=='import':
@@ -110,6 +110,57 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         let prefs=try JSONDecoder().decode(Preferences.self,from:data)
         XCTAssertEqual(prefs.libraryId,"old-id");XCTAssertTrue(prefs.onboardingComplete)
         XCTAssertNil(prefs.prepareAfterImport)
+        XCTAssertNil(prefs.engineDir)
+        XCTAssertNil(prefs.gameLanguage)
+        XCTAssertNil(prefs.gameLanguages)
+    }
+    func testLaunchSendsTheEffectiveLanguageWithoutPreparingAgain() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[game("g1",ready:true)],imports:[])
+        let g=try XCTUnwrap(Store.decode(Game.self,game("g1",ready:true)))
+        store.language = .english
+        store.launch(g)
+        try await waitUntil {store.processes.isEmpty}
+        store.setGameLanguage(.englishUK,for:g.id)
+        store.launch(g)
+        try await waitUntil {store.processes.isEmpty}
+        store.setGameLanguage(nil,for:g.id)
+        store.defaultGameLanguage = .japanese
+        store.launch(g)
+        try await waitUntil {store.processes.isEmpty}
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String == "launch"}.compactMap{$0["gameLanguage"] as? String},["zh-Hans","en-GB","ja"])
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "build"})
+        XCTAssertEqual(store.language,.english)
+        XCTAssertTrue(store.queue.isEmpty)
+        await cleanup(root,store)
+    }
+    func testExternalEngineSelectionPersistsAndIsPassedToWorkersAsData() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[],imports:[])
+        let source=root.appendingPathComponent("下载 中文's nxnative")
+        store.selectEngine(source)
+        try await waitUntil {!store.checkingEnvironment && store.processes.isEmpty}
+        let saved=try JSONDecoder().decode(Preferences.self,from:Data(contentsOf:store.privateRoot.appendingPathComponent("preferences.json")))
+        XCTAssertEqual(saved.engineDir,source.path)
+        XCTAssertEqual(operations(root).first?["engineDir"] as? String,source.path)
+        store.prepareEngine()
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String=="prepareEngine"} && store.processes.isEmpty}
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String=="preflight"}.count,2)
+        XCTAssertFalse(store.executionBusy)
+        await cleanup(root,store)
+    }
+    func testChangingOrPreparingExternalEngineIsBlockedWhileQueueOrGameIsActive() async throws {
+        let (root,store)=try fixture()
+        store.preferences.engineDir="/existing/engine"
+        for queued in [false,true] {
+            store.executionTask=queued ? nil : "active-game"
+            store.queue=queued ? ["pending-game"] : []
+            store.selectEngine(root.appendingPathComponent("other"));store.prepareEngine()
+            XCTAssertEqual(store.preferences.engineDir,"/existing/engine")
+            XCTAssertTrue(operations(root).isEmpty)
+        }
+        store.executionTask=nil;store.queue=[]
+        await cleanup(root,store)
     }
     func testEnvironmentMustPassBeforeAnyGameImport() async throws {
         let (root,store)=try fixture(toolchainReady:false);store.hasImportedKeys=true

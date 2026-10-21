@@ -35,9 +35,9 @@ class DistributionTests(unittest.TestCase):
     def test_release_audit_rejects_private_data_and_game_art(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            for name in ('prod.keys', 'game.nsp', 'cache/shaders.metallib', 'saves/slot.dat', 'cover.png'):
+            for name in ('prod.keys', 'game.nsp', 'cache/shaders.metallib', 'saves/slot.dat', 'cover.png', 'Vendor/nxnative/source.c', 'Runtime/nx_extract/nx_extract.dll', 'tools/dmsh_xlate.dll'):
                 path = root/name
-                path.parent.mkdir(exist_ok=True)
+                path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(b'private-fixture')
                 with self.assertRaises(RuntimeError, msg=name):
                     audit(root)
@@ -59,7 +59,7 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             archive=pathlib.Path(directory)/'test.zip'
             with zipfile.ZipFile(archive,'w') as output:
-                for name in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico','Vendor/nxnative/LICENSE'):
+                for name in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico'):
                     output.writestr(PRODUCT['name']+'/'+name,'fixture')
                 output.writestr(PRODUCT['name']+'/docs/screenshots/game-cover.jpg','private artwork')
             with self.assertRaises(AssertionError): verify_source(archive)

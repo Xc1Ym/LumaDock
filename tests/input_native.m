@@ -1,5 +1,5 @@
 // Exercise the production AppKit front end in a temporary window, without game files.
-#include "../Vendor/nxnative/dm/host/front_mac.m"
+#include "front_mac.m"
 #include <assert.h>
 
 static uint64_t received_buttons;

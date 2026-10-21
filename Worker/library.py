@@ -18,7 +18,10 @@ def preflight(c):
     c.begin('检查系统与工具链',1,1)
     from toolchain import inspect_environment, supports_removal
     checks = inspect_environment(c)
-    return {'checks':checks,'ready':all(x['ok'] for x in checks),
+    from engine import inspect_source
+    try: engine_info=inspect_source(c)
+    except Failure: engine_info=None
+    return {'engineInfo':engine_info,'checks':checks,'ready':all(x['ok'] for x in checks if 'prepare' in x['requiredFor']),
             'launchReady':all(x['ok'] for x in checks if 'launch' in x['requiredFor']),
             'canUninstallMetal':supports_removal(c)}
 
@@ -40,7 +43,8 @@ def keys(c):
 
 def inspect(c,path,key=None,icon=None):
     lines=[]
-    try: c.run([c.nx(),key or c.keys,'--inspect',path]+([icon] if icon else []),on_line=lines.append)
+    reader=c.nx()
+    try: c.run([reader,key or c.keys,'--inspect',path]+([icon] if icon else []),on_line=lines.append)
     except Failure: raise Failure('无法解密或验证 NSP 元数据，请检查密钥是否正确、文件是否完整。')
     try: return json.loads(next(l for l in reversed(lines) if l.startswith('{')))
     except (StopIteration,ValueError): raise Failure('无法识别 NSP 元数据，请检查密钥、文件完整性和文件类型。')
@@ -114,7 +118,10 @@ def key_status(c):
     return {'ready':True,'entries':count,'verified':verified,'message':'已验证解密能力' if verified else '格式通过，首次导入游戏时验证解密能力'}
 
 def catalog(c):
-    c.begin('读取游戏库',1,1); cat=c.catalog(); ps=profiles(c.engine)
+    from engine import inspect_source
+    try: selected_engine = inspect_source(c)
+    except Failure: selected_engine = None
+    c.begin('读取游戏库',1,1); cat=c.catalog(); ps=profiles(c.engine) if selected_engine else {}
     for g in cat['games']:
         g['missing']=requirements(g,ps.get(g['id'])); g['compatibility']=ps.get(g['id'],{}).get('compatibility','unsupported')
         p=ps.get(g['id']); selected=next((x for x in g['packages'] if p and f"v{x['version']}"==p.get('package') and x['type'] in ('base','update')),None)
@@ -122,7 +129,8 @@ def catalog(c):
         manifest=read(c.library/'games'/g['id']/'current/manifest.json',{})
         cover=c.library/'games'/g['id']/'cover.jpg'; g['cover']=str(cover) if cover.exists() else ''
         g['ready']=bool(manifest)
-        g['needsPreparation']=bool(manifest) and (manifest.get('engine') != ENGINE_REV or manifest.get('sourceHashes') != sorted(x['sha256'] for x in g['packages']))
+        g['inputConfig']=manifest.get('inputConfig',True) if manifest else bool(selected_engine and selected_engine['inputConfig'])
+        g['needsPreparation']=bool(manifest) and (selected_engine is not None and manifest.get('engine') != selected_engine['fingerprint'] or manifest.get('sourceHashes') != sorted(x['sha256'] for x in g['packages']))
     cat['profiles']=[{'id':x['id'],'name':x['name'],'compatibility':x['compatibility'],'version':x['builds'].get(x['package'],{}).get('display','')} for x in ps.values()]
     cat['jobs']=[read(p) for p in (c.private/'jobs').glob('*.json') if p!=c.jobpath]
     cat['keys']=key_status(c)
@@ -151,13 +159,14 @@ def diagnostics(c):
     out=Path(c.r['path'])
     # Allowlist only status records and text logs; never requests, sources, keys, saves, or cache.
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-        z.writestr('system.json',json.dumps({'schema':1,'engine':ENGINE_REV,'jobs':[{k:v for k,v in read(p,{}).items() if k in ('id','state','operation','stage','message')} for p in (c.private/'jobs').glob('*.json')]}))
+        z.writestr('system.json',json.dumps({'schema':1,'engine':'external','jobs':[{k:v for k,v in read(p,{}).items() if k in ('id','state','operation','stage','message')} for p in (c.private/'jobs').glob('*.json')]}))
         for base in (c.private/'logs',c.library/'cache'):
             if not base.exists(): continue
             for p in base.rglob('*.log'):
                 if p.stat().st_size>8*2**20: continue
                 text=p.read_text(errors='replace')
                 text=re.sub(r'(?i)([a-z0-9_]*(?:key|secret|token)[a-z0-9_]*\s*=\s*)\S+',r'\1[REDACTED]',text)
+                text=text.replace(str(c.engine),'[ENGINE]') if c.engine else text
                 text=text.replace(str(Path.home()),'~').replace(str(c.library),'[LIBRARY]').replace(str(c.private),'[PRIVATE]')
                 z.writestr('logs/'+hashlib.sha256(str(p).encode()).hexdigest()[:12]+'.log',text)
     return {'path':str(out)}

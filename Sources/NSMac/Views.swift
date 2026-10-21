@@ -22,7 +22,7 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Label(store.executionBusy ? L("任务进行中") : L("本地运行"),systemImage:store.executionBusy ? "circle.dotted" : "checkmark.shield")
                     Text(L("游戏与密钥由玩家自行导入")).font(.caption).foregroundStyle(.secondary)
-                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.4")).font(.caption2).foregroundStyle(.tertiary)
+                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.5")).font(.caption2).foregroundStyle(.tertiary)
                 }.font(.caption).padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).padding(.bottom,16)
             }.padding(.horizontal,12).navigationSplitViewColumnWidth(min:205,ideal:225,max:270)
         } detail: {
@@ -152,6 +152,8 @@ struct GameDetail: View {
             if game.compatibility=="startup" {Text(L("已验证启动；完整游戏流程仍需玩家验证。")).font(.caption).foregroundStyle(.secondary)}
             if game.compatibility=="experimental" {Text(L("已有引擎配置，尚未完成 Mac 实机验收。")).font(.caption).foregroundStyle(.secondary)}
             if game.needsPreparation==true {Text(L("新增内容或引擎更新尚未准备；启动将使用上次成功版本。")).font(.caption).foregroundStyle(.orange)}
+            GameLanguagePicker(gameId:game.id)
+            Text(L("下次启动生效，无需重新准备。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
             if game.ready==true {
                 Button {store.launch(game)} label:{Label(L("启动游戏"),systemImage:"play.fill").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(store.executionBusy || !store.queue.isEmpty)
             }
@@ -235,6 +237,10 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section(L("语言与外观")) { LanguagePicker(); AppearancePicker(); Text(L("界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。")).font(.caption).foregroundStyle(.secondary) }
+            Section(L("游戏语言")) {
+                GameLanguagePicker()
+                Text(L("与界面语言独立；可在游戏详情中单独设置启动语言。下次启动生效，无需重新准备或导入固件。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
+            }
             Section(L("游戏库与玩家数据")) {
                 LabeledContent(L("存储位置"),value:store.preferences.library.isEmpty ? L("未选择") : store.preferences.library).textSelection(.enabled)
                 Button(L("选择或切换游戏库…"),action:store.chooseLibrary).disabled(store.executionBusy)
@@ -244,6 +250,7 @@ struct SettingsView: View {
                 Text(L("仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。")).font(.caption).foregroundStyle(.secondary)
             }
             Section(L("运行与构建环境")) {
+                EngineSettingsView()
                 TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).onSubmit {store.savePreferences();store.checkEnvironment()}
                     .onChange(of:store.preferences.developerDir) {_,_ in store.checks=[]}
                 EnvironmentSummary()
@@ -260,7 +267,7 @@ struct SettingsView: View {
                 LabeledContent(L("璃游 LumaDock"),value:Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))
                 Text(L("独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
                 HStack {
-                    Link(L("上游 nxnative"),destination:URL(string:"https://github.com/seedds/nxnative")!)
+                    Text(L("运行引擎由玩家自行提供。"))
                     Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}
                 }
             }
@@ -269,7 +276,7 @@ struct SettingsView: View {
 }
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
-    private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("bundled","应用内置组件"),("storage","游戏库存储")]
+    private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","外部引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
     var body: some View {
         VStack(alignment:.leading,spacing:18) {
             ForEach(groups,id:\.0) { group,title in
@@ -289,6 +296,8 @@ struct EnvironmentCheckRow: View {
     let check: ToolCheck
     private var actionTitle:String {
         switch check.action {
+        case "chooseEngine":return "选择 nxnative 目录…"
+        case "prepareEngine":return "准备引擎工具"
         case "xcodeStore":return "获取 Xcode"
         case "openXcode":return "打开 Xcode 完成设置"
         case "installMetal":return "安装 Metal 编译组件"
@@ -305,13 +314,13 @@ struct EnvironmentCheckRow: View {
                 HStack {
                     Text(L(check.name)).fontWeight(.medium)
                     Spacer()
-                    Text(L(check.required(for:"launch") ? "准备与启动" : "准备时需要")).font(.caption2).foregroundStyle(.secondary)
+                    Text(L(check.required(for:"launch") ? "准备与启动" : check.required(for:"prepare") ? "准备时需要" : "首次准备工具时需要")).font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(L(check.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 if let location=check.location {
                     DisclosureGroup(L("组件位置")) {
                         VStack(alignment:.leading,spacing:4) {
-                            Text(L("随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
+                            Text(L(check.group == "engine" ? "外部引擎或其私有工具缓存的当前位置。" : "随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
                             Text(location).font(.caption.monospaced()).textSelection(.enabled)
                         }.padding(.top,4)
                     }.font(.caption)
@@ -388,9 +397,13 @@ struct EnvironmentSetupView: View {
         VStack(alignment:.leading,spacing:16) {
             Text(L("先准备 Mac 运行环境。需要 Apple Silicon、macOS 26 或更新系统、完整 Xcode 和 Metal 编译组件。检查通过后再导入玩家内容。")).foregroundStyle(.secondary)
             EnvironmentSummary()
-            Text(L("缺少环境时，按以下顺序安装：")).font(.headline)
-            Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。")).font(.callout).foregroundStyle(.secondary)
-            Text(L("Python、Python 扩展、.NET、NSP 读取器和着色器转换工具均随应用提供，并检查实际运行能力。无需另装系统 Python 或 Homebrew；内置组件缺失或损坏时请重装完整应用。")).font(.caption).foregroundStyle(.secondary)
+            EngineSettingsView()
+            DisclosureGroup(L("安装其他环境")) {
+                VStack(alignment:.leading,spacing:10) {
+                    Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。")).font(.callout).foregroundStyle(.secondary)
+                    Text(L("Python、Python 扩展、.NET 运行时、SPIRV-Cross 和 Zstandard 随应用提供。nxnative 及其读取器、翻译器不内置；首次准备引擎工具还需要 .NET 10 SDK，安装方法见环境说明。")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
             TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).textFieldStyle(.roundedBorder)
                 .onChange(of:store.preferences.developerDir) { _,_ in store.checks=[] }
                 .onSubmit {store.savePreferences();store.checkEnvironment()}
@@ -398,6 +411,23 @@ struct EnvironmentSetupView: View {
             Divider()
             ToolChecks()
             if store.environmentReady {Label(L("环境已就绪，可以继续选择游戏库。"),systemImage:"checkmark.circle.fill").foregroundStyle(.teal)}
+        }
+    }
+}
+struct EngineSettingsView: View {
+    @EnvironmentObject var store:Store
+    var body:some View {
+        VStack(alignment:.leading,spacing:10) {
+            Text(L("外部 nxnative 引擎")).font(.headline)
+            Text(L("应用不附带或下载 nxnative。请自行下载并解压完整源码，再选择包含 dm 和 scripts 的根目录。原目录保持不变，构建使用私有副本。")).font(.caption).foregroundStyle(.secondary)
+            LabeledContent(L("nxnative 目录"),value:(store.preferences.engineDir ?? "").isEmpty ? L("未选择") : store.preferences.engineDir!).textSelection(.enabled)
+            HStack {
+                Button(L("选择 nxnative 目录…"),action:store.chooseEngine).disabled(!store.canManageToolchain)
+                Button(L("准备引擎工具"),action:store.prepareEngine).disabled(!store.canManageToolchain || (store.preferences.engineDir ?? "").isEmpty)
+            }
+            if let task=store.tasks.first(where:{$0.id==store.executionTask && $0.operation=="prepareEngine"}) {
+                HStack {ProgressView().controlSize(.small);Text(L(task.stage ?? "准备引擎工具")).font(.caption)}
+            }
         }
     }
 }
@@ -482,6 +512,35 @@ struct LanguagePicker: View {
         Picker(L("语言"),selection:Binding(get:{store.language},set:{store.language=$0})) {
             ForEach(AppLanguage.allCases) { language in Text(language.name).tag(language) }
         }.pickerStyle(.segmented).id("app-language-"+Localization.language)
+    }
+}
+
+struct GameLanguagePicker: View {
+    @EnvironmentObject var store: Store
+    var gameId: String? = nil
+    private var selection: Binding<String> {
+        Binding(get:{
+            if let gameId { return store.gameLanguageOverride(for:gameId)?.rawValue ?? "" }
+            return store.defaultGameLanguage.rawValue
+        },set:{ value in
+            if let gameId { store.setGameLanguage(GameLanguage(rawValue:value),for:gameId) }
+            else if let language=GameLanguage(rawValue:value) { store.defaultGameLanguage=language }
+        })
+    }
+    private var picker: some View {
+        Picker(L(gameId == nil ? "默认游戏语言" : "启动语言"),selection:selection) {
+            if gameId != nil { Text(L("跟随默认（\(store.defaultGameLanguage.name)）")).tag("") }
+            ForEach(GameLanguage.allCases) { language in Text(language.name).tag(language.rawValue) }
+        }.pickerStyle(.menu).id("game-language-"+(gameId ?? "default")+"-"+Localization.language)
+    }
+    var body: some View {
+        if gameId == nil { picker }
+        else {
+            VStack(alignment:.leading,spacing:6) {
+                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary)
+                picker.labelsHidden().frame(maxWidth:.infinity)
+            }
+        }
     }
 }
 

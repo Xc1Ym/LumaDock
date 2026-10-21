@@ -23,11 +23,11 @@ REPAIR_XCODE_INITIAL = '打开所选 Xcode，完成许可及必需系统组件�
 PROBE_TIMEOUT = '工具检查超时，请重新检查或修复对应组件。'
 
 
-def probe(c, args, *, timeout=20, cwd=None):
+def probe(c, args, *, timeout=20, cwd=None, env=None):
     """Return a bounded diagnostic; kill the whole probe group on timeout."""
     c.check()
     try:
-        p = subprocess.Popen([str(a) for a in args], env=c.env(), cwd=cwd,
+        p = subprocess.Popen([str(a) for a in args], env=env or c.env(), cwd=cwd,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, errors='replace', start_new_session=True)
     except OSError as error:
@@ -65,7 +65,7 @@ def inspect_environment(c):
 
     def add(name, ok, message, help, action, group, scopes=None, detail='', location=None, repairCommand=None):
         item = dict(name=name, ok=bool(ok), message=message, help=help, action=action,
-                    group=group, requiredFor=scopes or ['prepare'])
+                    group=group, requiredFor=['prepare'] if scopes is None else scopes)
         if detail and not ok:
             item['detail'] = detail
         if location:
@@ -73,7 +73,7 @@ def inspect_environment(c):
         if repairCommand:
             item['repairCommand'] = repairCommand
         checks.append(item)
-        c.emit('check', check=item, done=len(checks), total=18)
+        c.emit('check', check=item, done=len(checks), total=20)
 
     add('Apple Silicon', platform.machine() == 'arm64', platform.machine(),
         '需要 Apple Silicon Mac，Intel Mac 或 Rosetta 下运行不受支持。', '', 'system', both)
@@ -121,19 +121,32 @@ def inspect_environment(c):
     ok = ok and isinstance(versions.get('dotnet'),str) and versions['dotnet'].startswith('10.') and any(
         line.startswith('Microsoft.NETCore.App '+versions['dotnet']+' ') and str((runtime/'dotnet/shared/Microsoft.NETCore.App').resolve()) in line for line in output.splitlines())
     add('.NET 10 运行时', ok, f'Microsoft.NETCore.App {versions["dotnet"]} · 应用内置' if ok else '内置 .NET 10 运行时不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'dotnet')
-    nx = runtime/'nx_extract/nx_extract'
-    ok, output = probe(c, [nx])
-    # nx_extract intentionally exits 2 for its argument-free usage check.
-    nx_ok = 'usage: nx_extract <prod.keys>' in output and (nx.parent/'nx_extract.dll').is_file() and (nx.parent/'LibHac.dll').is_file()
-    add('NSP 读取组件', nx_ok, '检查读取程序与 LibHac 能否加载（不读取游戏或密钥）', repair, 'reinstall', 'bundled', detail=output, location=nx)
-    xlate = c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
-    ok, output = probe(c, [xlate, '--source-sha'])
+    from engine import inspect_source, prepared_tools, find_sdk, HELP, SDK_HELP, TOOLS_HELP
+    info = None
     try:
-        expected = hashlib.sha256(b''.join((c.engine/'dm/gfx/tools/dmsh_xlate'/n).read_bytes() for n in ('Program.cs','dmsh_xlate.csproj'))).hexdigest()[:16]
+        info = inspect_source(c)
+        message = '已验证外部 nxnative 目录及构建接口'
+    except Failure as error:
+        message = str(error)
+    add('外部 nxnative', info is not None, message, HELP, 'chooseEngine', 'engine', location=c.engine)
+    sdk, sdk_version = find_sdk(c)
+    add('.NET 10 SDK', sdk is not None, sdk_version or '尚未检测到 .NET 10 SDK', SDK_HELP, '', 'engine', [], location=sdk)
+    reader = None
+    try:
+        if info is not None: reader = prepared_tools(c,info)/'tools/nx_extract/nx_extract'
+        _, output = probe(c,[reader]) if reader else (False,'')
+        nx_ok = reader is not None and 'usage: nx_extract <prod.keys>' in output
+    except (Failure, OSError, ValueError):
+        nx_ok=False; output=''
+    add('NSP 读取组件', nx_ok, '外部引擎读取工具已就绪' if nx_ok else '请先准备外部引擎工具', TOOLS_HELP, 'prepareEngine', 'engine', detail=output, location=reader)
+    xlate = c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate' if info else None
+    ok, output = probe(c, [xlate, '--source-sha']) if xlate else (False,'')
+    try:
+        expected = hashlib.sha256(b''.join((c.engine/'dm/gfx/tools/dmsh_xlate'/n).read_bytes() for n in ('Program.cs','dmsh_xlate.csproj'))).hexdigest()[:16] if info else ''
         ok = ok and output == expected and all((xlate.parent/n).is_file() for n in ('dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','Ryujinx.Common.dll'))
     except OSError:
         ok = False
-    add('着色器翻译组件', ok, '检查翻译器能否启动，且与固定引擎源码一致', repair, 'reinstall', 'bundled', detail=output, location=xlate)
+    add('着色器翻译组件', ok, '检查外部引擎翻译器与所选源码是否一致', HELP, 'chooseEngine', 'engine', detail=output, location=xlate)
     ok, output = probe(c, [runtime/'bin/spirv-cross', '--revision'])
     add('SPIRV-Cross', ok and bool(output), output if ok else '着色器转换组件不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'bin/spirv-cross')
     ok, output = probe(c, [runtime/'bin/zstd', '--version'])

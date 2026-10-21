@@ -48,7 +48,7 @@ def verify_source(path):
             if rel.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg'):
                 assert '/'.join(rel.parts[1:]) in SOURCE_ARTWORK, f'Unexpected artwork: {name}'
             assert archive.getinfo(name).file_size < 100*1024*1024, f'File exceeds GitHub size limit: {name}'
-        for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaDock.ico', 'Vendor/nxnative/LICENSE'):
+        for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaDock.ico'):
             assert PRODUCT['name']+'/'+required in names, f'Missing source file: {required}'
 
 
@@ -115,14 +115,12 @@ assert lz4.block.decompress(lz4.block.compress(b'portable'))==b'portable'
 assert next(capstone.Cs(capstone.CS_ARCH_ARM64,capstone.CS_MODE_ARM).disasm(bytes.fromhex('1f2003d5'),0)).mnemonic=='nop'
 ok,dotnet=probe(c,[c.runtime/'bin/dotnet','--list-runtimes'])
 assert ok and str(c.runtime/'dotnet/shared/Microsoft.NETCore.App') in dotnet,dotnet
-_,usage=probe(c,[c.nx()]);assert 'usage: nx_extract <prod.keys>' in usage,usage
-translator=c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate'
-ok,source=probe(c,[translator,'--source-sha'])
-expected=hashlib.sha256(b''.join((c.engine/'dm/gfx/tools/dmsh_xlate'/name).read_bytes() for name in ('Program.cs','dmsh_xlate.csproj'))).hexdigest()[:16]
-assert ok and source==expected,source
+assert c.engine is None
+assert not (resources/'Vendor').exists()
+assert not (c.runtime/'nx_extract').exists()
 for name,args in [('spirv-cross',['--revision']),('zstd',['--version'])]:
  ok,text=probe(c,[c.runtime/'bin'/name,*args]);assert ok and text,text
-print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet,translator=source)))
+print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet)))
 '''
         env=dict(os.environ,PATH='/usr/bin:/bin:/usr/sbin:/sbin',PYTHONHOME='/invalid-builder-python',PYTHONPATH='/invalid-builder-modules',PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
         result=subprocess.run([resources/'Runtime/python/bin/python3','-B','-I','-c',script,str(resources),str(private)],env=env,text=True,capture_output=True,timeout=100)
@@ -130,7 +128,7 @@ print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet,tr
         report=json.loads(result.stdout)
         assert all(str(moved) in path for path in report['paths'])
         assert str(moved) in report['dotnet']
-    print(f'Verified runtime relocation: {count} native files, relative symlinks, Python/extensions, .NET, NSP reader and shader tools')
+    print(f'Verified runtime relocation: {count} native files, relative symlinks, Python/extensions, .NET and generic conversion tools; no bundled engine')
 
 
 def main():

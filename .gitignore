@@ -10,9 +10,7 @@ release/
 *.metallib
 __pycache__/
 .DS_Store
-Vendor/nxnative/dm/host/gen/
-Vendor/nxnative/dm/tools/nx_extract/bin/
-Vendor/nxnative/dm/tools/nx_extract/obj/
+Vendor/
 
 Runtime
 .swiftpm/

@@ -35,6 +35,9 @@ struct InputEditor: View {
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {VStack(alignment:.leading) {Text(game == nil ? L("全局输入映射") : L("\(game!.name) · 输入映射")).font(.title2.bold());Text(L("保存后在下次启动游戏时生效，无需重新编译。")).foregroundStyle(.secondary)};Spacer();Button(L("关闭")){store.editingInput=false}}
+            if !(game?.inputConfig ?? store.engineSupportsInput) {
+                Text(L("当前引擎未声明 DM_INPUT_CONFIG 支持。映射可保存，但游戏将使用引擎自己的默认操作；选择支持该接口的引擎并重新准备后才会应用。")).font(.caption).foregroundStyle(.orange)
+            }
             Picker(L("配置"),selection:$tab) {Text(L("按键映射")).tag("bindings");Text(L("鼠标与摇杆")).tag("options");Text(L("输入测试")).tag("test")}.pickerStyle(.segmented)
             if tab=="bindings" { bindings }
             else if tab=="options" { options }

@@ -1,52 +1,54 @@
-# Runtime and build environment
+# Environment and repair guide
 
-The first setup step and **Settings → Runtime and build environment** use the same live checklist. Every item has an **Installation and repair** disclosure. Checks run locally, use disposable original test programs, and never read games or keys, install software, or accept Apple's license automatically.
+Setup and Settings use the same checks. They run once per app launch; opening Settings reuses the result. **Check again**, selecting a different engine/Xcode/library, and finishing component management refresh the checks. You can leave setup with **Set up later** / Esc or quit with **Quit LumaDock** / ⌘Q, including after a failure.
 
-LumaDock checks automatically once per app launch. Opening Settings or reopening setup reuses that session's result, including failed checks. Use **Check again** to refresh it; changing Xcode or the library, or installing/removing components, also triggers verification.
+## External nxnative engine
 
-| Requirement | How it is provided or installed | What LumaDock verifies | Needed for |
+LumaDock does **not** include nxnative source, an engine executable, its NSP reader, or its shader translator in the app, DMG or source archive. There is no engine download button or automatic engine download.
+
+1. Obtain and extract a complete nxnative source tree yourself. Keep its licenses and dependencies intact.
+2. Click **Choose nxnative directory…** in setup or Settings. Select the root that contains `dm` and `scripts`, rather than a parent folder or `dm` itself. ZIP files and partial source copies are not accepted.
+3. Install the official **[Microsoft .NET 10 SDK for macOS Arm64](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)** if it is absent. Select the Arm64 **SDK** installer; a runtime alone cannot compile tools. Complete the installer yourself, then click **Check again**. Standard Microsoft and Homebrew installation locations are detected.
+4. Click **Prepare engine tools**. LumaDock snapshots the selected source into its private cache, adds its metadata protocol bridge when needed, and compiles the NSP reader. The first build may restore the project's LibHac package from NuGet, so network access can be needed. This operation never downloads nxnative.
+5. Check again. A complete cached reader no longer requires the SDK to remain installed. A damaged cache or a source change requires preparing the tools again.
+
+The selected directory stays unchanged. Source snapshots, tool outputs, NuGet packages and SDK working files are under `~/Library/Application Support/NSMac/`; game builds use separate workspaces in the library. Moving identical sources allows tool reuse. A content change creates a new identity and cannot silently reuse a different engine's build. Old successful game runtimes are retained.
+
+Validation checks required files, build functions, profiles, translator source fingerprints and actual reader execution. Arbitrary nxnative revisions are not guaranteed to be compatible. Directories with incompatible interfaces or external symlinks receive an actionable failure. The launcher neither updates a checkout nor follows a branch.
+
+Input configuration requires an engine with `DM_INPUT_CONFIG` support. An engine without that interface uses its own controls; the mapping editor explains that saved LumaDock mappings will not apply. Switching to a capable engine requires preparing the game again.
+
+## Required tools
+
+| Tool | Installation / source | Verification | Needed for |
 | --- | --- | --- | --- |
-| Apple Silicon, macOS 26+ | Use an Apple Silicon Mac; update in System Settings → General → Software Update | Native arm64 process and OS version; Rosetta is unsupported | Preparation and launch |
-| System Metal graphics device | Included with macOS; use a local desktop session | The system can create an actual Metal device | Preparation and launch |
-| Full Xcode | Click **Get Xcode on the App Store**, install it, open it once, accept its license and finish initial component installation | Selected app contains the Mac platform, reports its Xcode version, and passes `-checkFirstLaunchStatus` | Preparation |
-| macOS SDK, clang, make, ar, codesign | Included with full Xcode; click **Select Xcode.app…** for an installation outside `/Applications/Xcode.app` | SDK 26+, actual arm64 compilation/linking against the host's system frameworks, a signed test executable, make, and static archive creation | Preparation |
-| Metal compiler and metallib | Click **Install Metal compiler** after Xcode setup finishes | Actually compiles an original test shader and links a macOS `.metallib`; finding a tool path alone is insufficient | Preparation |
-| Bundled Python 3.14 | Included inside the complete LumaDock app | Interpreter starts in isolated mode, matches the component manifest, runs natively, loads required standard modules, and uses the bundled prefix | Preparation and launch |
-| capstone, lz4, fontTools | Bundled Python extensions | Actual import, exact manifest versions, sample arm64 disassembly, LZ4 round trip, and font library loading | Preparation |
-| .NET 10 runtime | Included with LumaDock; no SDK required on a player's Mac | Correct runtime version loads from the bundled runtime directory | Preparation |
-| NSP reader and LibHac | Included with LumaDock | Reader starts and displays usage without reading any player content | Import and preparation |
-| Shader translator | Included with the pinned engine | Executable starts and its embedded source fingerprint matches the engine; required DLLs exist | Preparation |
-| SPIRV-Cross and Zstandard | Included with LumaDock | Both executables actually start and report their identity | Preparation |
-| Library storage | Choose a writable local or external library folder and keep it connected | Correct library identity, writable scratch files, ability to execute from that volume, free space | Preparation and launch |
+| Apple Silicon, macOS 26+ and Metal device | Mac hardware and macOS | Native arm64 process, OS version and actual Metal device creation | Preparation and launch |
+| Full Xcode | Mac App Store / full Xcode | Install from the Mac App Store, open it and finish its license and components. Select the actual Xcode.app; Command Line Tools alone are insufficient | Preparation |
+| macOS SDK, clang, make, ar, codesign | Selected Xcode installation | Supplied by Xcode; compile/link an original arm64 program, create a static library and verify local signing | Preparation |
+| Metal compiler and metallib | Apple’s component manager | Install using the app's Apple component action after Xcode setup. Check by compiling an original test shader | Preparation |
+| External nxnative | Player-provided local sources | Player-selected source directory, API/profile validation and source fingerprint | Import and preparation |
+| .NET 10 SDK | Microsoft macOS Arm64 SDK installer | Player installs Microsoft's macOS Arm64 SDK; verify `--list-sdks` | Initial engine reader preparation |
+| Engine reader / LibHac | Private build from external sources | Compiled from the external directory into private cache, never shipped | Import and preparation |
+| Shader translator | External engine directory | Supplied by the external engine; executable/source fingerprint and required DLLs checked | Preparation |
+| Python, capstone, lz4, fontTools | Bundled generic runtime | Bundled generic interpreter/extensions; isolated startup, versions, arm64 disassembly, compression round trip and font library loading | Python: preparation/launch; extensions: preparation |
+| .NET 10 runtime | Bundled generic runtime | Bundled generic runtime, with version and load-path verification | Reader and translator execution |
+| SPIRV-Cross and Zstandard | Bundled generic tools | Bundled generic tools, checked by actual execution | Preparation |
+| Library storage | Player-selected volume | Connected, writable, executable volume with matching identity and enough space | Preparation and launch |
 
-The generic storage check requires at least 5 GB free. Preparation checks the selected game's source sizes again; large games commonly need 40–80 GB or more. No single generic number guarantees enough space.
+The generic free-space threshold is 5 GB; individual game builds check their actual source sizes again and can need 40–80 GB or more. No generic number guarantees enough space for every build.
 
-## Installing Apple components
+## Xcode and Metal installation
 
-1. Install full Xcode through the App Store button. Command Line Tools alone are not the supported installation for LumaDock.
-2. Open Xcode using **Open Xcode to finish setup**. The user completes Apple's license and initial component setup in Xcode.
-3. Select the actual Xcode app if its path differs from the default, then click **Check again**. LumaDock sets `DEVELOPER_DIR` for its own processes and does not change the system-wide `xcode-select` setting.
-4. Click **Install Metal compiler**. LumaDock uses Apple's `xcodebuild -downloadComponent MetalToolchain` command and checks actual compilation after the operation finishes. See [Apple's component installation instructions](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components).
-5. Each failed item includes a repair method and applicable action. Raw tool diagnostics are available in its disclosure. A timeout or missing executable becomes a failed check rather than an indefinitely running check.
+Use **Get Xcode on the App Store**, open Xcode and finish Apple's license/initial components yourself. If Xcode is elsewhere, select it and check again. LumaDock sets its processes' `DEVELOPER_DIR` without changing global `xcode-select`.
 
-Only the macOS SDK/compiler is used by this pipeline. No simulator runtime, `xcodegen`, separate Vulkan SDK, Homebrew, system Python, or .NET SDK installation is required for players. Apple frameworks, libvpx, libdeflate and Vulkan headers come from macOS/Xcode or the bundled engine source.
+Use **Install Metal compiler** after Xcode setup. This invokes Apple's `xcodebuild -downloadComponent MetalToolchain`; removal, when supported, uses the Apple component manager and requires confirmation. See [Apple's component instructions](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). No engine download occurs.
 
-### If Xcode initial setup still fails
+If initial setup still fails, expand **Installation and repair** to see the selected path, actual command and diagnostic. If Xcode setup is already complete, check again or quit and reopen LumaDock first. The optional manual repair command installs initial components and accepts the Xcode license; read and agree to the license before running it yourself. LumaDock never executes that administrator command automatically.
 
-Expand **Installation and repair** for **Xcode initial setup**. LumaDock shows the selected Developer directory, the status command, and its error output. A command that fails silently also shows its exit status. Incomplete first-launch tasks, a reported license error and a timeout have distinct messages.
+## Bundled dependencies and offline help
 
-Open the selected Xcode and finish its license and required component setup, then return to LumaDock. If setup is already complete, try **Check again** or quit and reopen LumaDock first. Review the diagnostics if the check still fails. When manual initialization is needed, read and agree to Xcode's license before using **Copy repair command**. Run that command yourself in Terminal; Apple's `-runFirstLaunch` installs system components and accepts the license. LumaDock never runs this privileged command automatically. It uses the selected Xcode path and does not change the global `xcode-select` setting. See [Apple's component installation instructions](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components).
+Generic runtimes are resolved relative to the current app at `Contents/Resources/Runtime`. Full paths printed by .NET describe the current installation, rather than a fixed developer path. Moving or renaming the complete app does not require reinstalling Python/.NET. Native dependency paths are audited during packaging.
 
-## Repairing an incomplete app
+A separate system Python or Homebrew is not required. If a bundled component is broken, reinstall the complete LumaDock app from its official release; do not modify its Python with pip. Engine problems are repaired through the external directory and private tool cache, rather than by looking for a bundled engine.
 
-Do not try to repair the bundled Python with `pip` or copy executables between apps. Download a complete DMG from the [official LumaDock releases](https://github.com/Xc1Ym/LumaDock/releases/latest), copy the full app into Applications, reopen it and check again. Keep the existing library and private player data. A packaged app never silently falls back to Homebrew Python; missing Python is reported by the native launcher even when the Worker cannot start.
-
-Existing prepared games can launch without Xcode, Metal compiler, .NET or build-only Python extensions, as long as their runtime files are intact and all launch checks pass. Python is still needed to supervise the game process. Preparing, updating or rebuilding a game requires the complete build checklist. Source development and release packaging have additional maintainer dependencies listed separately in the README.
-
-## Component locations and offline instructions
-
-Bundled components are located relative to the current app: `LumaDock.app/Contents/Resources/Runtime/`. At runtime, the launcher resolves this to the app's current absolute path and supplies it to Python and .NET. A path printed by `.NET --list-runtimes` describes this installation; it is not a fixed developer-machine path. Native dependencies use relative loader paths, and packaging rejects external runtime links or builder search paths.
-
-The checklist shows the component name/version first. Expand **Component location** to see its current full path. Moving the complete app to another folder or renaming it does not require reinstalling Python or .NET. Keep the app bundle intact.
-
-**Environment installation guide** opens an offline reader inside LumaDock, including from the setup assistant. It does not depend on a Markdown editor or Finder. The same reader displays third-party licenses; **Show in Finder** is a separate optional action.
+**Environment installation guide** opens this included guide in LumaDock's offline reader. Already prepared runtimes can launch without an available engine directory or build tools when their runtime files and launch checks pass. Rebuilding or importing requires restoring the external engine and preparation tools.

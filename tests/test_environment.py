@@ -17,27 +17,28 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'Worker'))
 from core import Context, atomic
-import toolchain
+import toolchain, engine
+from engine_fixture import make_engine, mark_prepared
 
 
 class EnvironmentTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory(prefix='lumadock-env-')
         self.root=Path(self.temp.name)
-        self.c=Context(dict(schema=1,operation='preflight',privateRoot=str(self.root/'private'),resources=str(self.root/'resources'),developerDir=str(self.root/'Xcode.app/Contents/Developer')))
+        self.c=Context(dict(schema=1,operation='preflight',privateRoot=str(self.root/'private'),resources=str(self.root/'resources'),engineDir=str(make_engine(self.root/'External 引擎')),developerDir=str(self.root/'Xcode.app/Contents/Developer')))
         self.versions=dict(python='3.14.8',capstone='5.0.9',lz4='4.4.5',fonttools='4.67.0',dotnet='10.0.13',spirvCross='fixture',zstd='fixture')
         atomic(self.c.runtime/'versions.json',self.versions)
         self.developer=Path(self.c.env()['DEVELOPER_DIR'])
         (self.developer/'Platforms/MacOSX.platform').mkdir(parents=True)
         self.sdk=self.root/'MacOSX.sdk';(self.sdk/'System/Library/Frameworks/Metal.framework').mkdir(parents=True)
-        for name in ('nx_extract.dll','LibHac.dll'):
-            path=self.c.runtime/'nx_extract'/name;path.parent.mkdir(exist_ok=True);path.write_text('fixture')
         shader=self.c.engine/'dm/gfx/tools'
         for name in ('Program.cs','dmsh_xlate.csproj'):
             path=shader/'dmsh_xlate'/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(name)
         self.sha=hashlib.sha256(b'Program.csdmsh_xlate.csproj').hexdigest()[:16]
         for name in ('dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','Ryujinx.Common.dll'):
             path=shader/'dmsh_xlate_bin'/name;path.parent.mkdir(exist_ok=True);path.write_text('fixture')
+        mark_prepared(self.c)
+        self.sdk_host=self.root/'dotnet';self.sdk_host.write_text('fixture')
         self.calls=[];self.fail=set()
     def tearDown(self):self.temp.cleanup()
     def fake_probe(self,c,args,**kw):
@@ -50,6 +51,7 @@ class EnvironmentTests(unittest.TestCase):
         if key in self.fail:return False,'broken '+key
         if key=='python':return True,json.dumps(dict(version=self.versions['python'],arch='arm64',prefix=str(c.runtime/'python')))
         if key=='modules':return True,json.dumps({k:self.versions[k] for k in ('capstone','lz4','fonttools')})
+        if key=='dotnet' and '--list-sdks' in args:return True,'10.0.101 [fixture]'
         if key=='dotnet':return True,'Microsoft.NETCore.App 10.0.13 ['+str(c.runtime/'dotnet/shared/Microsoft.NETCore.App')+']'
         if key=='nx_extract':return False,'usage: nx_extract <prod.keys> <base.nsp>'
         if key=='dmsh_xlate':return True,self.sha
@@ -61,13 +63,13 @@ class EnvironmentTests(unittest.TestCase):
         if '-o' in args:Path(args[args.index('-o')+1]).write_bytes(b'original compiler fixture')
         return True,''
     def inspect(self):
-        with patch('toolchain.probe',side_effect=self.fake_probe),patch('toolchain.metal_available',return_value=True),patch('toolchain.platform.machine',return_value='arm64'),patch('toolchain.platform.mac_ver',return_value=('27.0.1',(),'')),patch('toolchain.shutil.disk_usage',return_value=type('Disk',(),{'free':100*2**30})()),contextlib.redirect_stdout(io.StringIO()):
+        with patch('engine.sdk_candidates',return_value=[self.sdk_host]),patch('toolchain.probe',side_effect=self.fake_probe),patch('toolchain.metal_available',return_value=True),patch('toolchain.platform.machine',return_value='arm64'),patch('toolchain.platform.mac_ver',return_value=('27.0.1',(),'')),patch('toolchain.shutil.disk_usage',return_value=type('Disk',(),{'free':100*2**30})()),contextlib.redirect_stdout(io.StringIO()):
             return {x['name']:x for x in toolchain.inspect_environment(self.c)}
     def test_complete_checklist_and_no_implicit_global_dependencies(self):
-        checks=self.inspect();self.assertEqual(len(checks),18)
+        checks=self.inspect();self.assertEqual(len(checks),20)
         self.assertTrue(all(x['ok'] for x in checks.values()))
         self.assertTrue(all(x['help'] for x in checks.values()))
-        self.assertTrue(all(x[0].startswith(str(self.c.runtime)) for x in self.calls if Path(x[0]).name in ('python3','dotnet','nx_extract','spirv-cross','zstd')))
+        self.assertTrue(all(x[0].startswith(str(self.c.runtime)) for x in self.calls if Path(x[0]).name in ('python3','spirv-cross','zstd')))
         self.assertTrue(any('metallib' in call for call in self.calls))
         self.assertTrue(any('rcs' in call for call in self.calls))
         self.assertFalse(any('downloadComponent' in call or '-runFirstLaunch' in call for call in self.calls))
@@ -154,7 +156,7 @@ class EnvironmentTests(unittest.TestCase):
         self.fail=set()
         with patch('toolchain.shutil.disk_usage',return_value=type('Disk',(),{'free':1*2**30})()):
             # inspect's disk fixture is overridden directly for this call below.
-            with patch('toolchain.probe',side_effect=self.fake_probe),patch('toolchain.metal_available',return_value=True),contextlib.redirect_stdout(io.StringIO()):
+            with patch('engine.sdk_candidates',return_value=[self.sdk_host]),patch('toolchain.probe',side_effect=self.fake_probe),patch('toolchain.metal_available',return_value=True),contextlib.redirect_stdout(io.StringIO()):
                 checks={x['name']:x for x in toolchain.inspect_environment(self.c)}
         self.assertFalse(checks['可用空间']['ok']);self.assertNotIn('launch',checks['可用空间']['requiredFor'])
     def test_probe_timeout_kills_descendants_and_missing_binary_is_a_check_failure(self):
@@ -165,21 +167,6 @@ class EnvironmentTests(unittest.TestCase):
         self.assertFalse(ok);self.assertFalse(self.c.children)
         pid=int(pidfile.read_text());time.sleep(.1)
         with self.assertRaises(ProcessLookupError):os.kill(pid,0)
-    def test_mac_only_translation_chain_never_queries_another_platform_sdk(self):
-        original_path=sys.path[:]
-        try:
-            with patch.dict(os.environ,DM_MAC_ONLY='1',DM_GAME='01007EF00011E000'):
-                module=runpy.run_path(str(ROOT/'Vendor/nxnative/dm/gfx/tools/dmsh_chain.py'))
-                module['tools_now'].__globals__['sha16']=lambda path:'fixture fingerprint'
-                calls=[]
-                def run(args,**kw):
-                    calls.append(args)
-                    return subprocess.CompletedProcess(args,0,stdout='fixture',stderr='')
-                with patch('subprocess.run',side_effect=run):
-                    now=module['tools_now']()
-                self.assertIn('metal_macosx',now);self.assertNotIn('metal_iphoneos',now)
-                self.assertEqual([args[2] for args in calls if args[0]=='xcrun'],['macosx'])
-        finally:sys.path[:]=original_path
 
 
 if __name__=='__main__':unittest.main()

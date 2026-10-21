@@ -1,15 +1,17 @@
 # Third-party components and copyright
 
-LumaDock's launcher additions and original icon are licensed under the MIT License, Copyright © 2026 LumaDock contributors. This license does not cover Nintendo games, firmware, keys, trademarks, or other rights holders' materials. Third-party components retain their respective licenses.
+LumaDock's launcher and original icon use the MIT License, Copyright © 2026 LumaDock contributors. Third-party components retain their own licenses. This license grants no rights to Nintendo games, firmware, keys, trademarks or other rights holders' material.
 
-The project includes pinned nxnative sources and modifications from [seedds/nxnative](https://github.com/seedds/nxnative), commit `4e2dcdc749668ddd4d61361117ad4a6980fabcf7`. Its full MIT license is in `Vendor/nxnative/LICENSE`. Component licenses and notices remain in the source tree. See `docs/引擎修改.md` for engine modifications.
+## External engine acknowledgements
 
-The bundled runtime includes CPython (PSF License), .NET (MIT, with third-party notices), LibHac (MIT), Capstone (BSD), lz4 (BSD), fontTools (MIT), [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) (Apache-2.0), and [Zstandard](https://github.com/facebook/zstd) (the BSD option of its dual license). Their dependencies and license texts are preserved in the application. Exact collected versions are recorded in `Runtime/versions.json`; license files are in `Runtime/licenses` and package metadata.
+Special thanks to [nxnative](https://github.com/seedds/nxnative) (MIT, Copyright © 2026 jhaizhou), which provides native execution, rewriting and graphics translation. Players obtain and select the engine themselves. Its source, executable tools, LibHac reader and shader translator are **not distributed in the LumaDock app, DMG or source archive**. Its own licenses remain in the external directory.
 
-The upstream shader translator uses Ryujinx.Graphics.Shader and other .NET libraries. Original binaries, project files, and upstream licenses are retained; see `Vendor/nxnative/dm/gfx/tools/dmsh_xlate/`. Licenses for libvpx, libdeflate, stb_vorbis, and Vulkan headers remain alongside their source directories.
+We also thank [d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) and [MacNativeGames](https://github.com/ly05010419/MacNativeGames). The selected engine may use their contributions and libraries such as Ryujinx / Spv.Generator, LibHac, libvpx, libdeflate, stb_vorbis and Vulkan headers. Consult the licenses and notices in that engine's source tree for the actual selected version. These acknowledgements do not imply that those engine components are bundled here.
 
-The upstream engine includes graphics and shader improvements from [MacNativeGames](https://github.com/ly05010419/MacNativeGames) (MIT, Copyright © 2026 MacNativeGames contributors). See `Vendor/nxnative/dm/third_party/README.md` and `dm/third_party/macnativegames/LICENSE`. Ryujinx's MIT license is in `dm/third_party/ryujinx/LICENSE.txt`; Spv.Generator's license remains in its source directory. We thank nxnative, MacNativeGames, d2r-mobile, and their contributors.
+LumaDock's own metadata-protocol extension is in `Worker/NspMetadata.cs`; it is compiled only in the user's private engine snapshot. No upstream engine implementation is embedded in that extension.
 
-Apple Xcode, the Metal toolchain, and system fonts are not distributed with LumaDock. Fonts are read from the player's Mac only when preparing runtime files. The application includes no Nintendo games, firmware, or keys.
+## Bundled generic dependencies
 
-LumaDock is not affiliated with, sponsored by, or endorsed by Nintendo or any game rights holder. Trademarks, game names, artwork, and content belong to their respective owners. The launcher provides neither that content nor authorization to use it. Import only files you are authorized to use. Do not redistribute player files, keys, or caches.
+CPython (PSF License), .NET runtime (MIT and third-party notices), Capstone (BSD), lz4 (BSD), fontTools (MIT), SPIRV-Cross (Apache-2.0), Zstandard (BSD option), and their runtime dependencies retain their license texts in `Runtime/licenses` and package metadata. Exact versions are recorded in `Runtime/versions.json`. The .NET SDK is installed separately by the user when compiling external engine tools.
+
+Apple Xcode, Metal compiler components and fonts are not redistributed. LumaDock includes no games, updates, DLC, firmware, keys, game artwork, saves or player caches. It is not affiliated with, sponsored by or endorsed by Nintendo or game publishers. Import only content you are authorized to use.

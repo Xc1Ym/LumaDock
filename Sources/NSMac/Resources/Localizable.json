@@ -1493,7 +1493,7 @@
   },
   {
     "source": "简体中文",
-    "en": "简体中文"
+    "en": "Simplified Chinese"
   },
   {
     "source": "界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。",
@@ -1862,5 +1862,253 @@
   {
     "source": "可稍后在设置中继续。环境检查通过后才能导入和准备游戏。",
     "en": "Resume setup in Settings at any time. Environment checks must pass before importing or preparing games."
+  },
+  {
+    "source": "Python、Python 扩展、.NET 运行时、SPIRV-Cross 和 Zstandard 随应用提供。nxnative 及其读取器、翻译器不内置；首次准备引擎工具还需要 .NET 10 SDK，安装方法见环境说明。",
+    "en": "Python, its extensions, the .NET runtime, SPIRV-Cross and Zstandard are bundled. nxnative, its reader and translator are external. Preparing engine tools for the first time also requires the .NET 10 SDK; see the environment guide."
+  },
+  {
+    "source": "nxnative 目录",
+    "en": "nxnative directory"
+  },
+  {
+    "source": "nxnative 目录不可用，请连接磁盘或重新选择目录。",
+    "en": "The nxnative directory is unavailable. Reconnect its drive or select it again."
+  },
+  {
+    "source": "nxnative 目录不完整，缺少：",
+    "en": "The nxnative directory is incomplete. Missing: "
+  },
+  {
+    "source": "准备引擎工具",
+    "en": "Prepare engine tools"
+  },
+  {
+    "source": "复制引擎到私有工作目录",
+    "en": "Copy engine to private workspace"
+  },
+  {
+    "source": "复制期间引擎源码发生变化，请重新准备。",
+    "en": "Engine sources changed while copying. Prepare the tools again."
+  },
+  {
+    "source": "外部 nxnative",
+    "en": "External nxnative"
+  },
+  {
+    "source": "外部 nxnative 引擎",
+    "en": "External nxnative engine"
+  },
+  {
+    "source": "外部引擎",
+    "en": "External engine"
+  },
+  {
+    "source": "外部引擎工具尚未准备或源码已变化，请点击“准备引擎工具”。",
+    "en": "External engine tools are not ready or the sources changed. Click Prepare engine tools."
+  },
+  {
+    "source": "外部引擎工具已就绪。",
+    "en": "External engine tools are ready."
+  },
+  {
+    "source": "外部引擎工具缓存不完整，请重新准备引擎工具。",
+    "en": "The external engine tool cache is incomplete. Prepare engine tools again."
+  },
+  {
+    "source": "外部引擎或其私有工具缓存的当前位置。",
+    "en": "Current location of the external engine or its private tool cache."
+  },
+  {
+    "source": "外部引擎读取工具已就绪",
+    "en": "External engine reader is ready"
+  },
+  {
+    "source": "尚未检测到 .NET 10 SDK",
+    "en": "The .NET 10 SDK was not detected"
+  },
+  {
+    "source": "尚未选择 nxnative 目录，请先在环境设置中指定。",
+    "en": "No nxnative directory is selected. Choose it in environment settings first."
+  },
+  {
+    "source": "已验证外部 nxnative 目录及构建接口",
+    "en": "External nxnative directory and build interfaces verified"
+  },
+  {
+    "source": "应用不附带或下载 nxnative。请自行下载并解压完整源码，再选择包含 dm 和 scripts 的根目录。原目录保持不变，构建使用私有副本。",
+    "en": "LumaDock does not bundle or download nxnative. Obtain and extract its complete sources yourself, then select the root containing dm and scripts. Builds use private copies and leave your directory unchanged."
+  },
+  {
+    "source": "引擎目录包含指向外部的符号链接，请选择完整的本地源码副本。",
+    "en": "The engine contains a symlink outside its directory. Select a complete local source copy."
+  },
+  {
+    "source": "引擎读取工具编译后无法启动，请查看日志。",
+    "en": "The compiled engine reader could not start. Review the task log."
+  },
+  {
+    "source": "引擎读取工具编译后缺少必需产物。",
+    "en": "Required engine reader build outputs are missing."
+  },
+  {
+    "source": "当前引擎未声明 DM_INPUT_CONFIG 支持。映射可保存，但游戏将使用引擎自己的默认操作；选择支持该接口的引擎并重新准备后才会应用。",
+    "en": "This engine does not declare DM_INPUT_CONFIG support. Mappings can be saved, but games use the engine defaults. Select an engine with this interface and prepare the game again to apply mappings."
+  },
+  {
+    "source": "所选 nxnative 的 Metal 工具链接口不兼容。",
+    "en": "The selected nxnative Metal toolchain interface is incompatible."
+  },
+  {
+    "source": "所选 nxnative 的 NSP 读取器入口不兼容。",
+    "en": "The selected nxnative NSP reader entry point is incompatible."
+  },
+  {
+    "source": "所选 nxnative 的构建接口或配置不兼容，请查看环境说明并选择完整的兼容源码。",
+    "en": "The selected nxnative build interfaces or profiles are incompatible. See the environment guide and select complete compatible sources."
+  },
+  {
+    "source": "检查外部引擎翻译器与所选源码是否一致",
+    "en": "Check that the external engine translator matches the selected sources"
+  },
+  {
+    "source": "编译外部引擎读取工具",
+    "en": "Compile external engine reader"
+  },
+  {
+    "source": "请先准备外部引擎工具",
+    "en": "Prepare external engine tools first"
+  },
+  {
+    "source": "请自行获取并解压完整 nxnative 源码，然后选择包含 dm 和 scripts 的根目录。璃游不附带、不下载引擎，也不修改所选源码。",
+    "en": "Obtain and extract complete nxnative sources yourself, then select the root containing dm and scripts. LumaDock neither bundles nor downloads the engine and leaves your sources unchanged."
+  },
+  {
+    "source": "运行引擎由玩家自行提供。",
+    "en": "Players provide their own runtime engine."
+  },
+  {
+    "source": "选择 nxnative 源码根目录",
+    "en": "Choose the nxnative source root"
+  },
+  {
+    "source": "选择 nxnative 目录…",
+    "en": "Choose nxnative directory…"
+  },
+  {
+    "source": "选择有效的 nxnative 目录后，点击“准备引擎工具”。首次需要 .NET 10 SDK，并可能从 NuGet 恢复项目依赖。编译产物保存在应用私有缓存，原目录保持不变。",
+    "en": "Choose a valid nxnative directory, then click Prepare engine tools. The first build needs the .NET 10 SDK and may restore project dependencies from NuGet. Outputs stay in the private app cache; your directory is unchanged."
+  },
+  {
+    "source": "首次准备工具时需要",
+    "en": "Initial tool preparation only"
+  },
+  {
+    "source": "首次准备引擎读取工具需要 Microsoft .NET 10 SDK（macOS Arm64），只有运行时不够。安装官方 SDK 后重新检查；已有完整工具缓存时不再需要 SDK。安装方法见环境安装说明。",
+    "en": "Preparing the engine reader for the first time requires the Microsoft .NET 10 SDK for macOS Arm64, not just a runtime. Install the official SDK and check again. A complete cached reader no longer needs the SDK. See the environment installation guide."
+  },
+  {
+    "source": "验证外部 nxnative",
+    "en": "Validate external nxnative"
+  },
+  {
+    "source": "安装其他环境",
+    "en": "Install other requirements"
+  },
+  {
+    "source": "繁體中文",
+    "en": "Traditional Chinese"
+  },
+  {
+    "source": "英语（美国）",
+    "en": "English (US)"
+  },
+  {
+    "source": "英语（英国）",
+    "en": "English (UK)"
+  },
+  {
+    "source": "日语",
+    "en": "Japanese"
+  },
+  {
+    "source": "韩语",
+    "en": "Korean"
+  },
+  {
+    "source": "法语",
+    "en": "French"
+  },
+  {
+    "source": "法语（加拿大）",
+    "en": "French (Canada)"
+  },
+  {
+    "source": "德语",
+    "en": "German"
+  },
+  {
+    "source": "意大利语",
+    "en": "Italian"
+  },
+  {
+    "source": "西班牙语",
+    "en": "Spanish"
+  },
+  {
+    "source": "西班牙语（拉丁美洲）",
+    "en": "Spanish (Latin America)"
+  },
+  {
+    "source": "荷兰语",
+    "en": "Dutch"
+  },
+  {
+    "source": "葡萄牙语",
+    "en": "Portuguese"
+  },
+  {
+    "source": "葡萄牙语（巴西）",
+    "en": "Portuguese (Brazil)"
+  },
+  {
+    "source": "俄语",
+    "en": "Russian"
+  },
+  {
+    "source": "中文（中国，旧版代码）",
+    "en": "Chinese (China, legacy code)"
+  },
+  {
+    "source": "中文（台湾，旧版代码）",
+    "en": "Chinese (Taiwan, legacy code)"
+  },
+  {
+    "source": "游戏语言",
+    "en": "Game language"
+  },
+  {
+    "source": "默认游戏语言",
+    "en": "Default game language"
+  },
+  {
+    "source": "启动语言",
+    "en": "Launch language"
+  },
+  {
+    "source": "跟随默认（{0}）",
+    "en": "Use default ({0})"
+  },
+  {
+    "source": "下次启动生效，无需重新准备。所选语言需游戏自身支持。",
+    "en": "Applies on the next launch without preparing again. The game must support the selected language."
+  },
+  {
+    "source": "与界面语言独立；可在游戏详情中单独设置启动语言。下次启动生效，无需重新准备或导入固件。所选语言需游戏自身支持。",
+    "en": "Independent of the interface language. Override it in game details. Applies on the next launch without preparing again or importing firmware. The game must support the selected language."
+  },
+  {
+    "source": "游戏语言代码无效，请在游戏详情中重新选择启动语言。",
+    "en": "Invalid game language code. Choose a launch language again in game details."
   }
 ]

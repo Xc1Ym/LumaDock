@@ -20,29 +20,42 @@ class ShaderProgress:
         return {'done':done,'total':len(self.keys),'unit':'shaders','step':'编译并验证 Metal 库'}
 
 class Stages:
-    def __init__(self,c,root): self.c=c; self.root=root; self.file=root/'checkpoints.json'; self.saved=read(self.file,{})
+    def __init__(self,c,root):
+        self.c=c; self.root=root; self.file=root/'checkpoints.json'; self.saved=read(self.file,{})
+        self.warningfile=root/'checkpoint-warnings.json';self.warnings=read(self.warningfile,{})
     def snapshot(self,paths):
-        out={}
+        out={};files=[]
         for path in paths:
             path=Path(path)
-            files=sorted(path.rglob('*')) if path.is_dir() else [path]
-            for p in files:
-                self.c.check()
-                if p.is_file(): out[str(p.relative_to(self.root))]=[p.stat().st_size,digest(p)]
+            files.extend(p for p in (sorted(path.rglob('*')) if path.is_dir() else [path]) if p.is_file())
+        total=sum(p.stat().st_size for p in files);done=0
+        self.c.emit('message','验证阶段产物')
+        for p in files:
+            self.c.check();size=p.stat().st_size
+            out[str(p.relative_to(self.root))]=[size,digest(p,lambda n,t:self.c.progress(done+n,total))];done+=size
         if not out: raise Failure('阶段没有生成完整产物，未记录成功缓存。')
         return out
     def run(self,name,paths,fn):
         self.c.begin(name)
         old=self.saved.get(name)
-        if old and all((self.root/p).is_file() and (self.root/p).stat().st_size==v[0] and digest(self.root/p)==v[1] for p,v in old.items()):
+        valid=bool(old);done=0;total=sum(v[0] for v in old.values()) if old else 0
+        if old:
+            for p,v in old.items():
+                self.c.check();path=self.root/p
+                if not path.is_file() or path.stat().st_size!=v[0] or digest(path,lambda n,t:self.c.progress(done+n,total))!=v[1]:valid=False;break
+                done+=v[0]
+        if valid:
+            for warning in self.warnings.get(name,[]): self.c.report(warning)
             self.c.emit('cache','已验证并复用完成阶段',done=1,total=1); return
         for p in paths:
             if Path(p).is_dir(): shutil.rmtree(p)
             elif Path(p).exists(): Path(p).unlink()
-        fn(); self.c.check(); self.saved[name]=self.snapshot(paths); atomic(self.file,self.saved)
+        fn(); self.c.check(); self.saved[name]=self.snapshot(paths)
+        self.warnings[name]=[d for d in self.c.job.get('diagnostics',[]) if d.get('stage')==name and d['severity']=='warning']
+        atomic(self.warningfile,self.warnings);atomic(self.file,self.saved)
         self.c.emit('stageComplete','阶段完成',done=1,total=1)
 
-def tools(c):
+def tools(c,target='macos'):
     from toolchain import require_environment
     require_environment(c)
     env=c.env(); result={}
@@ -61,15 +74,18 @@ def tools(c):
     result['engineSource'] = info['fingerprint']; result['engine'] = info['fingerprint']
     result['inputConfig'] = info['inputConfig']
     result['reader'] = digest(prepared/'tools/nx_extract/nx_extract.dll')
+    if target == 'ios':
+        from ipa import environment
+        result['ios'] = environment(c)[1]
     return result
 
 
-def prepare(c,g):
+def prepare(c,g,target='macos'):
     from engine import inspect_source
     inspect_source(c)
     ps=profiles(c.engine); profile=ps.get(g['id']); missing=requirements(g,profile)
     if missing: raise Failure('；'.join(missing))
-    tc=tools(c); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'schema':1}
+    tc=tools(c,target); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'target':target,'schema':1}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()[:24]
     root=c.library/'cache'/g['id']/key; root.mkdir(parents=True,exist_ok=True)
     repo=root/'engine'
@@ -81,6 +97,9 @@ def prepare(c,g):
         if repo.exists(): shutil.rmtree(repo)
         tmp.rename(repo)
     env=c.env(g['id'],root); env['MACOSX_DEPLOYMENT_TARGET']='26.0'; env['J']=str(min(os.cpu_count() or 4,8))
+    if target == 'ios':
+        from ipa import environment
+        env=environment(c,env)[0]
     # Tool changes produce a new private lock, chain, shader output, c1 table and host together.
     c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--update-lock'],root/'logs/toolchain.log',env)
     c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--header'],root/'logs/toolchain.log',env)
@@ -94,6 +113,7 @@ def prepare(c,g):
         def __init__(self): super().__init__('off')
         def stage(self,name,poll=None,**kw):
             super().stage(name,poll=poll,**kw)
+            c.emit(resetProgress=True)
         def _out(self,text): pass
         def set(self,**kw):
             super().set(**kw)
@@ -158,18 +178,22 @@ def validate_runtime(path,gp=None):
             r=read(p,{})
             if r.get('chain')!=m['chain'] or not p.with_suffix('.metallib').is_file(): raise Failure('Metal 着色器缓存不完整或版本不一致。')
 
-def build(c):
+def build(c,target='macos'):
     with c.lock('execution'):
         g=c.game(); c.begin('验证游戏、工具链与缓存',1,10)
-        root,repo,env,up,gp,key=prepare(c,g); logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
+        root,repo,env,up,gp,key=prepare(c,g,target); logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
         versions=list(dict.fromkeys(gp.words('shader_versions',gp.get('package'))+[gp.get('package')]))
         capture_gl=gp.get('shader_glslc_capture','off')=='on'; capture_vk=gp.get('shader_vk_capture','off')=='on'; vk=gp.get('graphics','nvn')=='vulkan'
         c.count=1+len(versions)+1+1+int(capture_gl)+int(capture_vk)+(1 if vk else 2)+1+1
+        c.count+=1
+        if target=='ios': c.count+=3
         base=next(x for x in g['packages'] if x['type']=='base' and x['version']==0)
+        c.begin('校验游戏源文件');source_total=sum(x['size'] for x in g['packages']);source_done=0
         for x in g['packages']:
             c.check(); p=c.library/x['path']
-            if not p.is_file() or digest(p)!=x['sha256']: raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
-        needed=sum(x['size'] for x in g['packages'])*2+3*2**30
+            if not p.is_file() or digest(p,lambda n,t:c.progress(source_done+n,source_total))!=x['sha256']: raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
+            source_done+=x['size']
+        needed=sum(x['size'] for x in g['packages'])*2+(10 if target=='ios' else 3)*2**30
         if shutil.disk_usage(c.library).free<needed and not st.saved: raise Failure(f'准备游戏需要约 {needed/2**30:.0f} GB 可用空间。')
         dirs={}
         for ver in versions:
@@ -188,14 +212,26 @@ def build(c):
         sh=root/'shader'; sh.mkdir(exist_ok=True)
         if vk:
             roots=[selected/'RomFS']+([selected/'vk_capture'] if capture_vk else [])
-            st.run('转换并编译 Vulkan 着色器',[sh/'vk'],lambda:c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh],logs/'vk_shaders.log',env))
+            def vulkan_shaders():
+                c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh]+(['--ios',sh/'ios'] if target=='ios' else []),logs/'vk_shaders.log',env)
+                if target=='ios':
+                    from ipa import validate_shaders
+                    validate_shaders(sh/'ios',gp)
+            st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders)
         else:
             st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp))
             def shaders():
-                up.PROG.stage('Mac shaders',poll=ShaderProgress(gp,sh/'cache'))
-                try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',env)
+                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,sh/'cache'))
+                try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)
                 finally: up.PROG.watch(None)
-            st.run('转换并编译 Metal 着色器',[sh/'cache'],shaders)
+                if target=='ios':
+                    from ipa import validate_shaders
+                    validate_shaders(sh/'ios',gp)
+            st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders)
+        if target == 'ios':
+            from ipa import package
+            c.begin('编译 iOS 应用并生成 IPA')
+            return package(c,root,repo,env,gp,selected,patched,sh/'ios',aoc,up=up)
         st.run('编译 Mac 主程序',[root/'tools/dmhost'],lambda:compile_host(c,up,repo,env,root,gp))
         c.begin('检查并安装运行版本')
         return install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if vk else sh/'cache',aoc)
@@ -235,10 +271,10 @@ def migrate(c):
                 try:c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',pkg,out],root/'logs/migration-shaders.log',dict(env,DMSH_PREFILL=str(shader)))
                 finally:up.PROG.watch(None)
                 shader=out
-        c.begin('复用已验证资源',2,4)
+        c.begin('复用已验证资源')
         c.emit('message','源目录保持原样；运行版本使用克隆副本。')
-        c.begin('重新编译配置化 Mac 主程序',3,4); host=compile_host(c,up,repo,env,root,gp)
-        c.begin('安装独立运行版本',4,4)
+        c.begin('重新编译配置化 Mac 主程序'); host=compile_host(c,up,repo,env,root,gp)
+        c.begin('安装独立运行版本')
         return install(c,root,repo,gp,key,host,app/'romfs',patched,shader,app/'aoc',app/'font')
 
 # nn::settings::LanguageCode values; no arbitrary host locale or UI language tags.
@@ -265,12 +301,12 @@ def launch(c):
         if cfg: env['DM_INPUT_CONFIG']=str(cfg)
         log=c.private/'logs'/f'game-{g["id"]}.log'
         try: c.run([runtime/'dmhost',runtime/'modules'],log,env,cwd=temp)
-        except Failure:
+        except Failure as error:
             with log.open('rb') as f:
                 f.seek(max(0,log.stat().st_size-16384)); tail=f.read().decode(errors='replace')
             summary='游戏进程异常退出，启动器仍可使用。请查看日志或重试。'
             if 'no Metal device' in tail: summary='系统未提供可用的 Metal 设备。请确认使用 Apple Silicon 并在本机图形会话中启动。'
             elif 'chain' in tail and ('mismatch' in tail or 'expected' in tail): summary='运行时着色器链不一致，请重新准备游戏。'
             elif 'unimplemented' in tail or '[RED]' in tail: summary='游戏运行遇到引擎兼容问题。请查看日志；实验性配置可能尚不能正常运行。'
-            raise Failure(summary)
+            raise Failure(summary,error.diagnostic)
         return {'gameId':g['id']}

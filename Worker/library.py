@@ -63,7 +63,7 @@ def requirements(g,p):
 
 def import_games(c):
     if not c.keys.exists(): raise Failure('请先导入玩家自己的 prod.keys。')
-    validate_keys(c.keys); files=[]
+    validate_keys(c.keys); files=[];c.begin('扫描 NSP 文件',1,1)
     for s in c.r['paths']:
         p=Path(s).expanduser().resolve()
         if p.is_dir(): files.extend(x for x in p.rglob('*') if x.suffix.lower()=='.nsp' and x.is_file() and not x.is_symlink())
@@ -73,28 +73,31 @@ def import_games(c):
     if not files: raise Failure('所选位置没有 NSP 文件。')
     ps=profiles(c.engine); results=[]
     for i,src in enumerate(files):
-        c.begin(f'读取 NSP 元数据（{i+1}/{len(files)}）',i+1,len(files))
+        c.begin(f'读取 NSP 元数据（{i+1}/{len(files)}）',i*5+1,len(files)*5)
         info=inspect(c,src); tid=info['baseId']
         if not re.fullmatch('[0-9A-F]{16}',tid): raise Failure('无效的游戏标识。')
-        c.emit('message','正在校验源文件内容'); sha=digest(src,c.progress)
+        c.begin('正在校验源文件内容',i*5+2,len(files)*5); sha=digest(src,c.progress)
         with c.lock():
             cat=c.catalog(); g=next((g for g in cat['games'] if g['id']==tid),None)
             if not g:
                 g={'id':tid,'name':info['name'] or ps.get(tid,{}).get('name',tid),'display':info['display'],'packages':[],'hidden':False}; cat['games'].append(g)
             g['hidden']=False
             if any(x['sha256']==sha for x in g['packages']):
-                c.save_catalog(cat); results.append({'name':src.name,'duplicate':True}); continue
+                c.save_catalog(cat); results.append({'name':src.name,'duplicate':True})
+                c.begin('跳过重复内容',i*5+5,len(files)*5);c.emit(done=1,total=1);continue
             dest=c.library/'sources'/tid/f'{info["titleId"]}_v{info["version"]}_{sha[:12]}.nsp'
             free=shutil.disk_usage(c.library).free
             reserve=512*2**20 if src.stat().st_dev==c.library.stat().st_dev else src.stat().st_size+512*2**20
             if free<reserve: raise Failure('游戏库可用空间不足，复制尚未开始。')
             tmp=dest.with_suffix('.partial'); tmp.parent.mkdir(parents=True,exist_ok=True); tmp.unlink(missing_ok=True)
             try:
-                clone(src,tmp)
+                c.begin('复制 NSP 到游戏库',i*5+3,len(files)*5);clone(src,tmp,c.progress)
+                c.begin('校验托管副本',i*5+4,len(files)*5)
                 if digest(tmp,c.progress)!=sha: raise Failure('复制后校验失败，原始文件未改动。')
                 c.check(); os.replace(tmp,dest)
             finally: tmp.unlink(missing_ok=True)
             icon=c.library/'games'/tid/'cover.jpg'; icon.parent.mkdir(parents=True,exist_ok=True)
+            c.begin('登记游戏内容',i*5+5,len(files)*5)
             inspect(c,dest,icon=icon)
             package=info|{'path':str(dest.relative_to(c.library)),'size':dest.stat().st_size,'sha256':sha}
             g['packages'].append(package)
@@ -137,6 +140,7 @@ def catalog(c):
     return cat
 
 def remove(c):
+    c.begin('移出游戏库',1,1)
     with c.lock():
         cat=c.catalog(); g=next(g for g in cat['games'] if g['id']==c.r['gameId'])
         g['hidden']=True; c.save_catalog(cat)
@@ -148,25 +152,40 @@ def clean(c):
         if kind=='cache': paths=[c.library/'cache'/g['id']]
         elif kind=='sources': paths=[c.library/'sources'/g['id']]
         else: raise Failure('无效的清理范围。')
+        c.begin('清理构建缓存' if kind=='cache' else '删除托管 NSP 副本',1,1)
         for p in paths:
-            if p.exists(): shutil.rmtree(contained(c.library,p))
+            if p.exists():
+                p=contained(c.library,p)
+                entries=sorted(p.rglob('*'),key=lambda path:len(path.parts),reverse=True)+[p]
+                for index,path in enumerate(entries,1):
+                    c.check()
+                    if path.is_symlink() or path.is_file():path.unlink()
+                    else:path.rmdir()
+                    c.emit(done=index,total=len(entries),unit='files')
         if kind=='sources':
             cat=c.catalog(); next(x for x in cat['games'] if x['id']==g['id'])['packages']=[]; c.save_catalog(cat)
     return {}
 
 def diagnostics(c):
-    c.begin('导出诊断',1,1)
+    from diagnostics import redact
+    c.begin('收集诊断日志',1,2)
     out=Path(c.r['path'])
+    candidates=[]
+    for base in (c.private/'logs',c.library/'cache'):
+        if base.exists():
+            for path in base.rglob('*.log'):
+                c.check()
+                if not path.is_symlink() and path.resolve().is_relative_to(base.resolve()) and path.stat().st_size<=8*2**20:candidates.append(path)
+    c.begin('导出诊断',2,2)
+    temporary=out.with_name('.'+out.name+'.'+uuid.uuid4().hex+'.partial')
     # Allowlist only status records and text logs; never requests, sources, keys, saves, or cache.
-    with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-        z.writestr('system.json',json.dumps({'schema':1,'engine':'external','jobs':[{k:v for k,v in read(p,{}).items() if k in ('id','state','operation','stage','message')} for p in (c.private/'jobs').glob('*.json')]}))
-        for base in (c.private/'logs',c.library/'cache'):
-            if not base.exists(): continue
-            for p in base.rglob('*.log'):
-                if p.stat().st_size>8*2**20: continue
-                text=p.read_text(errors='replace')
-                text=re.sub(r'(?i)([a-z0-9_]*(?:key|secret|token)[a-z0-9_]*\s*=\s*)\S+',r'\1[REDACTED]',text)
-                text=text.replace(str(c.engine),'[ENGINE]') if c.engine else text
-                text=text.replace(str(Path.home()),'~').replace(str(c.library),'[LIBRARY]').replace(str(c.private),'[PRIVATE]')
+    try:
+        with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED) as z:
+            z.writestr('system.json',json.dumps({'schema':1,'engine':'external','jobs':[{k:redact(v,c) if isinstance(v,str) else v for k,v in read(p,{}).items() if k in ('id','state','operation','stage','message')} for p in (c.private/'jobs').glob('*.json')]}))
+            for index,p in enumerate(candidates,1):
+                c.check();text=redact(p.read_text(errors='replace'),c,limit=None)
                 z.writestr('logs/'+hashlib.sha256(str(p).encode()).hexdigest()[:12]+'.log',text)
+                c.emit(done=index,total=len(candidates),unit='files')
+        c.check();os.replace(temporary,out)
+    finally:temporary.unlink(missing_ok=True)
     return {'path':str(out)}

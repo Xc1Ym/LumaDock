@@ -54,7 +54,16 @@ class ExternalEngineTests(unittest.TestCase):
         self.assertEqual(original,engine.source_hash(self.source))
         self.assertIn('LumaDockInspect', (snapshot/'dm/tools/nx_extract/Program.cs').read_text())
         self.assertTrue((snapshot/'dm/tools/nx_extract/LumaDockMetadata.cs').is_file())
-        self.assertNotIn('iphoneos',(snapshot/'dm/gfx/tools/dmsh_chain.py').read_text())
+        chain=(snapshot/'dm/gfx/tools/dmsh_chain.py').read_text()
+        self.assertIn('DM_MAC_ONLY',chain)
+        self.assertIn('iphoneos',chain)
+        # Execute both branches of the adapted loop without any Apple tools.
+        for value,expected in [('1',['macosx']),('0',['macosx','iphoneos'])]:
+            instrumented=chain.replace('pass','seen.append(sdk)')
+            scope={'seen':[]}
+            with patch.dict(os.environ,{'DM_MAC_ONLY':value}):
+                exec(instrumented,scope);scope['tools_now']()
+            self.assertEqual(scope['seen'],expected)
     def test_missing_sdk_fails_without_touching_source(self):
         before=engine.source_hash(self.source)
         with patch('engine.find_sdk',return_value=(None,'')),contextlib.redirect_stdout(io.StringIO()):

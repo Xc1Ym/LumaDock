@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 final class WorkerOutput: @unchecked Sendable {
     private let lock = NSLock()
@@ -22,6 +23,7 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var tasks: [TaskRecord] = []
     @Published var checks: [ToolCheck] = []
     @Published private(set) var checkingEnvironment = false
+    @Published private(set) var catalogWorkers = 0
     @Published var environmentReportComplete = false
     private var environmentCallbacks: [()->Void] = []
     private var requestedStartupEnvironmentCheck = false
@@ -32,7 +34,8 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var profiles: [GameProfile] = []
     @Published var keyStatus = "尚未导入密钥"
     @Published var hasImportedKeys = false
-    @Published var error: String?
+    @Published var error: String? { didSet { if error == nil {errorDiagnostic=nil} } }
+    @Published var errorDiagnostic: TaskDiagnostic?
     @Published var notice: String?
     @Published var selection: String? = "library"
     @Published var selectedGame: String?
@@ -52,6 +55,8 @@ final class WorkerOutput: @unchecked Sendable {
     var refreshTimer: Timer?
     var libraryURL: URL { URL(fileURLWithPath: preferences.library) }
     var executionBusy: Bool { executionTask != nil }
+    var refreshingLibrary: Bool {catalogWorkers>0}
+    var activeTasks: [TaskRecord] {tasks.filter{$0.active && $0.state != "queued" && $0.operation != "launch"}}
     var environmentReady: Bool { environmentReportComplete && !checkingEnvironment && !checks.isEmpty && checks.filter{$0.required(for:"prepare")}.allSatisfy(\.ok) }
     var runtimeReady: Bool { environmentReportComplete && !checkingEnvironment && !checks.isEmpty && checks.filter{$0.required(for:"launch")}.allSatisfy(\.ok) }
     var metalInstalled: Bool { checks.contains { $0.name == "Metal 编译组件" && $0.ok } }
@@ -337,7 +342,7 @@ final class WorkerOutput: @unchecked Sendable {
             self.hasImportedKeys = keys["ready"] as? Bool == true
             self.keyStatus = keys["message"] as? String ?? "尚未导入 prod.keys"
             if let records = Self.decode([TaskRecord].self,r["jobs"]) {
-                for rec in records where ["import","build","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
+                for rec in records where rec.state=="failed" || ["setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
                     if !self.tasks.contains(where: { $0.id == rec.id }) { self.tasks.append(rec) }
                 }
                 self.tasks.sort { ($0.started ?? 0) > ($1.started ?? 0) }
@@ -352,6 +357,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     @discardableResult func worker(_ operation: String, extra: [String:Any] = [:], visible: Bool = true, completion: (([String:Any])->Void)? = nil) -> String {
         let id = UUID().uuidString.lowercased()
+        if operation=="catalog" {catalogWorkers+=1}
         var req: [String:Any] = ["schema":1,"taskId":id,"operation":operation,"privateRoot":privateRoot.path,"resources":resources.path,"engineDir":preferences.engineDir ?? "","library":preferences.library.isEmpty ? privateRoot.appendingPathComponent("unconfigured").path : preferences.library,"libraryId":preferences.libraryId,"developerDir":preferences.developerDir,"parentPid":ProcessInfo.processInfo.processIdentifier]
         extra.forEach { req[$0] = $1 }
         // Environment setup must remain available when an old library drive is offline.
@@ -382,9 +388,19 @@ final class WorkerOutput: @unchecked Sendable {
                 pipe.fileHandleForReading.readabilityHandler = nil; err.fileHandleForReading.readabilityHandler = nil
                 DispatchQueue.main.asyncAfter(deadline:.now()+0.15) {
                     self.processes[id] = nil; try? FileManager.default.removeItem(at:file)
+                    if operation=="catalog" {self.catalogWorkers=max(0,self.catalogWorkers-1)}
                     self.lastWorkerEvent[id] = nil
                     if let i = self.tasks.firstIndex(where:{$0.id == id}), self.tasks[i].active {
                         self.tasks[i].state = p.terminationStatus == 130 ? "cancelled" : "interrupted"; self.tasks[i].message = "工作进程已退出。可重试并验证完成阶段。"
+                        if p.terminationStatus != 130 {
+                            let log=self.privateRoot.appendingPathComponent("logs/\(id)-bootstrap.log")
+                            try? FileManager.default.createDirectory(at:log.deletingLastPathComponent(),withIntermediateDirectories:true)
+                            try? output.errorText.write(to:log,atomically:true,encoding:.utf8)
+                            self.tasks[i].diagnostics=[self.nativeDiagnostic(code:"worker_interrupted",summary:"工作进程已退出。可重试并验证完成阶段。",detail:output.errorText,logPath:log.path)]
+                            self.persistTask(self.tasks[i])
+                            self.errorDiagnostic=self.tasks[i].diagnostics?.last
+                            self.error=self.tasks[i].message
+                        }
                         if operation == "preflight" { self.failEnvironmentBootstrap(output.errorText.isEmpty ? "工作进程已退出。可重试并验证完成阶段。" : output.errorText) }
                     }
                     self.callbacks[id] = nil
@@ -396,13 +412,20 @@ final class WorkerOutput: @unchecked Sendable {
                     if visible { self.refresh() }
                 }
             }
-            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970),at:0) }
+            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String),at:0) }
             callbacks[id] = completion; processes[id] = process
             try process.run()
             if operation == "preflight" {lastWorkerEvent[id]=Date();watchEnvironmentWorker(id)}
         } catch {
+            if operation=="catalog" {catalogWorkers=max(0,catalogWorkers-1)}
             self.error = "无法启动本地组件：\(error.localizedDescription)"; processes[id] = nil; callbacks[id] = nil
-            if let i=tasks.firstIndex(where:{$0.id==id}) { tasks[i].state="failed";tasks[i].message=self.error }
+            let diagnostic=nativeDiagnostic(code:"worker_start_failed",summary:self.error ?? "",detail:error.localizedDescription)
+            self.errorDiagnostic=diagnostic
+            if let i=tasks.firstIndex(where:{$0.id==id}) { tasks[i].state="failed";tasks[i].message=self.error;tasks[i].diagnostics=[diagnostic];persistTask(tasks[i]) }
+            else {
+                let task=TaskRecord(id:id,operation:operation,state:"failed",gameId:extra["gameId"] as? String,message:self.error,started:Date().timeIntervalSince1970,diagnostics:[diagnostic])
+                tasks.insert(task,at:0);persistTask(task)
+            }
             try? FileManager.default.removeItem(at:file)
             if operation == "preflight" { failEnvironmentBootstrap(error.localizedDescription) }
             DispatchQueue.main.async {if self.executionTask==id {self.executionTask=nil;self.startNext()}}
@@ -411,20 +434,35 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func event(_ e: [String:Any], visible: Bool) {
         guard e["schema"] as? Int == 1, let id = e["taskId"] as? String else { return }
+        if e["type"] as? String == "result",e["state"] as? String == "failed",!tasks.contains(where:{$0.id==id}) {
+            tasks.insert(.init(id:id,operation:e["operation"] as? String ?? "worker",state:"failed",gameId:e["gameId"] as? String,started:(e["started"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970),at:0)
+        }
         if lastWorkerEvent[id] != nil {lastWorkerEvent[id]=Date()}
         if e["type"] as? String == "check", tasks.contains(where:{$0.id==id && $0.operation=="preflight"}), let check=Self.decode(ToolCheck.self,e["check"]) {
             if let index=checks.firstIndex(where:{$0.id==check.id}) {checks[index]=check} else {checks.append(check)}
         }
         if let i = tasks.firstIndex(where:{$0.id == id}) {
-            tasks[i].stage = e["stage"] as? String; tasks[i].stageIndex = e["stageIndex"] as? Int; tasks[i].stageCount = e["stageCount"] as? Int
-            if e["type"] as? String != "heartbeat" {tasks[i].done = e["done"] as? Double; tasks[i].total = e["total"] as? Double; tasks[i].unit = e["unit"] as? String}; tasks[i].elapsed = e["elapsed"] as? Double
+            if let stage=e["stage"] as? String {tasks[i].stage=stage}
+            if let index=e["stageIndex"] as? Int {tasks[i].stageIndex=index}
+            if let count=e["stageCount"] as? Int {tasks[i].stageCount=count}
+            if e["type"] as? String == "stage" || e["resetProgress"] as? Bool == true {tasks[i].done=nil;tasks[i].total=nil;tasks[i].unit=nil}
+            if e["done"] != nil || e["total"] != nil {tasks[i].done=(e["done"] as? NSNumber)?.doubleValue;tasks[i].total=(e["total"] as? NSNumber)?.doubleValue;tasks[i].unit=e["unit"] as? String}
+            if let elapsed=(e["elapsed"] as? NSNumber)?.doubleValue {tasks[i].elapsed=elapsed}
             if let msg = e["message"] as? String, !msg.isEmpty { tasks[i].message = msg }
             if let state = e["state"] as? String { tasks[i].state = state }
+            if let diagnostic=Self.decode(TaskDiagnostic.self,e["diagnostic"]) {
+                var records=tasks[i].diagnostics ?? []
+                if let existing=records.firstIndex(where:{$0.id==diagnostic.id}) {records[existing]=diagnostic}
+                else {records.append(diagnostic)}
+                tasks[i].diagnostics=Array(records.suffix(24))
+            }
+            if let diagnostics=Self.decode([TaskDiagnostic].self,e["diagnostics"]) {tasks[i].diagnostics=diagnostics}
         }
         if e["type"] as? String == "result" {
             let state = e["state"] as? String
             if state == "completed" { callbacks[id]?(e["result"] as? [String:Any] ?? [:]) }
             else if state == "failed" {
+                errorDiagnostic=tasks.first(where:{$0.id==id})?.diagnostics?.last(where:{!$0.isWarning})
                 error = e["message"] as? String ?? "操作失败，请查看任务日志。"
                 if tasks.contains(where:{$0.id==id && $0.operation=="preflight"}) {checkingEnvironment=false;environmentCallbacks=[]}
             }
@@ -465,17 +503,73 @@ final class WorkerOutput: @unchecked Sendable {
         guard p.runModal() == .OK, let url = p.url else { return }
         selection = "tasks"; executionTask = worker("migrate",extra:["gameId":game.id,"path":url.path])
     }
+    func generateIPA(_ game: Game, destination: URL? = nil) {
+        guard !executionBusy, queue.isEmpty else { error = "构建与游戏运行互斥，请等待当前任务结束。"; return }
+        guard importPrerequisitesReady() else { return }
+        guard game.buildable else { error = (game.missing ?? []).joined(separator:"\n"); return }
+        let output: URL
+        if let destination { output = destination }
+        else {
+            let panel = NSSavePanel()
+            panel.title = L("生成 IPA")
+            panel.message = L("生成用于 iPhone / iPad 的未签名游戏包；安装时需自行签名。")
+            panel.prompt = L("生成 IPA")
+            panel.allowedContentTypes = [UTType(filenameExtension:"ipa") ?? .data]
+            panel.nameFieldStringValue = "LumaDock-\(game.id).ipa"
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            output = url
+        }
+        guard !executionBusy, queue.isEmpty else { return }
+        selection = "tasks"
+        executionTask = worker("exportIPA",extra:["gameId":game.id,"outputPath":output.path]) { result in
+            self.notice = "IPA 已生成；安装到 iPhone / iPad 前需自行签名。"
+            self.reveal(URL(fileURLWithPath:result["outputPath"] as? String ?? output.path))
+        }
+    }
     func cancel(_ task: TaskRecord) {
         if let i = tasks.firstIndex(where:{$0.id == task.id}) { tasks[i].state = "cancelling" }
         processes[task.id]?.terminate()
     }
     func retry(_ task: TaskRecord) {
         guard let game = games.first(where:{$0.id == task.gameId}) else { return }
-        if task.operation == "launch" { launch(game) } else { enqueue(game) }
+        if task.operation == "launch" { launch(game) }
+        else if task.operation == "exportIPA" { generateIPA(game,destination:task.outputPath.map { URL(fileURLWithPath:$0) }) }
+        else { enqueue(game) }
     }
     func remove(_ game: Game) { worker("remove",extra:["gameId":game.id]) { _ in self.refresh() } }
     func clean(_ game: Game, kind: String) { worker("clean",extra:["gameId":game.id,"kind":kind]) { _ in self.refresh() } }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+    func persistTask(_ task: TaskRecord) {
+        let folder=privateRoot.appendingPathComponent("jobs")
+        let path=folder.appendingPathComponent(task.id+".json")
+        try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        if let data=try? JSONEncoder().encode(task) {try? data.write(to:path,options:.atomic);try? FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)}
+    }
+    func nativeDiagnostic(code: String, summary: String, detail: String, logPath: String? = nil) -> TaskDiagnostic {
+        let paths=[(preferences.library,"[LIBRARY]"),(privateRoot.path,"[PRIVATE]"),(preferences.engineDir ?? "","[ENGINE]"),(NSHomeDirectory(),"~")]
+        return TaskDiagnostic(code:code,severity:"error",summary:TaskDiagnostic.redact(summary,paths:paths),suggestion:"检查完整应用、磁盘连接和权限后重试；查看对应日志了解工作进程退出原因。",detail:TaskDiagnostic.redact(detail,paths:paths),logPath:logPath)
+    }
+    var failureMessage: String {
+        var message=L(error ?? "")
+        if let diagnostic=errorDiagnostic {
+            message += "\n\n" + L("建议处理：") + L(diagnostic.suggestion)
+            message += "\n\n" + L("错误代码：") + diagnostic.code
+        }
+        return message
+    }
+    func diagnosticLogURL(_ diagnostic: TaskDiagnostic?) -> URL {
+        if let path=diagnostic?.logPath {
+            let url=URL(fileURLWithPath:path).resolvingSymlinksInPath()
+            let roots=[privateRoot.appendingPathComponent("logs"),libraryURL.appendingPathComponent("cache")]
+            if url.pathExtension == "log",roots.contains(where:{url.path.hasPrefix($0.resolvingSymlinksInPath().path+"/")}) {return url}
+        }
+        return privateRoot.appendingPathComponent("logs")
+    }
+    func copyDiagnostic(_ diagnostic: TaskDiagnostic? = nil) {
+        let text=(diagnostic ?? errorDiagnostic)?.reportText ?? L(error ?? "")
+        NSPasteboard.general.clearContents();NSPasteboard.general.setString(text,forType:.string)
+    }
+    func showFailedTask() {selection="tasks";showOnboarding=false;error=nil}
     func exportDiagnostics() {
         let p = NSSavePanel(); p.prompt = L("保存"); p.nameFieldStringValue = L("NSMac-诊断.zip"); guard p.runModal() == .OK, let url = p.url else { return }
         worker("diagnostics",extra:["path":url.path]) { _ in self.reveal(url) }

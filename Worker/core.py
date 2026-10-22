@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib, ctypes, fcntl, hashlib, json, os, re, shutil, signal, subprocess, sys, threading, time, uuid
 from pathlib import Path
 SCHEMA = 1
-class Failure(Exception): pass
+class Failure(Exception):
+    def __init__(self,message,diagnostic=None):
+        super().__init__(message);self.diagnostic=diagnostic
 class Cancelled(Exception): pass
 
 def atomic(path, obj, mode=0o600):
@@ -28,19 +30,28 @@ def digest(path, progress=None):
             if progress: progress(n, total)
     return h.hexdigest()
 
-def clone(src, dst):
+def clone(src, dst, progress=None):
     src, dst = Path(src), Path(dst); dst.parent.mkdir(parents=True, exist_ok=True)
     if src.is_symlink(): raise Failure('不接受指向游戏库之外的符号链接。')
-    if sys.platform == 'darwin' and ctypes.CDLL(None, use_errno=True).clonefile(os.fsencode(src), os.fsencode(dst), 0) == 0: return
-    shutil.copyfile(src, dst)
+    total=src.stat().st_size
+    if sys.platform == 'darwin' and ctypes.CDLL(None, use_errno=True).clonefile(os.fsencode(src), os.fsencode(dst), 0) == 0:
+        if progress: progress(total,total)
+        return
+    if progress:
+        done=0
+        with src.open('rb') as source,dst.open('wb') as destination:
+            while block:=source.read(8 << 20):
+                destination.write(block);done+=len(block);progress(done,total)
+    else: shutil.copyfile(src, dst)
     shutil.copymode(src,dst)
 
 def clone_tree(src, dst, tick=None):
     src, dst = Path(src), Path(dst)
+    if tick: tick(0,0)
     files = sorted(p for p in src.rglob('*') if p.is_file()); total = sum(p.stat().st_size for p in files); done = 0
     dst.mkdir(parents=True, exist_ok=True)
     for p in files:
-        clone(p, dst / p.relative_to(src)); done += p.stat().st_size
+        clone(p, dst / p.relative_to(src),(lambda n,t:tick(done+n,total)) if tick else None); done += p.stat().st_size
         if tick: tick(done, total)
 
 def contained(root, child):
@@ -52,11 +63,13 @@ class Context:
     def __init__(self, request):
         self.r = request; self.task = request.get('taskId', uuid.uuid4().hex); self.stage = ''; self.number = 0; self.count = 0
         self.t0 = time.monotonic(); self.stage_t = self.t0; self.last = 0; self.cancelled = False; self.children = set(); self.guard = threading.RLock()
+        self.last_log = None
         self.private = Path(request['privateRoot']).expanduser().resolve(); self.private.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.private, 0o700)
         self.jobpath = self.private / 'jobs' / (self.task + '.json')
         self.job = read(self.jobpath, {}) | {'schema': 1, 'id': self.task, 'operation': request['operation'], 'gameId': request.get('gameId'), 'state': 'running', 'started': time.time()}
-        for field in ('ended','message','done','total','elapsed'): self.job.pop(field,None)
+        if request['operation'] == 'exportIPA': self.job['outputPath'] = request.get('outputPath')
+        for field in ('ended','message','done','total','elapsed','diagnostics'): self.job.pop(field,None)
         atomic(self.jobpath, self.job)
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
         selected = request.get('engineDir', '').strip()
@@ -70,7 +83,7 @@ class Context:
         with self.guard:
             if kind == 'progress' and time.monotonic() - self.last < .2 and done != total: return
             self.last = time.monotonic()
-            event = {'schema': 1, 'taskId': self.task, 'type': kind, 'stage': self.stage, 'stageIndex': self.number, 'stageCount': self.count, 'message': message, 'elapsed': time.monotonic()-self.stage_t}
+            event = {'schema': 1, 'taskId': self.task, 'operation':self.r['operation'],'gameId':self.r.get('gameId'),'started':self.job['started'],'type': kind, 'stage': self.stage, 'stageIndex': self.number, 'stageCount': self.count, 'message': message, 'elapsed': time.monotonic()-self.stage_t}
             if done is not None: event['done'] = done
             if total and total > 0: event['total'] = total
             event.update(kw)
@@ -87,9 +100,22 @@ class Context:
         if self.r.get('libraryId') and read(self.library / '.nsmac-library.json', {}).get('id') != self.r['libraryId']:
             raise Failure('游戏库磁盘已断开或位置发生变化，请重新连接后重试。')
     def progress(self, done, total): self.check(); self.emit(done=done, total=total, unit='B')
+    def report(self, diagnostic):
+        with self.guard:
+            records=self.job.setdefault('diagnostics',[])
+            if diagnostic in records: return
+            identity=lambda d:(d['code'],d.get('logPath'),d.get('stage'),d['summary'])
+            existing=next((i for i,d in enumerate(records) if identity(d)==identity(diagnostic)),None)
+            if existing is None:records.append(diagnostic)
+            else:records[existing]=diagnostic
+            self.job['diagnostics']=records[-24:]
+            atomic(self.jobpath,self.job)
+            self.emit('diagnostic',diagnostic=diagnostic)
     def finish(self, state, message='', result=None):
+        if state=='completed' and any(d['severity']=='warning' for d in self.job.get('diagnostics',[])):
+            message='操作完成，但有警告，请查看任务详情。'
         self.job.update(state=state, message=message, ended=time.time()); atomic(self.jobpath, self.job)
-        self.emit('result', message, state=state, result=result or {})
+        self.emit('result', message, state=state, result=result or {},diagnostics=self.job.get('diagnostics',[]))
     def stop(self):
         self.cancelled = True; self.job['state'] = 'cancelling'; atomic(self.jobpath, self.job)
         for p in list(self.children):
@@ -125,27 +151,40 @@ class Context:
         return prepared_tools(self) / 'tools/nx_extract/nx_extract'
     def run(self, args, log=None, env=None, cwd=None, on_line=None):
         self.check(); log = Path(log or self.private / 'logs' / (self.task + '.log')); log.parent.mkdir(parents=True, exist_ok=True)
+        self.last_log=log
+        import diagnostics
+        output=diagnostics.Output();tool=diagnostics.component(args)
         with log.open('a') as f:
-            p = subprocess.Popen([str(a) for a in args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env or self.env(), cwd=cwd, start_new_session=True)
+            try:
+                p = subprocess.Popen([str(a) for a in args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env or self.env(), cwd=cwd, start_new_session=True)
+            except OSError as error:
+                diagnostic=diagnostics.failure(self,error,log=log,tool=tool)
+                self.report(diagnostic);raise Failure(diagnostic['summary'],diagnostic) from error
             self.children.add(p)
-            heartbeat_stop = threading.Event()
-            def heartbeat():
-                while not heartbeat_stop.wait(1): self.emit('heartbeat')
-            threading.Thread(target=heartbeat,daemon=True).start()
             try:
                 for line in p.stdout:
                     f.write(line); f.flush(); self.check()
+                    output.feed(line)
                     if line.startswith('NSMAC_PROGRESS '):
                         v = json.loads(line[15:]); self.emit(done=v['done'], total=v['total'], unit=v.get('unit',''))
+                    elif self.r['operation'] in ('installMetal','uninstallMetal'):
+                        match=re.search(r'(\d+(?:\.\d+)?)\s*%',line)
+                        if match and 0<=float(match[1])<=100: self.emit(done=float(match[1]),total=100,unit='%')
                     if on_line: on_line(line.rstrip())
                 code = p.wait(); self.check()
-                if code: raise Failure(f'组件 {Path(str(args[0])).name} 运行失败（{code}）。详细信息见任务日志。')
+                if code:
+                    diagnostic=diagnostics.failure(self,output.text,log=log,tool=tool,status=code)
+                    self.report(diagnostic);raise Failure(diagnostic['summary'],diagnostic)
+                diagnostic=diagnostics.shader_result(self,output,log,tool)
+                if diagnostic:
+                    self.report(diagnostic)
+                    if diagnostic['severity']=='error': raise Failure(diagnostic['summary'],diagnostic)
             finally:
                 if p.poll() is None:
                     os.killpg(p.pid, signal.SIGTERM)
                     try: p.wait(timeout=3)
                     except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL); p.wait()
-                heartbeat_stop.set(); self.children.discard(p)
+                p.stdout.close();self.children.discard(p)
         return log
     @contextlib.contextmanager
     def toolchain_lock(self, exclusive=False):

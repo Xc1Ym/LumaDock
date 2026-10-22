@@ -19,6 +19,20 @@ In **Settings → Language & appearance**, choose **System default**, **English*
 
 Use the toolbar's input mapping button to configure global controls, or game details for a game-specific override. Mapping changes apply on the next launch without rebuilding. Settings also provides diagnostics export and a setup-assistant shortcut.
 
+## Export an IPA
+
+Choose **Generate IPA…** in game details and save outside the managed library. This builds an **unsigned iPhone / iPad game package** from the imported NSPs; a Mac runtime is not required first. Install the iOS platform and Metal compiler in your selected Xcode, and install XcodeGen with `brew install xcodegen` before exporting.
+
+Wait for any running game and the preparation queue to finish. The export appears in Tasks with progress, cancellation and retry; completed exports open in Finder. A failed or cancelled export preserves the previous IPA, Mac runtime and saves. Sign the result with your installation tool before installing it. iOS device and game compatibility depend on your selected engine; Mac gameplay results do not validate iOS gameplay.
+
+## Build errors and shader warnings
+
+Long operations share progress bars in Tasks, the global task banner, setup and Settings. Imports, byte/copy/cache verification, engine preparation, game/shader builds, IPA export, environment/component operations, cleanup and diagnostics report real counters where available. Unknown or estimated totals use an indeterminate linear bar with elapsed time; ordinary log/warning messages preserve progress. You can open **View all tasks** while using another page.
+
+An error prompt includes a suggested repair and error code. Choose **View failed task** for the failed stage, redacted compiler output, **Open task log** and **Copy error summary**. The log action selects this task's specific file, including shader logs inside the build cache. Original logs remain local; review them before sharing.
+
+Missing Metal/SDK components, shader conversion/compilation errors, chain mismatches, disk/permission failures and possible memory exhaustion have separate messages. No usable shaders stops the build. A partial shader failure marks the task **Completed with warnings**; cache reuse preserves the warning. Fix the cause and retry instead of assuming every scene will render correctly.
+
 ## Game language
 
 Choose **Launch language** beside the launch button in game details. **Use default** follows **Settings → Game language → Default game language**, initially Simplified Chinese. A game-specific choice overrides the default and is remembered after restarting LumaDock. This setting is independent of the launcher interface language.

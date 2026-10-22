@@ -2110,5 +2110,321 @@
   {
     "source": "游戏语言代码无效，请在游戏详情中重新选择启动语言。",
     "en": "Invalid game language code. Choose a launch language again in game details."
+  },
+  {
+    "source": "生成 IPA",
+    "en": "Generate IPA"
+  },
+  {
+    "source": "生成 IPA…",
+    "en": "Generate IPA…"
+  },
+  {
+    "source": "生成用于 iPhone / iPad 的未签名游戏包；安装时需自行签名。",
+    "en": "Generate an unsigned game package for iPhone / iPad. Sign it with your installation tool."
+  },
+  {
+    "source": "IPA 已生成；安装到 iPhone / iPad 前需自行签名。",
+    "en": "IPA generated. Sign it before installing on iPhone / iPad."
+  },
+  {
+    "source": "导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。",
+    "en": "Export an unsigned iPhone / iPad package. Requires the Xcode iOS platform and XcodeGen."
+  },
+  {
+    "source": "在访达中查看 IPA",
+    "en": "Show IPA in Finder"
+  },
+  {
+    "source": "编译 iOS 应用并生成 IPA",
+    "en": "Build iOS app and generate IPA"
+  },
+  {
+    "source": "验证 IPA 完整性",
+    "en": "Verify IPA integrity"
+  },
+  {
+    "source": "导出 IPA",
+    "en": "Export IPA"
+  },
+  {
+    "source": "请选择 IPA 保存位置。",
+    "en": "Choose where to save the IPA."
+  },
+  {
+    "source": "IPA 保存位置无效，请选择以 .ipa 结尾的文件。",
+    "en": "Invalid IPA destination. Choose a file ending in .ipa."
+  },
+  {
+    "source": "请将 IPA 保存到游戏库、引擎及应用私有目录以外的位置。",
+    "en": "Save the IPA outside the library, engine and private app directories."
+  },
+  {
+    "source": "所选 nxnative 缺少 iOS 打包组件，请选择包含 dm/ios 的完整源码。",
+    "en": "The selected nxnative lacks iOS packaging components. Choose complete sources containing dm/ios."
+  },
+  {
+    "source": "生成 IPA 需要 XcodeGen，请先运行 brew install xcodegen，再重试。",
+    "en": "IPA generation requires XcodeGen. Run brew install xcodegen, then retry."
+  },
+  {
+    "source": "iOS 构建环境不完整，请在所选 Xcode 中安装 iOS 平台和 Metal 编译组件，再重试。",
+    "en": "The iOS build environment is incomplete. Install the iOS platform and Metal compiler in the selected Xcode, then retry."
+  },
+  {
+    "source": "生成的 IPA 结构或完整性检查失败，请查看任务日志后重试。",
+    "en": "IPA structure or integrity validation failed. Review the task log, then retry."
+  },
+  {
+    "source": "IPA 保存磁盘空间不足，请释放空间后重试。",
+    "en": "The IPA destination has insufficient free space. Free space and retry."
+  },
+  {
+    "source": "iOS 着色器产物缺失或编译平台不匹配，请重试。",
+    "en": "iOS shader outputs are missing or compiled for the wrong platform. Retry the export."
+  },
+  {
+    "source": "Metal 着色器编译失败。",
+    "en": "Metal shader compilation failed."
+  },
+  {
+    "source": "Metal 编译组件不可用。",
+    "en": "The Metal compiler component is unavailable."
+  },
+  {
+    "source": "先重新检查 Xcode 和 Metal 组件；若环境通过仍失败，请核对引擎与游戏版本，并查看失败着色器的编译信息。",
+    "en": "Recheck Xcode and the Metal component. If checks pass but compilation still fails, verify engine/game versions and review the failed shader diagnostics."
+  },
+  {
+    "source": "关闭占用大量内存的应用后重试；若仍失败，请保留日志检查系统终止原因。",
+    "en": "Close memory-intensive apps and retry. If it still fails, keep the log and check why the system terminated the process."
+  },
+  {
+    "source": "在设置中安装 Metal 编译组件，完成后重新检查环境并重试。",
+    "en": "Install the Metal compiler component in Settings, then recheck the environment and retry."
+  },
+  {
+    "source": "所需的 Apple 平台 SDK 不可用。",
+    "en": "The required Apple platform SDK is unavailable."
+  },
+  {
+    "source": "操作完成，但有警告，请查看任务详情。",
+    "en": "Completed with warnings. Review the task details."
+  },
+  {
+    "source": "文件或构建工具访问被拒绝。",
+    "en": "Access to files or build tools was denied."
+  },
+  {
+    "source": "本地组件运行失败。",
+    "en": "A local component failed."
+  },
+  {
+    "source": "构建组件或输入文件缺失。",
+    "en": "A build component or input file is missing."
+  },
+  {
+    "source": "构建进程被终止，可能内存不足。",
+    "en": "The build process was terminated, possibly due to insufficient memory."
+  },
+  {
+    "source": "查看失败着色器日志，核对游戏和引擎版本后重试；构建完成不代表所有场景的图形效果正常。",
+    "en": "Review the failed shader log and verify game/engine versions before retrying. A completed build does not guarantee correct graphics in every scene."
+  },
+  {
+    "source": "查看本任务日志和失败阶段，按提示修复后重试；反馈时复制错误摘要。",
+    "en": "Review this task's log and failed stage, follow the repair instructions and retry. Copy the error summary when reporting the problem."
+  },
+  {
+    "source": "查看本任务的具体日志，修复提示的问题后重试；反馈时复制已脱敏的错误摘要。",
+    "en": "Open this task's log, fix the reported problem and retry. Copy the redacted error summary when reporting it."
+  },
+  {
+    "source": "核对游戏版本与引擎配置，并确认使用完整的兼容引擎源码；保留日志中的失败着色器信息反馈上游。",
+    "en": "Verify the game version and engine profile, using complete compatible engine sources. Keep the failed shader details for an upstream report."
+  },
+  {
+    "source": "检查所选 Xcode；生成 IPA 还需在 Xcode 中安装 iOS 平台，然后重新检查环境。",
+    "en": "Check the selected Xcode. IPA generation also requires its iOS platform; install it and recheck the environment."
+  },
+  {
+    "source": "检查游戏库磁盘的读写权限、所选 Xcode 和系统隐私设置，再重试。",
+    "en": "Check library disk permissions, the selected Xcode and system privacy settings, then retry."
+  },
+  {
+    "source": "检查磁盘连接、游戏源文件和外部引擎完整性，再重新检查环境；应用内置组件缺失时重新安装完整应用。",
+    "en": "Check the disk connection, game source files and external engine integrity, then recheck the environment. Reinstall the complete app if bundled components are missing."
+  },
+  {
+    "source": "没有生成可用的着色器，构建已停止。",
+    "en": "No usable shaders were generated. The build has stopped."
+  },
+  {
+    "source": "着色器缓存与当前工具链不一致。",
+    "en": "The shader cache does not match the current toolchain."
+  },
+  {
+    "source": "着色器转换失败。",
+    "en": "Shader translation failed."
+  },
+  {
+    "source": "磁盘空间不足，任务已停止。",
+    "en": "Insufficient disk space. The task has stopped."
+  },
+  {
+    "source": "部分着色器构建失败：成功 {0}/{1}。",
+    "en": "Some shaders failed to build: {0}/{1} succeeded."
+  },
+  {
+    "source": "释放游戏库和导出磁盘的空间后重试；已完成阶段会重新校验。",
+    "en": "Free space on the library and export disks, then retry. Completed stages will be revalidated."
+  },
+  {
+    "source": "重新准备引擎工具，再重新准备游戏；不要混用 Mac 与 iOS 的着色器产物。",
+    "en": "Prepare engine tools again, then prepare the game. Keep Mac and iOS shader outputs separate."
+  },
+  {
+    "source": "检查完整应用、磁盘连接和权限后重试；查看对应日志了解工作进程退出原因。",
+    "en": "Check the complete app, disk connection and permissions, then retry. Review the corresponding log for the worker exit reason."
+  },
+  {
+    "source": "错误代码：",
+    "en": "Error code: "
+  },
+  {
+    "source": "失败阶段：",
+    "en": "Failed stage: "
+  },
+  {
+    "source": "组件：",
+    "en": "Component: "
+  },
+  {
+    "source": "退出码：",
+    "en": "Exit status: "
+  },
+  {
+    "source": "建议处理：",
+    "en": "Suggested action: "
+  },
+  {
+    "source": "完成（有警告）",
+    "en": "Completed with warnings"
+  },
+  {
+    "source": "复制错误摘要",
+    "en": "Copy error summary"
+  },
+  {
+    "source": "查看失败任务",
+    "en": "View failed task"
+  },
+  {
+    "source": "编译器输出（已脱敏）",
+    "en": "Compiler output (redacted)"
+  },
+  {
+    "source": "打开对应日志",
+    "en": "Open task log"
+  },
+  {
+    "source": "验证阶段产物",
+    "en": "Verify stage outputs"
+  },
+  {
+    "source": "校验游戏源文件",
+    "en": "Verify game source files"
+  },
+  {
+    "source": "扫描 NSP 文件",
+    "en": "Scan NSP files"
+  },
+  {
+    "source": "跳过重复内容",
+    "en": "Skip duplicate content"
+  },
+  {
+    "source": "复制 NSP 到游戏库",
+    "en": "Copy NSP to library"
+  },
+  {
+    "source": "校验托管副本",
+    "en": "Verify managed copy"
+  },
+  {
+    "source": "登记游戏内容",
+    "en": "Register game content"
+  },
+  {
+    "source": "移出游戏库",
+    "en": "Remove from library"
+  },
+  {
+    "source": "清理构建缓存",
+    "en": "Clean build cache"
+  },
+  {
+    "source": "删除托管 NSP 副本",
+    "en": "Delete managed NSP copies"
+  },
+  {
+    "source": "收集诊断日志",
+    "en": "Collect diagnostic logs"
+  },
+  {
+    "source": "打包 IPA",
+    "en": "Pack IPA"
+  },
+  {
+    "source": "校验导出 IPA",
+    "en": "Verify exported IPA"
+  },
+  {
+    "source": "清理游戏文件",
+    "en": "Clean game files"
+  },
+  {
+    "source": "当前阶段进度",
+    "en": "Current stage progress"
+  },
+  {
+    "source": "个文件",
+    "en": "files"
+  },
+  {
+    "source": "个着色器",
+    "en": "shaders"
+  },
+  {
+    "source": "项检查",
+    "en": "checks"
+  },
+  {
+    "source": "已处理：",
+    "en": "Processed: "
+  },
+  {
+    "source": "已用 {0} 秒",
+    "en": "Elapsed: {0} s"
+  },
+  {
+    "source": "正在处理 {0} 个任务",
+    "en": "{0} tasks in progress"
+  },
+  {
+    "source": "查看全部任务",
+    "en": "View all tasks"
+  },
+  {
+    "source": "正在读取游戏库…",
+    "en": "Loading library…"
+  },
+  {
+    "source": "保存映射",
+    "en": "Save mapping"
+  },
+  {
+    "source": "本地任务",
+    "en": "Local task"
   }
 ]

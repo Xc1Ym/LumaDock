@@ -73,7 +73,7 @@ def inspect_environment(c):
         if repairCommand:
             item['repairCommand'] = repairCommand
         checks.append(item)
-        c.emit('check', check=item, done=len(checks), total=20)
+        c.emit('check', check=item, done=len(checks),unit='checks')
 
     add('Apple Silicon', platform.machine() == 'arm64', platform.machine(),
         '需要 Apple Silicon Mac，Intel Mac 或 Rosetta 下运行不受支持。', '', 'system', both)
@@ -228,6 +228,7 @@ def inspect_environment(c):
         free = 0; output = str(error)
     add('游戏库存储权限', storage_ok, str(target), '选择可读写且允许执行程序的本地或外置磁盘，保持磁盘连接；在设置中重新选择游戏库。', 'library', 'storage', both, output)
     add('可用空间', free >= 5*2**30, f'{free/2**30:.1f} GB（大型游戏通常需要 40–80 GB）', '至少预留 5 GB；实际准备前会按所选游戏文件大小再次检查空间，可选择空间更大的游戏库磁盘。', 'library', 'storage')
+    c.emit(done=len(checks),total=len(checks),unit='checks')
     return checks
 
 

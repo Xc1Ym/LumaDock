@@ -52,7 +52,7 @@ jobs:
           xcodebuild -version
           xcrun --sdk macosx --show-sdk-version
           mkdir -p work
-          brew install python@3.14 spirv-cross zstd actionlint
+          brew install python@3.14 spirv-cross zstd actionlint xcodegen
       - name: Validate GitHub workflow
         run: actionlint .github/workflows/ci.yml
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -64,6 +64,10 @@ jobs:
           work/python-venv/bin/python -m pip install --disable-pip-version-check -r requirements-runtime.txt -r requirements-build.txt
       - name: Worker and distribution regression tests
         run: work/python-venv/bin/python -B -m unittest discover -s tests -v
+      - name: Verify real Metal failures and unsigned iOS fixture packaging
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+          work/python-venv/bin/python -B scripts/check_shader_diagnostics.py
       - name: Import, setup, documentation, localization and appearance regression tests
         run: swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
       - name: Generate original app icons

@@ -11,6 +11,7 @@ struct ContentView: View {
     @EnvironmentObject var store: Store
     @State private var search = ""
     var body: some View {
+        VStack(spacing:0) {
         NavigationSplitView {
             VStack(alignment:.leading,spacing:20) {
                 HStack(spacing:10) { BrandMark(); VStack(alignment:.leading,spacing:3) { Text(Brand.name).font(.title2.bold()); Text(L("Mac 游戏启动器")).font(.caption.weight(.medium)).tracking(1.2).foregroundStyle(.secondary) } }.padding(.top,16).padding(.leading,4)
@@ -22,7 +23,7 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Label(store.executionBusy ? L("任务进行中") : L("本地运行"),systemImage:store.executionBusy ? "circle.dotted" : "checkmark.shield")
                     Text(L("游戏与密钥由玩家自行导入")).font(.caption).foregroundStyle(.secondary)
-                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.5")).font(.caption2).foregroundStyle(.tertiary)
+                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.6")).font(.caption2).foregroundStyle(.tertiary)
                 }.font(.caption).padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).padding(.bottom,16)
             }.padding(.horizontal,12).navigationSplitViewColumnWidth(min:205,ideal:225,max:270)
         } detail: {
@@ -40,17 +41,27 @@ struct ContentView: View {
                     }
                 }
         }
+        if !store.showOnboarding,store.selection != "tasks",!store.activeTasks.isEmpty {ActiveTaskBanner()}
+        }
         .frame(minWidth:1100,minHeight:720)
         .onAppear {store.checkEnvironmentAtStartup()}
         .sheet(isPresented:$store.showOnboarding,onDismiss:store.onboardingDismissed) { OnboardingView().environmentObject(store) }
         .sheet(isPresented:$store.editingInput) { InputEditor(game:store.inputGame, initial:store.input(for:store.inputGame)).environmentObject(store) }
-        .alert(L("操作未完成"),isPresented:Binding(get:{!store.showOnboarding && store.error != nil},set:{if !$0 && !store.showOnboarding {store.error=nil}})) { Button(L("知道了")) { store.error=nil }; Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))} } message: {Text(L(store.error ?? ""))}
-        .overlay(alignment:.bottom) { if let notice = store.notice { HStack { Image(systemName:"checkmark.circle.fill").foregroundStyle(Brand.accent); Text(L(notice)); Button {store.notice=nil} label:{Image(systemName:"xmark")}.buttonStyle(.plain).accessibilityLabel(L("关闭提示")) }.padding().glassSurface().padding().onAppear {DispatchQueue.main.asyncAfter(deadline:.now()+6){store.notice=nil}} } }
+        .alert(L("操作未完成"),isPresented:Binding(get:{!store.showOnboarding && store.error != nil},set:{if !$0 && !store.showOnboarding {store.error=nil}})) {
+            let diagnostic=store.errorDiagnostic
+            Button(L("知道了"),role:.cancel) {store.error=nil}
+            if let diagnostic {
+                Button(L("查看失败任务")) {store.showFailedTask()}
+                Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
+            } else {Button(L("打开日志")) {store.reveal(store.diagnosticLogURL(nil))}}
+        } message: {Text(store.failureMessage)}
+        .overlay(alignment:.top) { if let notice = store.notice { HStack { Image(systemName:"checkmark.circle.fill").foregroundStyle(Brand.accent); Text(L(notice)); Button {store.notice=nil} label:{Image(systemName:"xmark")}.buttonStyle(.plain).accessibilityLabel(L("关闭提示")) }.padding().glassSurface().padding().onAppear {DispatchQueue.main.asyncAfter(deadline:.now()+6){store.notice=nil}} } }
     }
     var library: some View {
         HStack(spacing:16) {
             VStack(alignment:.leading,spacing:18) {
                 VStack(alignment:.leading,spacing:6) { Text(L("随时，开启下一段旅程。")).font(.system(size:26,weight:.bold)); Text(L("让喜爱的游戏，在 Mac 上继续。")).foregroundStyle(.secondary) }.padding(.top,8)
+                if store.refreshingLibrary {ProgressView(L("正在读取游戏库…")).progressViewStyle(.linear)}
                 ImportFlowView()
                 GlassEffectContainer(spacing:16) {
                     HStack(spacing:12) {
@@ -139,6 +150,7 @@ struct GameDetail: View {
     @State private var cleanKind="cache"
     @State private var confirmClean=false
     var body:some View {
+        ScrollView {
         VStack(alignment:.leading,spacing:14) {
             HStack(alignment:.top,spacing:12) {
                 GameCover(game:game).frame(width:76,height:76).clipShape(RoundedRectangle(cornerRadius:12)).accessibilityHidden(true)
@@ -158,9 +170,10 @@ struct GameDetail: View {
                 Button {store.launch(game)} label:{Label(L("启动游戏"),systemImage:"play.fill").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(store.executionBusy || !store.queue.isEmpty)
             }
             Button {store.enqueue(game)} label:{Label(game.ready==true ? L("重新检查并准备") : L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable)
+            Button {store.generateIPA(game)} label:{Label(L("生成 IPA…"),systemImage:"iphone.and.arrow.forward").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable || store.executionBusy || !store.queue.isEmpty)
+            Text(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。")).font(.caption).foregroundStyle(.secondary)
             Button {store.inputGame=game;store.editingInput=true} label:{Label(L("键鼠与手柄映射"),systemImage:"keyboard").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large)
             Divider()
-            ScrollView {
                 VStack(alignment:.leading,spacing:12) {
                     if !(game.missing ?? []).isEmpty {
                         Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
@@ -176,7 +189,7 @@ struct GameDetail: View {
                         }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
-            }.id(Localization.language)
+                .id(Localization.language)
             Divider()
             Button(L("在访达中查看存档")) {
                 let url=store.libraryURL.appendingPathComponent("saves/\(game.id)")
@@ -191,6 +204,7 @@ struct GameDetail: View {
                 }.padding(.vertical,8)
             }.disabled(store.executionBusy)
         }.padding(20)
+        }
         .alert(cleanKind=="sources" ? L("删除托管 NSP 副本？") : L("清理构建缓存？"),isPresented:$confirmClean) {
             Button(L("取消"),role:.cancel){}
             Button(L("确认清理"),role:.destructive){store.clean(game,kind:cleanKind)}
@@ -218,18 +232,39 @@ struct TaskCard: View {
     let task: TaskRecord
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack { Label(task.title,systemImage:task.state=="completed" ? "checkmark.circle.fill" : task.state=="failed" ? "exclamationmark.circle" : "circle.dotted").font(.headline); Text(store.games.first(where:{$0.id==task.gameId})?.name ?? "").lineLimit(1);Spacer();Text(task.stateName).foregroundStyle(.secondary) }
+            HStack { Label(task.title,systemImage:task.state=="failed" || task.hasWarnings ? "exclamationmark.triangle.fill" : task.state=="completed" ? "checkmark.circle.fill" : "circle.dotted").font(.headline); Text(store.games.first(where:{$0.id==task.gameId})?.name ?? "").lineLimit(1);Spacer();Text(task.stateName).foregroundStyle(task.hasWarnings ? .orange : .secondary) }
             if let stage=task.stage { Text(L(stage)).font(.callout) }
-            if task.active {
-                if let index=task.stageIndex, let count=task.stageCount, count>0 { ProgressView(L("整体阶段 \(index)/\(count)"),value:Double(max(0,index-1)),total:Double(count)).tint(.teal) }
-                if let total=task.total, let done=task.done, total>0 {
-                    ProgressView(value:min(done,total),total:total).tint(.teal)
-                    HStack {Text(task.unit=="B" ? "\(ByteCountFormatter.string(fromByteCount:Int64(done),countStyle:.file)) / \(ByteCountFormatter.string(fromByteCount:Int64(total),countStyle:.file))" : "\(Int(done)) / \(Int(total))");Spacer();if let elapsed=task.elapsed, elapsed>3, done>0,done<total {Text(L("预计剩余 \(Int((total-done)*elapsed/done)) 秒"))} }.font(.caption).foregroundStyle(.secondary)
-                } else { HStack {ProgressView().controlSize(.small);Text(L("处理中，总量暂不可确定")).font(.caption).foregroundStyle(.secondary);if let elapsed=task.elapsed {Text(L("\(Int(elapsed)) 秒")).font(.caption.monospacedDigit())}} }
+            if task.active {TaskProgressView(task:task)}
+            if let msg=task.message,!msg.isEmpty,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+            ForEach(task.diagnostics ?? []) {diagnostic in TaskDiagnosticCard(diagnostic:diagnostic)}
+            if task.operation=="exportIPA",task.state=="completed",let path=task.outputPath {
+                Button(L("在访达中查看 IPA")) {store.reveal(URL(fileURLWithPath:path))}
             }
-            if let msg=task.message,!msg.isEmpty {Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
             HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
         }.padding(18).contentCard(18)
+    }
+}
+struct TaskDiagnosticCard: View {
+    @EnvironmentObject var store: Store
+    let diagnostic: TaskDiagnostic
+    var body: some View {
+        VStack(alignment:.leading,spacing:10) {
+            Label(L(diagnostic.summary),systemImage:diagnostic.isWarning ? "exclamationmark.triangle" : "xmark.octagon")
+                .font(.callout.bold()).foregroundStyle(diagnostic.isWarning ? .orange : .red)
+            Text(L(diagnostic.suggestion)).font(.callout).textSelection(.enabled)
+            if let stage=diagnostic.stage,!stage.isEmpty {Text(L("失败阶段：")+L(stage)).font(.caption).foregroundStyle(.secondary)}
+            Text(diagnostic.code).font(.caption.monospaced()).foregroundStyle(.secondary)
+            if !diagnostic.detail.isEmpty {
+                DisclosureGroup(L("编译器输出（已脱敏）")) {
+                    ScrollView {Text(diagnostic.detail).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:160)
+                }
+            }
+            HStack {
+                Button(L("打开对应日志")) {store.reveal(store.diagnosticLogURL(diagnostic))}
+                Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
+            }
+        }.padding(12).frame(maxWidth:.infinity,alignment:.leading)
+            .background(diagnostic.isWarning ? Color.orange.opacity(0.08) : Color.red.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
     }
 }
 struct SettingsView: View {
@@ -353,7 +388,13 @@ struct EnvironmentSummary: View {
     @EnvironmentObject var store:Store
     var body:some View {
         HStack {
-            if store.checkingEnvironment {ProgressView().controlSize(.small);Text(L("正在逐项验证环境，请稍候…"))}
+            if store.checkingEnvironment {
+                VStack(alignment:.leading,spacing:6) {
+                    Text(L("正在逐项验证环境，请稍候…"))
+                    if let task=store.tasks.first(where:{$0.operation=="preflight" && $0.active}) {TaskProgressView(task:task,compact:true)}
+                    else {ProgressView().progressViewStyle(.linear)}
+                }
+            }
             else if store.environmentReady {Label(L("构建与启动环境均已就绪"),systemImage:"checkmark.shield.fill").foregroundStyle(.teal)}
             else if store.runtimeReady {Label(L("可启动已准备的游戏，构建环境仍需修复"),systemImage:"checkmark.circle").foregroundStyle(.secondary)}
             else {Label(L("完成环境检查后再导入游戏"),systemImage:"wrench.and.screwdriver").foregroundStyle(.secondary)}
@@ -380,7 +421,7 @@ struct ToolchainActions: View {
                     .help(store.canUninstallMetal ? L("卸载 Apple 管理的共享组件，可重新安装") : L("当前 Xcode 不支持命令行卸载组件"))
             }
             if let task=store.tasks.first(where:{$0.id==store.executionTask && ["installMetal","uninstallMetal"].contains($0.operation)}) {
-                HStack {ProgressView().controlSize(.small);Text(task.title).font(.caption)}
+                VStack(alignment:.leading) {Text(task.title).font(.caption);TaskProgressView(task:task,compact:true)}
             }
         }
         .alert(L("卸载 Metal 编译组件？"),isPresented:$confirmUninstall) {
@@ -426,7 +467,7 @@ struct EngineSettingsView: View {
                 Button(L("准备引擎工具"),action:store.prepareEngine).disabled(!store.canManageToolchain || (store.preferences.engineDir ?? "").isEmpty)
             }
             if let task=store.tasks.first(where:{$0.id==store.executionTask && $0.operation=="prepareEngine"}) {
-                HStack {ProgressView().controlSize(.small);Text(L(task.stage ?? "准备引擎工具")).font(.caption)}
+                VStack(alignment:.leading) {Text(L(task.stage ?? "准备引擎工具")).font(.caption);TaskProgressView(task:task)}
             }
         }
     }
@@ -467,7 +508,7 @@ struct OnboardingView: View {
                     } else if step==2 {
                         Text(L("先导入 prod.keys，应用才能读取游戏内容。通常只需导入一次，多款游戏可共用这份密钥集合。")).foregroundStyle(.secondary)
                         Button(L("导入 prod.keys…"),action:store.importKeys).buttonStyle(.borderedProminent).tint(.teal).disabled(store.importingKeys)
-                        if store.importingKeys {ProgressView(L("正在检查并导入密钥…")).controlSize(.small)}
+                        if let task=store.tasks.first(where:{$0.operation=="keys" && $0.active}) {TaskProgressView(task:task,compact:true)}
                         Label(L(store.keyStatus),systemImage:store.hasImportedKeys ? "checkmark.circle.fill" : "key").foregroundStyle(store.hasImportedKeys ? Color.teal : .secondary)
                         Text(L("导入时检查格式，首次读取游戏时验证解密能力。密钥仅保存在本机私有目录，源文件保持原样。")).font(.caption).foregroundStyle(.secondary)
                     } else {
@@ -500,9 +541,13 @@ struct OnboardingView: View {
         .onAppear {store.checkEnvironmentAtStartup()}
         .onChange(of:store.hasImportedKeys) { _,ready in if !ready && step==3 {store.onboardingStep=2} }
         .alert(L("操作未完成"),isPresented:Binding(get:{store.error != nil},set:{if !$0 {store.error=nil}})) {
-            Button(L("知道了")) {store.error=nil}
-            Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))}
-        } message:{Text(L(store.error ?? ""))}
+            let diagnostic=store.errorDiagnostic
+            Button(L("知道了"),role:.cancel) {store.error=nil}
+            if let diagnostic {
+                Button(L("查看失败任务")) {store.showFailedTask()}
+                Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
+            } else {Button(L("打开日志")) {store.reveal(store.diagnosticLogURL(nil))}}
+        } message:{Text(store.failureMessage)}
     }
 }
 

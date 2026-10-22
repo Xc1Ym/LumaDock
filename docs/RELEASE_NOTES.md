@@ -1,36 +1,35 @@
-# LumaDock 0.2.5
+# LumaDock 0.2.6
 
-LumaDock is a Mac game launcher for Apple Silicon and macOS 26 or later, built to work with [nxnative](https://github.com/seedds/nxnative).
+LumaDock is a game launcher for Apple Silicon Macs running macOS 26 or later, using a player-selected external [nxnative](https://github.com/seedds/nxnative) source directory.
 
 ## Changes
 
-- **External engine only.** The app, DMG and source archive no longer include nxnative sources, the NSP reader or shader translator. Obtain a complete compatible nxnative source directory yourself, select its root in setup or Settings, then choose **Prepare engine tools**. There is no engine download action. The initial tool build requires the **.NET 10 SDK for macOS Arm64** and may restore NuGet dependencies. Builds use private copies and leave your original source directory unchanged. Generic Python/.NET runtimes and conversion tools remain bundled.
-- **Game language ([#2](https://github.com/Xc1Ym/LumaDock/issues/2)).** Fix the invalid hardcoded `zhHans` code to `zh-Hans`. Choose **Launch language** in game details, or a **Default game language** in Settings. Per-game choices persist independently of the interface language and apply on the next launch without rebuilding or importing firmware. The game and engine must support the selected language.
-- **Setup exit ([#1](https://github.com/Xc1Ym/LumaDock/issues/1)).** Leave incomplete setup with **Set up later / Esc**, or quit normally with **Quit LumaDock / ⌘Q**, including when environment checks fail or are running. Required checks still gate imports and preparation.
-- Validate external source interfaces and fingerprints, isolate private tool caches, and preserve the previous successful runtime after failures. Custom mappings require an external engine implementing `DM_INPUT_CONFIG`; otherwise the editor explains that the engine's own controls apply.
-- Update English/Chinese guides and light-mode screenshots without game content. CI builds the standalone launcher without downloading nxnative.
+- **Actionable errors.** Build failures show the failed stage, error code, suggested repair, redacted compiler output and a link to the specific log. Copy a redacted summary from the alert or task. Diagnostics cover missing Metal/SDK components, shader translation/compilation errors, shader-chain mismatches, disk/permission errors and possible memory exhaustion. Worker startup failures and unexpected exits are also retained.
+- **Shader warnings stay visible.** A shader tool returning success with incomplete shader results produces a warning; no usable shaders stops the build. Warnings survive checkpoint reuse instead of disappearing on retry. A completed build does not guarantee correct graphics in every scene.
+- **Progress across long operations.** A shared linear progress display covers imports, source/copy/cache verification, engine preparation, game/shader builds, IPA export, environment checks, Metal component management, cleanup and diagnostics export. Tasks show measured bytes/files/shaders and percentages when a real total is known; otherwise they show an indeterminate bar, current phase and elapsed time. Progress remains visible outside Tasks and inside setup/Settings. Pure Python work has heartbeats; ordinary messages no longer clear counters.
+- **Generate IPA.** Choose **Generate IPA…** in game details to export an unsigned iPhone/iPad game package. Mac and iOS builds have separate cache identities; iOS shaders are checked before packaging. Export validates archive structure/CRCs and preserves the previous IPA after failure or cancellation. Xcode's iOS platform, Metal compiler and XcodeGen are required. Sign the IPA with your installation tool before installing it.
+- Keep English/Chinese UI and guides synchronized. CI additionally compiles original Metal samples for macOS/iOS, checks real compiler error redaction and builds/validates a small unsigned UIKit fixture IPA. No engine or player content is fetched for these checks.
 
 ## Installation and validation
 
-Download **LumaDock-0.2.5-arm64.dmg**, check `SHA256SUMS`, and drag **LumaDock.app** into Applications. The community build uses **ad-hoc signing and is not notarized**. Preparing games also requires full Xcode and Apple's Metal compiler component; the setup assistant checks their actual state and explains installation.
+Download **LumaDock-0.2.6-arm64.dmg**, verify `SHA256SUMS`, and drag **LumaDock.app** into Applications. Packages use **ad-hoc signing and are not notarized**. Preparing games requires full Xcode, Metal and your own compatible external engine. IPA export additionally needs the iOS platform and XcodeGen (`brew install xcodegen`).
 
-Local validation passed **55 Python tests and 34 Swift Release tests**, actual English/Chinese menu checks, package/signature checks and release-artifact verification. No commercial games were run for this release, so these checks do not establish gameplay or in-game language compatibility with arbitrary external engines. GitHub Actions independently verifies and publishes the tag's DMG, source archive and checksums; local results do not confirm the remote run.
+Local validation passed **78 Python tests and 45 Swift Release tests**, plus English/Chinese UI checks of progress, cancellation/retry, warning/error actions, mapping save and synthetic IPA export. Regression coverage includes library/import/setup flows, keys and source isolation, engine/tool caches, cancellation/retry, input mappings, language/appearance, diagnostics, progress, IPA export and distribution data boundaries. Real Apple tools validate macOS/iOS Metal success and failure paths and a synthetic iOS app archive. These checks do not establish commercial-game preparation, gameplay or physical iPhone/iPad compatibility. See the bundled validation record for the exact scope.
 
-**No games, updates, DLC, firmware, player keys, game artwork, saves or player caches are included.** Import only content you are authorized to use. Experimental native execution can crash, stutter or lose saves; back up important data. The project is not affiliated with or endorsed by Nintendo or any game publisher. Special thanks to **nxnative**, MacNativeGames, d2r-mobile and their contributors; upstream acknowledgements and third-party licenses remain in the README and bundled documentation.
+**No games, updates, DLC, firmware, player keys, game artwork, saves or player caches are included.** Import only content you are authorized to use. Back up important saves. The project is not affiliated with Nintendo or any game publisher. Thanks to nxnative, MacNativeGames, d2r-mobile and their contributors; acknowledgements and third-party licenses remain in the README and bundled guides.
 
 ---
 
 ## 中文说明
 
-璃游 0.2.5 面向 Apple Silicon、macOS 26 及以上。
+璃游 0.2.6 面向 Apple Silicon Mac、macOS 26 及以上，继续使用玩家自行提供的外部 nxnative 源码。
 
-- **改为外部引擎。** 应用、DMG 和源码包不再内置 nxnative 源码、NSP 读取器或着色器翻译器，也没有引擎下载按钮。请自行获取兼容的完整源码，在向导或设置中选择包含 `dm` 和 `scripts` 的根目录，再点击“准备引擎工具”。首次需要 **.NET 10 SDK（macOS Arm64）**，可能恢复 NuGet 依赖。所有构建及适配在私有副本中完成，原目录保持不变；通用 Python/.NET 运行时及转换工具仍随应用提供。
-- **修复游戏语言（[#2](https://github.com/Xc1Ym/LumaDock/issues/2)）。** 将错误的 `zhHans` 改为 `zh-Hans`。游戏详情新增“启动语言”，设置新增“默认游戏语言”；每游戏选择独立保存，与界面语言无关，下次启动生效，无需重新准备或导入固件。实际语言取决于游戏和引擎支持。
-- **修复向导退出（[#1](https://github.com/Xc1Ym/LumaDock/issues/1)）。** 环境失败或检查进行中，也可通过“稍后设置 / Esc”离开，或通过“退出璃游 / ⌘Q”正常退出；必要检查仍会限制导入和准备。
-- 增加外部引擎接口、源码指纹和工具完整性检查，隔离缓存并保留上次成功的运行版本。自定义映射需要引擎提供 `DM_INPUT_CONFIG`；不支持时明确提示并使用引擎默认操作。更新中英文说明及不含游戏内容的浅色截图，CI 不下载 nxnative。
+- **具体报错与修复建议。** 显示失败阶段、错误代码、处理建议和脱敏编译器输出，直接定位对应日志，也可复制错误摘要。区分 Metal/SDK 缺失、着色器转换或编译失败、缓存链不匹配、空间/权限问题及可能的内存不足；工作进程启动失败和异常退出也会保存诊断。
+- **保留着色器警告。** 进程返回成功但着色器结果不完整时显示警告，没有可用着色器时停止构建；缓存复用后仍显示警告。“准备完成”不代表所有场景画面正常。
+- **补齐耗时操作的进度条。** 覆盖导入、源文件/副本/缓存校验、引擎准备、游戏与着色器构建、IPA 导出、环境检查、Metal 组件管理、清理和诊断导出。可计数时显示实际字节、文件、着色器数量和百分比；总量未知时使用线形不定进度条，并显示阶段及已用时间。其他页面、设置及向导中也能查看进度，普通消息不会清空计数，纯 Python 任务持续发送心跳。
+- **一键生成 IPA。** 游戏详情点击“生成 IPA…”即可导出未签名 iPhone/iPad 游戏包。Mac/iOS 缓存隔离，检查 iOS 着色器、IPA 结构及 CRC；失败或取消保留上次 IPA。需要 Xcode iOS 平台、Metal 组件和 XcodeGen；安装到设备前仍需自行签名。
+- 同步中英文界面和文档；CI 新增 macOS/iOS 实际 Metal 成功/失败诊断及原创 UIKit 样例 IPA 构建校验，不下载引擎或玩家内容。
 
-下载 **LumaDock-0.2.5-arm64.dmg**，核对校验和后拖入“应用程序”。安装包采用本地 ad-hoc 签名，**尚未公证**；准备游戏还需要完整 Xcode 和 Metal 编译组件，向导会检查实际状态并提供安装方法。
+下载 **LumaDock-0.2.6-arm64.dmg**，核对 `SHA256SUMS` 后拖入“应用程序”。安装包采用 **ad-hoc 签名，尚未公证**。本地通过 **78 项 Python、45 项 Swift Release 测试**，以及中英文进度、取消/重试、错误/警告、映射保存及合成 IPA 导出的实际界面检查。回归检查覆盖启动器各工作流程、取消与重试、设置、进度、诊断及数据边界，并使用真实 Apple 编译器与合成 iOS 应用验证；不代表商业游戏准备、游玩或 iPhone/iPad 真机兼容性验收。具体范围见随包验收记录。
 
-本地通过 **55 项 Python、34 项 Swift Release 测试**，以及中英文实际菜单、应用签名与发行产物校验。本次未运行商业游戏，不能据此声称任意外部引擎的游玩或游戏内语言验收通过。标签流水线独立校验并发布 DMG、源码包和校验和；本地结果不代表远端已成功。
-
-项目不附带游戏、更新、DLC、固件、玩家密钥、游戏封面、存档或玩家缓存；仅导入有权使用的内容。实验性运行可能崩溃、卡顿或丢失存档，请备份重要数据。项目与 Nintendo 及游戏发行商无隶属或认可关系。特别感谢 nxnative、MacNativeGames、d2r-mobile 及其贡献者；README 与随包文档保留上游致谢、风险及第三方许可。
+项目不附带游戏、更新、DLC、固件、玩家密钥、游戏封面、存档或玩家缓存；仅导入有权使用的内容，并备份重要存档。项目与 Nintendo 及游戏发行商无隶属或认可关系。感谢 nxnative、MacNativeGames、d2r-mobile 及贡献者；README 与随包文档保留上游致谢和第三方许可。

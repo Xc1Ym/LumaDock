@@ -17,7 +17,7 @@ import json, pathlib, sys
 r=json.loads(pathlib.Path(sys.argv[2]).read_text())
 root=pathlib.Path(r['resources']).parent
 with (root/'operations.jsonl').open('a') as f:
-    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed'),'engineDir':r.get('engineDir'),'gameLanguage':r.get('gameLanguage')})+'\n')
+    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed'),'engineDir':r.get('engineDir'),'gameLanguage':r.get('gameLanguage'),'outputPath':r.get('outputPath')})+'\n')
 if r['operation']=='catalog':
     result=json.loads((root/'catalog.json').read_text())
 elif r['operation']=='import':
@@ -68,6 +68,45 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         try FileManager.default.removeItem(at:store.privateRoot.appendingPathComponent("keys/prod.keys"))
         store.addGames([root.appendingPathComponent("中文 游戏.nsp")])
         XCTAssertFalse(store.hasImportedKeys);XCTAssertEqual(store.onboardingStep,2)
+        XCTAssertTrue(operations(root).isEmpty)
+        await cleanup(root,store)
+    }
+    func testIPARetryKeepsExportOperationAndDestination() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true
+        try configure(root,games:[game("g1")],imports:[])
+        store.games=[Store.decode(Game.self,game("g1"))!]
+        let output=root.appendingPathComponent("中文 游戏.ipa").path
+        let task=TaskRecord(id:"failed-ipa",operation:"exportIPA",state:"failed",gameId:"g1",outputPath:output)
+        store.retry(task)
+        XCTAssertEqual(store.selection,"tasks")
+        XCTAssertEqual(store.tasks.first?.operation,"exportIPA")
+        XCTAssertEqual(store.tasks.first?.outputPath,output)
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String == "exportIPA"} && !store.executionBusy}
+        let exports=operations(root).filter{$0["operation"] as? String == "exportIPA"}
+        XCTAssertEqual(exports.count,1)
+        XCTAssertEqual(exports.first?["outputPath"] as? String,output)
+        XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "build"})
+        await cleanup(root,store)
+    }
+    func testLibraryRefreshProgressEndsOnSuccessAndBootstrapFailure() async throws {
+        let (root,store)=try fixture()
+        try configure(root,games:[game("g1")],imports:[])
+        store.refresh();XCTAssertTrue(store.refreshingLibrary)
+        try await waitUntil {!store.refreshingLibrary && store.games.count==1}
+        try FileManager.default.removeItem(at:store.resources.appendingPathComponent("Runtime/python/bin/python3"))
+        store.refresh();XCTAssertFalse(store.refreshingLibrary);XCTAssertNotNil(store.error)
+        XCTAssertTrue(store.tasks.contains{$0.operation=="catalog" && $0.state=="failed" && $0.diagnostics?.isEmpty==false})
+        await cleanup(root,store)
+    }
+    func testIPAExportWaitsForGameAndPreparationQueue() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true
+        let selected=Store.decode(Game.self,game("g1"))!
+        store.executionTask="running-game"
+        store.generateIPA(selected,destination:root.appendingPathComponent("test.ipa"))
+        XCTAssertTrue(store.tasks.isEmpty)
+        store.executionTask=nil;store.queue=["g2"]
+        store.generateIPA(selected,destination:root.appendingPathComponent("test.ipa"))
+        XCTAssertTrue(store.tasks.isEmpty)
         XCTAssertTrue(operations(root).isEmpty)
         await cleanup(root,store)
     }

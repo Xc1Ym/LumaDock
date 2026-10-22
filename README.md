@@ -24,6 +24,9 @@ Set **Launch language** in game details, or choose **Settings → Game language 
 - **External engine selection.** Validate the directory and prepare its reader in a private cache. Your sources stay unchanged; content fingerprints isolate builds when engines change.
 - **One game library.** Import NSPs or scan a folder. Identify base games, updates, and DLC from their content metadata. Drag and drop, multiple selection, Unicode paths, and duplicate checks are supported.
 - **Automated preparation.** Extract, merge updates, process DLC, rewrite code, translate and compile shaders, then build the Mac host. Track stages, cancel tasks, validate caches, and retry.
+- **One-click IPA export.** Export an unsigned iPhone / iPad game package from game details. Build iOS shaders and the app automatically, then reveal the finished IPA in Finder.
+- **Actionable build errors.** See the failed stage, cause, exit status and exact log, or copy a redacted summary. Partial shader failures remain visible as warnings, including after cache reuse.
+- **Progress throughout.** Imports, engine preparation, game/shader builds, IPA export, checks, component management, cleanup and diagnostics share linear progress bars in Tasks, setup, Settings and the global task banner. Real totals show percentages; unknown totals show activity, counters and elapsed time.
 - **A native Mac interface.** SwiftUI / AppKit, Liquid Glass, light and dark appearance, and an opaque fallback for Reduce Transparency.
 - **Separate player data.** Original files, managed copies, runtime files, caches, and saves are kept separate. A failed preparation preserves the last successful runtime version.
 
@@ -64,7 +67,7 @@ Import the base game, the specified update, and any DLC you want to use. Title I
 
 You need an **Apple Silicon Mac, macOS 26 or later, and a full Xcode installation with the Metal compiler component**. The current tested setup is an M5 Pro running macOS 27.0.1 with Xcode 27.1; the app has not been revalidated on a physical Mac running macOS 26. Allow tens of gigabytes of free space for large games; requirements vary with the game and its caches.
 
-**1. Install LumaDock.** Open `LumaDock-0.2.5-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
+**1. Install LumaDock.** Open `LumaDock-0.2.6-arm64.dmg` and drag `LumaDock.app` into Applications. Current packages use local ad-hoc signing and are not Developer ID signed or notarized. If macOS blocks the first launch, verify the source and `SHA256SUMS` before using the opening procedure offered in Privacy & Security.
 
 **2. Prepare the environment first.** The first setup step checks Apple Silicon, macOS, full Xcode, Metal, bundled components, and available space. The Xcode button opens its [Mac App Store page](https://apps.apple.com/app/xcode/id497799835) directly. Install missing Apple tools using the instructions in the wizard, then recheck; the next step stays locked until checks pass. Metal can be installed using [Apple's supported method](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). Generic Python, Python extensions, the .NET runtime, SPIRV-Cross and Zstandard are bundled. nxnative and its translator are external. Select the source root containing `dm` and `scripts`, then choose **Prepare engine tools**. The first reader build needs the official **.NET 10 SDK for macOS Arm64** and may restore LibHac from NuGet. The SDK is not needed once a complete tool cache is available. LumaDock does not install or download nxnative.
 
@@ -81,6 +84,18 @@ Settings also provides Metal component removal when supported by the selected Xc
 
 ## Saves and files
 
+### Export an iPhone / iPad IPA
+
+After environment setup and importing the base game, updates and DLC matching the engine profile, choose **Generate IPA…** in game details and select a destination outside the managed library. Preparing a Mac runtime first is not required. The export appears in Tasks with cancellation and retry support. Successful exports are revealed in Finder; the completed task also provides a Finder button.
+
+Install the **iOS platform and Metal compiler** in the selected Xcode, plus **XcodeGen** (`brew install xcodegen`). These extra requirements apply only to IPA export; missing components produce repair instructions and do not block Mac-only preparation or gameplay. Allow at least twice the imported NSP size plus 10 GB on the build-cache disk, with additional room for the finished IPA on its destination disk.
+
+Mac and iOS use separate build caches. Export cannot run alongside a game or another build; wait for the preparation queue to finish first. Cancellation or failure preserves the previous IPA, Mac runtime and saves. If an upgrade invalidates the engine-tool cache, choose **Prepare engine tools** again in Settings.
+
+The result is an **unsigned IPA**. Sign it with your own installation tool before installing it. Device, OS, memory and game compatibility depend on the selected nxnative sources. Historical Mac gameplay records do not validate iPhone / iPad gameplay. Mac keyboard/mouse mappings are not exported; the engine supplies iOS controls.
+
+### Mac library files
+
 | Path inside your chosen library | Contents |
 | --- | --- |
 | `sources/` | Managed copies of imported NSPs |
@@ -95,6 +110,8 @@ Keys and launcher preferences are stored in the private application directory, `
 Removing a game from the library removes its registration while retaining files and saves. Deleting managed NSP copies and clearing caches require separate confirmation; neither deletes original files or saves. **Back up your saves separately before upgrading, migrating, or experimenting.**
 
 ## Known limitations
+
+When a task fails, choose **View failed task** to see suggested repairs and open the **specific log file**. **Copy error summary** includes the error code, failed stage and redacted compiler output. Diagnostics distinguish missing Metal/SDK components, shader translation/compilation failures, chain mismatches, disk/permission problems and possible memory exhaustion. Raw logs remain local; review them before sharing. A build with no successful shaders stops. Partial failures are marked **Completed with warnings** and do not establish correct graphics in every game scene.
 
 - Engine interfaces can change. Incomplete or incompatible directories are rejected. A checkout without `DM_INPUT_CONFIG` uses its own controls; the mapping editor explicitly reports this limitation.
 
@@ -128,7 +145,7 @@ work/python-venv/bin/python -B scripts/verify_release.py
 
 Outputs are placed in `release/`: the app, DMG, source ZIP, `SHA256SUMS`, and a distribution audit. Building a distribution does not require nxnative, games, or keys. CI uses original synthetic engine-interface fixtures and does not fetch an engine. Actual bundled dependency versions are recorded in `Runtime/versions.json` inside the app. Homebrew and toolchain versions depend on the build environment; byte-for-byte reproducibility is not currently guaranteed.
 
-[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.5`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
+[GitHub CI](.github/workflows/ci.yml) runs on main/master pushes, version tags, pull requests, or manual dispatch. A macOS ARM64 runner tests, builds, ad-hoc signs, and verifies packages. Artifacts are retained for 14 days. A tag matching `product.json` (for example `v0.2.6`) publishes a GitHub Release only after the Mac job and checksum validation succeed. Ordinary branch and pull-request runs do not publish releases. CI does not run commercial games or replace physical hardware validation. See the [release preparation guide](docs/发布准备.md) (Chinese).
 
 Use the ignored `work/` directory for development and private tests. `--data-root <directory>` isolates application data. Do not commit `work/`, `release/`, `Runtime`, or any player data.
 

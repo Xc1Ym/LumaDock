@@ -152,10 +152,12 @@ def adapt_snapshot(repo):
             def visit_For(self, node):
                 self.generic_visit(node)
                 if isinstance(node.iter, ast.Tuple) and [getattr(v, 'value', None) for v in node.iter.elts] == ['macosx', 'iphoneos']:
-                    node.iter.elts = [ast.Constant('macosx')]; self.count += 1
+                    node.iter = ast.parse("('macosx',) if os.environ.get('DM_MAC_ONLY') == '1' else ('macosx', 'iphoneos')", mode='eval').body
+                    self.count += 1
                 return node
         rewrite = MacOnly(); tree = rewrite.visit(tree)
         if rewrite.count != 1: raise Failure('所选 nxnative 的 Metal 工具链接口不兼容。')
+        tree.body.insert(0, ast.Import(names=[ast.alias(name='os')]))
         chain.write_text(ast.unparse(ast.fix_missing_locations(tree))+'\n')
 
 def prepare(c):
@@ -174,9 +176,11 @@ def prepare(c):
         try:
             c.begin('复制引擎到私有工作目录', 2, 3)
             repo = stage/'source'; repo.mkdir()
-            for path in source_files(c.engine):
+            files=list(source_files(c.engine));total=sum(path.stat().st_size for path in files);done=0
+            for path in files:
                 c.check(); dest=repo/path.relative_to(c.engine); dest.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(path,dest)
                 dest.chmod(dest.stat().st_mode | 0o600)
+                done+=path.stat().st_size;c.progress(done,total)
             if source_hash(repo) != info['sourceHash']: raise Failure('复制期间引擎源码发生变化，请重新准备。')
             adapt_snapshot(repo)
             atomic(repo/'global.json', {'sdk':{'version':version,'rollForward':'latestPatch','allowPrerelease':False}})

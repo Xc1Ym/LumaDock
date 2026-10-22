@@ -43,4 +43,4 @@ Removing a game from the library retains files and saves. Managed-copy deletion 
 
 LumaDock includes no games, updates, DLC, firmware, keys, game artwork, or player caches. Import only content you are authorized to use. Native preparation is not a guarantee of full compatibility. Crashes, graphics problems, stutters, and save loss remain possible.
 
-For tested games, upstream acknowledgements, licenses, limitations, and issue reporting, see the [project README](https://github.com/Xc1Ym/LumaDock#readme) and the included third-party notices. Never upload games, keys, firmware, saves, or private caches with a bug report; review exported diagnostics for private paths before sharing.
+For upstream acknowledgements, licenses and issue reporting, see the [project README](https://github.com/Xc1Ym/LumaDock#readme) and the included third-party notices. Historical test scope is recorded in the [validation record](验收记录.md) (Chinese), without guaranteeing compatibility with another engine or device. Never upload games, keys, firmware, saves, or private caches with a bug report; review exported diagnostics for private paths before sharing.

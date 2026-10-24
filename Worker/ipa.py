@@ -11,6 +11,7 @@ import sys
 import uuid
 import zipfile
 from core import Failure, chain_of, clone, digest, read
+import milestones as ms
 
 IOS_FILES = ('dm/ios/tools/build_ipa.sh', 'dm/ios/tools/pack_ipa.py',
              'dm/ios/tools/ios_metal.py', 'dm/ios/project.yml', 'dm/ios/Sources/main.m')
@@ -119,9 +120,9 @@ def package(c, root, repo, env, gp, selected, patched, shaders, aoc, up=None):
     try:c.run(['bash', repo/'dm/ios/tools/build_ipa.sh', built], root/'logs/build_ipa.log', packing,on_line=line)
     finally:
         if watch:up.PROG.watch(None)
-    c.begin('验证 IPA 完整性')
+    ms.enter(c,'ipa_check','验证 IPA 完整性')
     validate(built, c)
-    c.begin('导出 IPA')
+    ms.enter(c,'ipa_export','导出 IPA')
     # Copy to the destination volume before the atomic replace; cancellation keeps
     # any previous export, Mac release and saves intact.
     temporary = out.with_name('.'+out.name+'.'+uuid.uuid4().hex+'.partial')

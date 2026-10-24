@@ -21,6 +21,8 @@ struct TaskRecord: Codable, Identifiable {
     var outputPath: String?
     var outputFiles: [String]?
     var conversion: ConversionJob?
+    var milestones:[Milestone]?; var milestone:String?; var milestoneStarted:[String:Double]?
+    var milestoneCached:[String]?
     var diagnostics: [TaskDiagnostic]?
     var hasWarnings: Bool { diagnostics?.contains(where:\.isWarning) == true }
     var progressFraction: Double? {

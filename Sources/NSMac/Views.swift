@@ -235,9 +235,10 @@ struct TaskCard: View {
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             HStack { Label(task.title,systemImage:task.state=="failed" || task.hasWarnings ? "exclamationmark.triangle.fill" : task.state=="completed" ? "checkmark.circle.fill" : "circle.dotted").font(.headline); Text(store.games.first(where:{$0.id==task.gameId})?.name ?? "").lineLimit(1);Spacer();Text(task.stateName).foregroundStyle(task.hasWarnings ? .orange : .secondary) }
-            if let stage=task.stage { Text(L(stage)).font(.callout) }
+            let milestoneLabel=task.active ? task.milestones?.first(where:{$0.id==task.milestone})?.label:nil
+            if let stage=task.stage,stage != milestoneLabel { Text(L(stage)).font(.callout) }
             if task.active {TaskProgressView(task:task)}
-            if let msg=task.message,!msg.isEmpty,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+            if let msg=task.message,!msg.isEmpty,msg != task.stage,msg != milestoneLabel,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
             ForEach(task.diagnostics ?? []) {diagnostic in TaskDiagnosticCard(diagnostic:diagnostic)}
             if task.operation=="exportIPA",task.state=="completed",let path=task.outputPath {
                 Button(L("在访达中查看 IPA")) {store.reveal(URL(fileURLWithPath:path))}

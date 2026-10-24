@@ -175,6 +175,12 @@ class IPATests(unittest.TestCase):
     def test_nvn_pipeline_builds_ios_shaders_without_installing_mac_runtime(self):
         self.pipeline('nvn')
 
+    def test_legacy_header_keeps_ios_progress_separate_from_mac_cache(self):
+        (self.engine/'dm/gfx/nvn/dmsh_chain.h').rename(self.profile/'dmsh_chain.h')
+        self.pipeline('nvn')
+        self.assertEqual(self.c.milestone,'ipa')
+        self.assertIn('shaders',[row['id'] for row in self.c.milestones])
+
     def pipeline(self, graphics):
         self.graphics=graphics
         source=self.c.library/'sources/base.nsp';source.parent.mkdir();source.write_text('original synthetic NSP')
@@ -188,7 +194,10 @@ class IPATests(unittest.TestCase):
         def split(py,repo,roms,mains,out,*args):
             out.mkdir(parents=True);(out/'shader.bin').write_text('synthetic shader package')
         (self.profile/'shader_map.tsv').write_text('main.bin\t0\t0\tkey\tfixture\n')
-        upstream=SimpleNamespace(extract=extract,rewrite=rewrite,split_shaders=split,PROG=SimpleNamespace(stage=lambda *a,**kw:None,watch=lambda *a:None))
+        polls=[]
+        def stage(*args,**kwargs):
+            if kwargs.get('poll'):polls.append(kwargs['poll'])
+        upstream=SimpleNamespace(extract=extract,rewrite=rewrite,split_shaders=split,PROG=SimpleNamespace(stage=stage,watch=lambda *a:None))
         calls=[];environments=[]
         def run(args,*a,**kw):
             calls.append([str(x) for x in args]);environments.append(a[1])
@@ -202,6 +211,9 @@ class IPATests(unittest.TestCase):
                     directory=path/'b-fixture';directory.mkdir(parents=True)
                     (directory/'key_b.metallib').write_text('synthetic shader')
                     atomic(directory/'key_b.json',dict(chain='fixture',chain_metal='xcrun -sdk '+sdk))
+                    # A completed Mac cache must not finish iOS shader progress.
+                    if sdk=='macosx':self.assertEqual(polls[-1]()['done'],0)
+                self.assertEqual(polls[-1]()['done'],1)
         prepared=(self.work,self.engine,self.c.env(),upstream,self.gp,'ios-fixture')
         with patch('build.prepare',return_value=prepared) as prepare,patch.object(self.c,'nx',return_value=self.root/'reader'),patch.object(self.c,'run',side_effect=run),patch('ipa.package',return_value={'signed':False}) as package,patch('build.install') as install:
             result=self.quiet(build.build,self.c,target='ios')

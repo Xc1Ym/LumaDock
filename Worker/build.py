@@ -4,6 +4,7 @@ import importlib.util, json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
 from core import *
 from library import requirements, inspect
+import milestones as ms
 
 class ShaderProgress:
     """Count only finished reflection/library pairs; do not infer progress from queue order."""
@@ -35,8 +36,9 @@ class Stages:
             out[str(p.relative_to(self.root))]=[size,digest(p,lambda n,t:self.c.progress(done+n,total))];done+=size
         if not out: raise Failure('阶段没有生成完整产物，未记录成功缓存。')
         return out
-    def run(self,name,paths,fn):
-        self.c.begin(name)
+    def run(self,name,paths,fn,milestone=None):
+        if milestone: ms.enter(self.c,milestone,name)
+        else: self.c.begin(name)
         old=self.saved.get(name)
         valid=bool(old);done=0;total=sum(v[0] for v in old.values()) if old else 0
         if old:
@@ -45,6 +47,7 @@ class Stages:
                 if not path.is_file() or path.stat().st_size!=v[0] or digest(path,lambda n,t:self.c.progress(done+n,total))!=v[1]:valid=False;break
                 done+=v[0]
         if valid:
+            ms.cached(self.c)
             for warning in self.warnings.get(name,[]): self.c.report(warning)
             self.c.emit('cache','已验证并复用完成阶段',done=1,total=1); return
         for p in paths:
@@ -199,11 +202,9 @@ def build(c,target='macos'):
         root,repo,env,up,gp,key=prepare(c,g,target); logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
         versions=list(dict.fromkeys(gp.words('shader_versions',gp.get('package'))+[gp.get('package')]))
         capture_gl=gp.get('shader_glslc_capture','off')=='on'; capture_vk=gp.get('shader_vk_capture','off')=='on'; vk=gp.get('graphics','nvn')=='vulkan'
-        c.count=1+len(versions)+1+1+int(capture_gl)+int(capture_vk)+(1 if vk else 2)+1+1
-        c.count+=1
-        if target=='ios': c.count+=3
+        ms.plan(c,g,target,versions,gp,read(root/'identity.json',{}))
         base=next(x for x in g['packages'] if x['type']=='base' and x['version']==0)
-        c.begin('校验游戏源文件');source_total=sum(x['size'] for x in g['packages']);source_done=0
+        ms.enter(c,'verify','校验游戏源文件');source_total=sum(x['size'] for x in g['packages']);source_done=0
         for x in g['packages']:
             c.check(); p=c.library/x['path']
             if not p.is_file() or digest(p,lambda n,t:c.progress(source_done+n,source_total))!=x['sha256']: raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
@@ -211,19 +212,19 @@ def build(c,target='macos'):
         needed=sum(x['size'] for x in g['packages'])*2+(10 if target=='ios' else 3)*2**30
         if shutil.disk_usage(c.library).free<needed and not st.saved: raise Failure(f'准备游戏需要约 {needed/2**30:.0f} GB 可用空间。')
         dirs={}
-        for ver in versions:
+        for index,ver in enumerate(versions):
             upd=next((c.library/x['path'] for x in g['packages'] if x['type']=='update' and f"v{x['version']}"==ver),None)
             d=root/'extract'/ver; dirs[ver]=d
-            st.run('解包与合并 '+ver,[d],lambda ver=ver,upd=upd: up.extract(c.nx(),c.keys,root/'extract',ver,c.library/base['path'],upd,None,logs,gp))
+            st.run('解包与合并 '+ver,[d],lambda ver=ver,upd=upd: up.extract(c.nx(),c.keys,root/'extract',ver,c.library/base['path'],upd,None,logs,gp),milestone=f'unpack-{index}')
         aoc=root/'aoc'; dlcs=[(int(x['titleId'],16),x['version'],c.library/x['path']) for x in g['packages'] if x['type']=='dlc']
         def dlc():
             if dlcs: up.extract_aoc(c.nx(),c.keys,repo,root,int(gp.id,16),{'dlc':dlcs},logs)
             else: aoc.mkdir(); (aoc/'.empty').write_text('no DLC')
-        st.run('处理 DLC',[aoc],dlc)
+        st.run('处理 DLC',[aoc],dlc,milestone='dlc')
         patched=root/('patched_'+gp.get('package')); selected=dirs[gp.get('package')]
-        st.run('重写原生代码',[patched],lambda:up.rewrite(sys.executable,repo,selected/'ExeFS',patched,env,logs,gp))
-        if capture_gl: st.run('采集运行时 GLSLC 着色器',[selected/'glslc_capture'],lambda:up.capture_glslc(repo,dirs,gp.get('package'),patched,root,env,logs,gp))
-        if capture_vk: st.run('采集运行时 Vulkan 着色器',[selected/'vk_capture'],lambda:up.capture_vk(repo,selected,patched,root,env,logs,gp))
+        st.run('重写原生代码',[patched],lambda:up.rewrite(sys.executable,repo,selected/'ExeFS',patched,env,logs,gp),milestone='rewrite')
+        if capture_gl: st.run('采集运行时 GLSLC 着色器',[selected/'glslc_capture'],lambda:up.capture_glslc(repo,dirs,gp.get('package'),patched,root,env,logs,gp),milestone='capture_gl')
+        if capture_vk: st.run('采集运行时 Vulkan 着色器',[selected/'vk_capture'],lambda:up.capture_vk(repo,selected,patched,root,env,logs,gp),milestone='capture_vk')
         sh=root/'shader'; sh.mkdir(exist_ok=True)
         if vk:
             roots=[selected/'RomFS']+([selected/'vk_capture'] if capture_vk else [])
@@ -232,24 +233,26 @@ def build(c,target='macos'):
                 if target=='ios':
                     from ipa import validate_shaders
                     validate_shaders(sh/'ios',gp,repo)
-            st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders)
+            st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders,milestone='shaders')
         else:
-            st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp))
+            st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp),milestone='extract')
             def shaders():
-                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'cache'))
+                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'ios' if target=='ios' else sh/'cache'))
                 try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)
                 finally: up.PROG.watch(None)
                 if target=='ios':
                     from ipa import validate_shaders
                     validate_shaders(sh/'ios',gp,repo)
-            st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders)
+            st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders,milestone='shaders')
         if target == 'ios':
             from ipa import package
-            c.begin('编译 iOS 应用并生成 IPA')
-            return package(c,root,repo,env,gp,selected,patched,sh/'ios',aoc,up=up)
-        st.run('编译 Mac 主程序',[root/'tools/dmhost'],lambda:compile_host(c,up,repo,env,root,gp))
-        c.begin('检查并安装运行版本')
-        return install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if vk else sh/'cache',aoc)
+            ms.enter(c,'ipa')
+            result=package(c,root,repo,env,gp,selected,patched,sh/'ios',aoc,up=up)
+            ms.record(c);return result
+        st.run('编译 Mac 主程序',[root/'tools/dmhost'],lambda:compile_host(c,up,repo,env,root,gp),milestone='host')
+        ms.enter(c,'install')
+        result=install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if vk else sh/'cache',aoc)
+        ms.record(c);return result
 
 def migrate(c):
     with c.lock('execution'):

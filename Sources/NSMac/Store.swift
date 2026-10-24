@@ -451,6 +451,18 @@ final class WorkerOutput: @unchecked Sendable {
             if let index=checks.firstIndex(where:{$0.id==check.id}) {checks[index]=check} else {checks.append(check)}
         }
         if let i = tasks.firstIndex(where:{$0.id == id}) {
+            if e["type"] as? String == "plan",let plan=Self.decode([Milestone].self,e["milestones"]),!plan.isEmpty,plan.allSatisfy(\.valid),Set(plan.map(\.id)).count==plan.count {
+                tasks[i].milestones=plan;tasks[i].milestone=nil;tasks[i].milestoneStarted=[:]
+                tasks[i].done=nil;tasks[i].total=nil;tasks[i].unit=nil
+            }
+            if let current=e["milestone"] as? String,tasks[i].milestones?.contains(where:{$0.id==current})==true {
+                tasks[i].milestone=current
+                var starts=tasks[i].milestoneStarted ?? [:]
+                if let incoming=e["milestoneStarted"] as? [String:Double] {starts.merge(incoming.filter{$0.value.isFinite}){_,new in new}}
+                if starts[current]==nil {starts[current]=Date().timeIntervalSince1970}
+                tasks[i].milestoneStarted=starts
+            }
+            if let cached=e["milestoneCached"] as? [String] {tasks[i].milestoneCached=cached}
             if let stage=e["stage"] as? String {tasks[i].stage=stage}
             if let index=e["stageIndex"] as? Int {tasks[i].stageIndex=index}
             if let count=e["stageCount"] as? Int {tasks[i].stageCount=count}

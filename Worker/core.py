@@ -106,12 +106,20 @@ class Context:
             if done is not None: event['done'] = done
             if total and total > 0: event['total'] = total
             event.update(kw)
+            if getattr(self,'milestones',None):
+                event['milestone']=self.milestone
+                event['milestoneCached']=sorted(self.milestone_cached)
+                if kind in ('stage','plan'):event['milestoneStarted']=dict(self.milestone_started)
             print(json.dumps(event, ensure_ascii=False), flush=True)
     def begin(self, name, number=None, count=None):
         self.check(); self.stage = name; self.stage_t = time.monotonic()
-        if number is not None: self.number = number
-        else: self.number += 1
-        if count is not None: self.count = count
+        ids=[row['id'] for row in getattr(self,'milestones',[])]
+        if getattr(self,'milestone',None) in ids:
+            self.number=ids.index(self.milestone)+1;self.count=len(ids)
+        else:
+            if number is not None: self.number = number
+            else: self.number += 1
+            if count is not None: self.count = count
         self.job.update(stage=name, stageIndex=self.number, stageCount=self.count); atomic(self.jobpath, self.job)
         self.emit('stage', name)
     def check(self):

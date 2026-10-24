@@ -96,6 +96,14 @@ struct MilestoneProgressView:View {
         let safe=min(Double(Int64.max-1024),max(0,value))
         return task.unit=="B" ? ByteCountFormatter.string(fromByteCount:Int64(safe),countStyle:.file):String(format:"%.0f",safe)
     }
+    private func counterText(done:Double,total:Double,fraction:Double)->String {
+        let labels:[String:String]=["files":"个文件","shaders":"个着色器","checks":"项检查"]
+        let label=labels[task.unit ?? ""] ?? ""
+        var text="\(amount(min(done,total))) / \(amount(total))"
+        if !label.isEmpty {text += " \(L(label))"}
+        text += " · \(Int(fraction*100))%"
+        return text
+    }
     var body:some View {
         TimelineView(.periodic(from:.now,by:1)) {timeline in
             let estimate=MilestoneEstimate(plan:plan,current:task.milestone,started:task.milestoneStarted ?? [:],fraction:task.progressFraction,now:timeline.date.timeIntervalSince1970,cached:Set(task.milestoneCached ?? []))
@@ -125,8 +133,7 @@ struct MilestoneProgressView:View {
                     }.font(compact ? .caption:.callout)
                     HStack(alignment:.firstTextBaseline) {
                         if let fraction=task.progressFraction,let done=task.done,let total=task.total {
-                            let label=["files":"个文件","shaders":"个着色器","checks":"项检查"][task.unit ?? ""] ?? ""
-                            Text(amount(min(done,total))+" / "+amount(total)+(label.isEmpty ? "":" "+L(label))+" · \(Int(fraction*100))%").monospacedDigit()
+                            Text(counterText(done:done,total:total,fraction:fraction)).monospacedDigit()
                         } else {Text(L("本步总量暂不可确定"))}
                         Spacer(minLength:8)
                         if let remaining=estimate.remaining {Text(L("预计还需 ")+milestoneDuration(remaining)).monospacedDigit()}

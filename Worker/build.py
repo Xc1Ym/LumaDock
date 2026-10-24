@@ -202,7 +202,7 @@ def build(c,target='macos'):
             st.run('解包与合并 '+ver,[d],lambda ver=ver,upd=upd: up.extract(c.nx(),c.keys,root/'extract',ver,c.library/base['path'],upd,None,logs,gp))
         aoc=root/'aoc'; dlcs=[(int(x['titleId'],16),x['version'],c.library/x['path']) for x in g['packages'] if x['type']=='dlc']
         def dlc():
-            if dlcs: up.extract_aoc(c.nx(),c.keys,root,int(gp.id,16),{'dlc':dlcs},logs)
+            if dlcs: up.extract_aoc(c.nx(),c.keys,repo,root,int(gp.id,16),{'dlc':dlcs},logs)
             else: aoc.mkdir(); (aoc/'.empty').write_text('no DLC')
         st.run('处理 DLC',[aoc],dlc)
         patched=root/('patched_'+gp.get('package')); selected=dirs[gp.get('package')]

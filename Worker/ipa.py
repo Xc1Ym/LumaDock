@@ -85,7 +85,7 @@ def validate_shaders(path, gp, repo):
     if gp.get('graphics','nvn') == 'vulkan':
         if (path/'vk/vk_shaders.metallib').is_file(): return
     else:
-        chain = chain_of(repo)
+        chain = chain_of(repo,gp)
         directory = path/('b-'+chain)
         reflections = list(directory.glob('*_b.json'))
         if reflections and all(p.with_suffix('.metallib').is_file() and read(p,{}).get('chain') == chain and 'iphoneos' in read(p,{}).get('chain_metal','') for p in reflections): return
@@ -101,7 +101,7 @@ def package(c, root, repo, env, gp, selected, patched, shaders, aoc, up=None):
     font = next((p for p in (Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'), Path('/System/Library/Fonts/Helvetica.ttc')) if p.is_file()), None)
     if font is None: raise Failure('找不到本机系统字体。')
     if gp.get('graphics','nvn') != 'vulkan':
-        chain = chain_of(repo)
+        chain = chain_of(repo,gp)
         c.run([sys.executable, Path(__file__).parent/'c1_generate.py', repo/'dm/gfx/tools/c1_guard.py',
                root/'shader/cache'/('b-'+chain), gp.table('c1_full.tsv')], root/'logs/c1.log', env)
     packing = dict(env, GAME=gp.id, W=str(root/'ipa/work'), PATCHED=str(patched),

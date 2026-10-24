@@ -12,7 +12,7 @@ class ShaderProgress:
         for line in g.table('shader_map.tsv').read_text().splitlines():
             columns=line.split('\t')
             if len(columns)>4 and (columns[0].endswith('.bin') or columns[0].startswith('main.rodata@')):self.keys.add(columns[3])
-        chain=chain_of(repo)
+        chain=chain_of(repo,g)
         self.path=Path(cache)/('b-'+chain)
     def __call__(self):
         names=set(os.listdir(self.path)) if self.path.is_dir() else set()
@@ -97,11 +97,11 @@ def chain_tools(c,repo,env,root):
     lock=repo/'dm/gfx/tools/dmsh_chain.lock'
     if not lock.is_file() or 'missing' in lock.read_text(): raise Failure('Metal 工具链不可用，无法创建一致的着色器链。')
 
-def ensure_chain_header(c,root,repo,env,tc):
+def ensure_chain_header(c,root,repo,env,tc,gp=None):
     """A hand-patched or damaged engine copy can exit cleanly without writing the header (issue #9)."""
-    if chain_of(repo): return
+    if chain_of(repo,gp): return
     refresh_engine(c,root,tc); chain_tools(c,repo,env,root)
-    if not chain_of(repo): raise Failure('着色器链头文件仍未生成，请查看 toolchain.log；若 nxnative 与当前版本不兼容，请更新后删除该游戏缓存重试。')
+    if not chain_of(repo,gp): raise Failure('着色器链头文件仍未生成，请查看 toolchain.log；若 nxnative 与当前版本不兼容，请更新后删除该游戏缓存重试。')
 
 
 def prepare(c,g,target='macos'):
@@ -123,7 +123,7 @@ def prepare(c,g,target='macos'):
     spec=importlib.util.spec_from_file_location('nsmac_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
     sys.path.insert(0,str(repo/'dm/games')); import game
     game.HERE=repo/'dm/games'; gp=game.load(g['id'])
-    ensure_chain_header(c,root,repo,env,tc)
+    ensure_chain_header(c,root,repo,env,tc,gp)
     class Bridge(up.Progress):
         def __init__(self): super().__init__('off')
         def stage(self,name,poll=None,**kw):
@@ -156,7 +156,7 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
     (stage/'profile').mkdir()
     for name in ['shader_map.tsv','pso_manifest.tsv']:
         if gp.table(name).exists(): clone(gp.table(name),stage/'profile'/name)
-    chain=chain_of(repo)
+    chain=chain_of(repo,gp)
     if gp.get('graphics','nvn')!='vulkan':
         c.run([sys.executable,Path(__file__).parent/'c1_generate.py',repo/'dm/gfx/tools/c1_guard.py',stage/'shaders'/('b-'+chain),stage/'profile/c1_full.tsv'],root/'logs/c1.log',c.env(gp.id,root))
         if not (stage/'profile/c1_full.tsv').read_text().startswith('# chain b-'+chain+' '): raise Failure('着色器常量表版本不一致。')
@@ -258,7 +258,7 @@ def migrate(c):
         c.begin('验证迁移来源',1,4); root,repo,env,up,gp,key=prepare(c,g)
         src=Path(c.r['path']).resolve(); app=src/'ZeldaBreathOfTheWild.app/Contents/Resources'
         old=src/(g['id']+'_build'); m=read(src/'mac-work/build-manifest.json',{})
-        chain=chain_of(repo)
+        chain=chain_of(repo,gp)
         oldchain=m.get('shader_chain','')
         if m.get('game')!=g['id'] or not re.fullmatch('[0-9a-f]{12}',oldchain): raise Failure('迁移来源没有有效的游戏与着色器构建记录。')
         patched=old/('patched_'+gp.get('package')); shader=old/'shader/cache'

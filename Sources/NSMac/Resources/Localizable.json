@@ -2774,5 +2774,113 @@
   {
     "source": "重新安装完整的 LumaDock 应用，内置转换组件缺失或损坏。",
     "en": "Reinstall the complete LumaDock app. Bundled conversion components are missing or damaged."
+  },
+  {
+    "source": "校验游戏文件",
+    "en": "Verify game files"
+  },
+  {
+    "source": "确认源文件与已登记的内容一致。",
+    "en": "Check that source files match their registered content."
+  },
+  {
+    "source": "解包与合并",
+    "en": "Extract and merge"
+  },
+  {
+    "source": "解出程序与资源，并合并所需更新。",
+    "en": "Extract programs and resources, then merge required updates."
+  },
+  {
+    "source": "准备该游戏已导入的附加内容。",
+    "en": "Prepare imported additional content for this game."
+  },
+  {
+    "source": "将游戏程序转换为引擎所需的原生代码。",
+    "en": "Rewrite game programs into native code for the engine."
+  },
+  {
+    "source": "采集当前配置所需的运行时着色器。",
+    "en": "Capture runtime shaders required by the selected profile."
+  },
+  {
+    "source": "从游戏资源中提取并核对着色器。",
+    "en": "Extract and check shaders from game resources."
+  },
+  {
+    "source": "转换并编译着色器",
+    "en": "Translate and compile shaders"
+  },
+  {
+    "source": "转换着色器并校验已完成的 Metal 产物。",
+    "en": "Translate shaders and validate completed Metal outputs."
+  },
+  {
+    "source": "编译并检查 Mac 游戏主程序。",
+    "en": "Compile and check the Mac game executable."
+  },
+  {
+    "source": "校验资源并安装到新的运行版本。",
+    "en": "Validate resources and install a new runtime release."
+  },
+  {
+    "source": "编译 iPhone 与 iPad 应用并生成安装包。",
+    "en": "Build and package the iPhone and iPad app."
+  },
+  {
+    "source": "检查安装包结构与所有成员的完整性。",
+    "en": "Check package structure and the integrity of every member."
+  },
+  {
+    "source": "验证复制结果后导出安装包。",
+    "en": "Verify the copied package before exporting it."
+  },
+  {
+    "source": "准备计划",
+    "en": "Preparation plan"
+  },
+  {
+    "source": "本机历史 · {0} 次记录",
+    "en": "Local history · {0} runs"
+  },
+  {
+    "source": "初始参考估时，实际耗时可能变化",
+    "en": "Initial reference estimate; actual time may vary"
+  },
+  {
+    "source": "预计 ",
+    "en": "Estimated: "
+  },
+  {
+    "source": "里程碑进度，浅色填充为估计",
+    "en": "Milestone progress; lighter fill is estimated"
+  },
+  {
+    "source": "第 {0}/{1} 步",
+    "en": "Step {0}/{1}"
+  },
+  {
+    "source": "本步总量暂不可确定",
+    "en": "Step total is not available yet"
+  },
+  {
+    "source": "预计还需 ",
+    "en": "Estimated remaining: "
+  },
+  {
+    "source": "已用 ",
+    "en": "Elapsed: "
+  },
+  {
+    "source": "，本步 ",
+    "en": " · This step: "
+  },
+  {
+    "source": " 完成",
+    "en": " completion"
+  },
+  {
+    "source": "预计 {0} 完成",
+    "en": "Estimated finish: {0}"
   }
 ]

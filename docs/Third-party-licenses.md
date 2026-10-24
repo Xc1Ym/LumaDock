@@ -10,6 +10,10 @@ We also thank [d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) and [MacN
 
 LumaDock's own metadata-protocol extension is in `Worker/NspMetadata.cs`; it is compiled only in the user's private engine snapshot. No upstream engine implementation is embedded in that extension.
 
+## S2Arm milestone progress
+
+Game-preparation and IPA milestone plans, step-time projection and local-history medians adapt [S2Arm](https://github.com/jhaizhou-ops/S2Arm) at `601b545407d45063d005b4e7ca7f078620f0d630`, specifically `pack/jobs/milestones.py` and `platforms/macos/Sources/S2ArmLauncher/MilestoneProgressView.swift`. The upstream [LumaDock copyright/MIT notice](licenses/S2Arm-progress-NOTICE.txt) is retained. The integration follows nxnative's actual stages and completed shader outputs; S2Arm's engine, shader pipeline and game-specific timing evidence are not bundled or presented as LumaDock validation.
+
 ## SAK-Mac conversion integration
 
 Conversion command orchestration and machine-readable / tqdm progress parsing are adapted from [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac), Copyright (c) 2026 ggaoph-lab, at commit `c8e0baa59a168d9efaa0b556af70e0a08bda51de`. The complete upstream [MIT notice](licenses/SAK-Mac-LICENSE.txt) is retained in source and bundled documentation.

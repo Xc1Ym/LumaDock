@@ -11,6 +11,11 @@ struct TaskProgressView: View {
         return String(format:"%.0f",max(0,value))
     }
     var body: some View {
+        if !(task.milestones ?? []).isEmpty,task.milestone != nil {
+            MilestoneProgressView(task:task,compact:compact)
+        } else {standard}
+    }
+    private var standard:some View {
         VStack(alignment:.leading,spacing:6) {
             if !compact,let fraction=task.stageFraction,let index=task.stageIndex,let count=task.stageCount {
                 ProgressView(L("整体阶段 \(index)/\(count)"),value:fraction).tint(.teal)

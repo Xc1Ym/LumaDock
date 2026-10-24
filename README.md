@@ -17,7 +17,7 @@ nxnative provides native execution and Metal graphics; LumaDock provides the lib
 - **Automated builds** — Prepare code, shaders and runtime files with validated caches, cancellation and retry.
 - **File conversion** — Convert NSP/XCI, compress or decompress NSZ/XCZ, and merge packages using bundled conversion tools adapted from [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac). Exported NSPs can be imported into the library.
 - **IPA export** — Generate an unsigned iPhone / iPad package from game details.
-- **Visible progress and errors** — Follow measured progress or the current stage; get shader warnings, repair suggestions, specific logs and redacted error summaries.
+- **Visible progress and errors** — Follow measured progress, milestone steps and reference time estimates; get shader warnings, repair suggestions, specific logs and redacted error summaries.
 - **Native Mac experience** — English / 简体中文, light / dark appearance, game-language settings and input mapping where supported by the selected engine.
 
 ## Get started

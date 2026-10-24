@@ -19,6 +19,8 @@ In **Settings → Language & appearance**, choose **System default**, **English*
 
 Use the toolbar's input mapping button to configure global controls, or game details for a game-specific override. Mapping changes apply on the next launch without rebuilding. Settings also provides diagnostics export and a setup-assistant shortcut.
 
+Game preparation and IPA export show milestone segments, the current step and its purpose, elapsed time, estimated time remaining and estimated finish. Hover over a segment for details. Initial times are reference estimates; successful uncached runs build local history, scoped to the game, target and toolchain. Cache hits and cancelled/failed runs do not train those estimates. Lighter fill is time-based estimation; numeric percentages still require measured counters. Estimates are approximate and are not completion deadlines.
+
 ## File conversion
 
 Open **File conversion** in the sidebar. You can convert NSP/XCI (including NSZ/XCZ inputs), compress NSP/XCI, decompress NSZ/XCZ, or merge files for one game into NSP/XCI. Choose files or drop them onto the page, select the operation and output folder, then start. Conversion does not require Xcode, nxnative or a configured game library.

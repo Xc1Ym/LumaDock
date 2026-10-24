@@ -53,7 +53,8 @@ class IPATests(unittest.TestCase):
         (self.selected/'RomFS').mkdir(parents=True)
         (self.selected/'RomFS/marker').write_text('synthetic')
         self.profile=self.engine/'dm/games'/self.g['id']
-        (self.profile/'dmsh_chain.h').write_text('#define DMSH_CHAIN "fixture"')
+        (self.engine/'dm/gfx/nvn').mkdir(parents=True,exist_ok=True)
+        (self.engine/'dm/gfx/nvn/dmsh_chain.h').write_text('#define DMSH_CHAIN "fixture"')
         self.graphics='vulkan'
         self.gp=SimpleNamespace(id=self.g['id'],
             get=lambda key,default=None:{'package':'v0','graphics':self.graphics}.get(key,default),
@@ -134,17 +135,22 @@ class IPATests(unittest.TestCase):
         self.graphics='nvn';directory=self.shaders/'b-fixture';directory.mkdir()
         reflection=directory/'key_b.json';(directory/'key_b.metallib').write_text('synthetic')
         atomic(reflection,dict(chain='fixture',chain_metal='xcrun -sdk macosx metal'))
-        with self.assertRaises(Failure): ipa.validate_shaders(self.shaders,self.gp)
+        with self.assertRaises(Failure): ipa.validate_shaders(self.shaders,self.gp,self.engine)
         atomic(reflection,dict(chain='fixture',chain_metal='xcrun -sdk iphoneos metal'))
-        ipa.validate_shaders(self.shaders,self.gp)
+        ipa.validate_shaders(self.shaders,self.gp,self.engine)
         (directory/'key_b.metallib').unlink()
-        with self.assertRaises(Failure): ipa.validate_shaders(self.shaders,self.gp)
+        with self.assertRaises(Failure): ipa.validate_shaders(self.shaders,self.gp,self.engine)
 
     def test_mac_and_ios_cache_keys_and_chain_environments_are_separate(self):
         self.g['packages']=[dict(type='base',version=0,sha256='base'),dict(type='update',version=1114112,sha256='update',builds={'main':'fixture-build'})]
         script=self.engine/'scripts/build_ipa_from_nsp.py'
         script.write_text(script.read_text()+'\nclass Progress:\n    def __init__(self, mode): pass\n')
-        (self.engine/'dm/games/game.py').write_text('def load(game_id): return {"id":game_id,"folder":str(HERE)}\n')
+        (self.engine/'dm/games/game.py').write_text(
+            'from pathlib import Path\n'
+            'class Profile:\n'
+            '    def __init__(self,ident,folder): self.id=ident; self.folder=folder\n'
+            '    def table(self,name): return Path(self.folder)/self.id/name\n'
+            'def load(game_id): return Profile(game_id,HERE)\n')
         (self.engine/'dm/gfx/tools/dmsh_chain.lock').write_text('fixture lock')
         prepared=self.root/'prepared';shutil.copytree(self.engine,prepared/'source')
         before=engine.source_hash(self.engine)

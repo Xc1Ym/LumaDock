@@ -99,7 +99,7 @@ class WorkerTests(unittest.TestCase):
     def test_15_failed_install_preserves_successful_release(self):
         gdir=self.ctx.library/'games/g';old=gdir/'releases/old';old.mkdir(parents=True);(old/'sentinel').write_text('working');(gdir/'current').symlink_to('releases/old')
         root=self.ctx.library/'cache/test';root.mkdir(parents=True);repo=root/'engine';profile=repo/'dm/games/g';profile.mkdir(parents=True)
-        (profile/'dmsh_chain.h').write_text('#define DMSH_CHAIN "testchain"')
+        (repo/'dm/gfx/nvn').mkdir(parents=True);(repo/'dm/gfx/nvn/dmsh_chain.h').write_text('#define DMSH_CHAIN "testchain"')
         class Profile:
             id='g'
             def table(self,n):return profile/n
@@ -113,10 +113,11 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual((gdir/'current/sentinel').read_text(),'working')
 
     def test_16_shader_progress_counts_complete_pairs(self):
-        d=self.root/'profile';d.mkdir();(d/'dmsh_chain.h').write_text('#define DMSH_CHAIN "abc"');(d/'shader_map.tsv').write_text('x.bin\t0\t1\tkey1\tdata\nx.bin\t0\t1\tkey2\tdata\n')
+        repo=self.root/'repo';(repo/'dm/gfx/nvn').mkdir(parents=True);(repo/'dm/gfx/nvn/dmsh_chain.h').write_text('#define DMSH_CHAIN "abc"')
+        d=self.root/'profile';d.mkdir();(d/'shader_map.tsv').write_text('x.bin\t0\t1\tkey1\tdata\nx.bin\t0\t1\tkey2\tdata\n')
         class G:
             def table(self,n):return d/n
-        watch=build.ShaderProgress(G(),self.root/'shaders');watch.path.mkdir(parents=True)
+        watch=build.ShaderProgress(G(),repo,self.root/'shaders');watch.path.mkdir(parents=True)
         (watch.path/'key2_b.json').write_text('{}');self.assertEqual(watch()['done'],0)
         (watch.path/'key2_b.metallib').write_bytes(b'library');self.assertEqual(watch()['done'],1);self.assertEqual(watch()['total'],2)
 

@@ -8,12 +8,12 @@ import milestones as ms
 
 class ShaderProgress:
     """Count only finished reflection/library pairs; do not infer progress from queue order."""
-    def __init__(self,g,cache):
+    def __init__(self,g,repo,cache):
         self.keys=set()
         for line in g.table('shader_map.tsv').read_text().splitlines():
             columns=line.split('\t')
             if len(columns)>4 and (columns[0].endswith('.bin') or columns[0].startswith('main.rodata@')):self.keys.add(columns[3])
-        chain=re.search(r'#define DMSH_CHAIN "(.*?)"',g.table('dmsh_chain.h').read_text())[1]
+        chain=chain_of(repo,g)
         self.path=Path(cache)/('b-'+chain)
     def __call__(self):
         names=set(os.listdir(self.path)) if self.path.is_dir() else set()
@@ -83,6 +83,30 @@ def tools(c,target='macos'):
     return result
 
 
+def refresh_engine(c,root,tc):
+    """Rebuild the private engine copy; the marker ties it to the current source fingerprint."""
+    repo=root/'engine'; tmp=root/'engine.partial'; shutil.rmtree(tmp,ignore_errors=True)
+    from engine import prepared_tools
+    shutil.copytree(prepared_tools(c)/'source',tmp,ignore=shutil.ignore_patterns('bin','obj','gen','__pycache__','.git','dmhost'))
+    (tmp/'.source-ready').write_text(tc['engineSource'])
+    if repo.exists(): shutil.rmtree(repo)
+    tmp.rename(repo)
+
+def chain_tools(c,repo,env,root):
+    # Tool changes produce a new private lock, chain, shader output, c1 table and host together.
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--update-lock'],root/'logs/toolchain.log',env)
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--header'],root/'logs/toolchain.log',env)
+    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--check-tools'],root/'logs/toolchain.log',env)
+    lock=repo/'dm/gfx/tools/dmsh_chain.lock'
+    if not lock.is_file() or 'missing' in lock.read_text(): raise Failure('Metal 工具链不可用，无法创建一致的着色器链。')
+
+def ensure_chain_header(c,root,repo,env,tc,gp=None):
+    """A hand-patched or damaged engine copy can exit cleanly without writing the header (issue #9)."""
+    if chain_of(repo,gp): return
+    refresh_engine(c,root,tc); chain_tools(c,repo,env,root)
+    if not chain_of(repo,gp): raise Failure('着色器链头文件仍未生成，请查看 toolchain.log；若 nxnative 与当前版本不兼容，请更新后删除该游戏缓存重试。')
+
+
 def prepare(c,g,target='macos'):
     from engine import inspect_source
     inspect_source(c)
@@ -92,26 +116,17 @@ def prepare(c,g,target='macos'):
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()[:24]
     root=c.library/'cache'/g['id']/key; root.mkdir(parents=True,exist_ok=True)
     repo=root/'engine'
-    if not (repo/'.source-ready').exists():
-        tmp=root/'engine.partial'; shutil.rmtree(tmp,ignore_errors=True)
-        from engine import prepared_tools
-        shutil.copytree(prepared_tools(c)/'source',tmp,ignore=shutil.ignore_patterns('bin','obj','gen','__pycache__','.git','dmhost'))
-        (tmp/'.source-ready').write_text(tc['engineSource'])
-        if repo.exists(): shutil.rmtree(repo)
-        tmp.rename(repo)
+    if not (repo/'.source-ready').exists(): refresh_engine(c,root,tc)
     env=c.env(g['id'],root); env['MACOSX_DEPLOYMENT_TARGET']='26.0'; env['J']=str(min(os.cpu_count() or 4,8))
     if target == 'ios':
         from ipa import environment
         env=environment(c,env)[0]
-    # Tool changes produce a new private lock, chain, shader output, c1 table and host together.
-    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--update-lock'],root/'logs/toolchain.log',env)
-    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--header'],root/'logs/toolchain.log',env)
-    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--check-tools'],root/'logs/toolchain.log',env)
-    if 'missing' in (repo/'dm/gfx/tools/dmsh_chain.lock').read_text(): raise Failure('Metal 工具链不可用，无法创建一致的着色器链。')
+    chain_tools(c,repo,env,root)
     atomic(root/'identity.json',identity)
     spec=importlib.util.spec_from_file_location('nsmac_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
     sys.path.insert(0,str(repo/'dm/games')); import game
     game.HERE=repo/'dm/games'; gp=game.load(g['id'])
+    ensure_chain_header(c,root,repo,env,tc,gp)
     class Bridge(up.Progress):
         def __init__(self): super().__init__('off')
         def stage(self,name,poll=None,**kw):
@@ -144,7 +159,7 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
     (stage/'profile').mkdir()
     for name in ['shader_map.tsv','pso_manifest.tsv']:
         if gp.table(name).exists(): clone(gp.table(name),stage/'profile'/name)
-    chain=re.search(r'#define DMSH_CHAIN "(.*?)"',gp.table('dmsh_chain.h').read_text())[1]
+    chain=chain_of(repo,gp)
     if gp.get('graphics','nvn')!='vulkan':
         c.run([sys.executable,Path(__file__).parent/'c1_generate.py',repo/'dm/gfx/tools/c1_guard.py',stage/'shaders'/('b-'+chain),stage/'profile/c1_full.tsv'],root/'logs/c1.log',c.env(gp.id,root))
         if not (stage/'profile/c1_full.tsv').read_text().startswith('# chain b-'+chain+' '): raise Failure('着色器常量表版本不一致。')
@@ -217,17 +232,17 @@ def build(c,target='macos'):
                 c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh]+(['--ios',sh/'ios'] if target=='ios' else []),logs/'vk_shaders.log',env)
                 if target=='ios':
                     from ipa import validate_shaders
-                    validate_shaders(sh/'ios',gp)
+                    validate_shaders(sh/'ios',gp,repo)
             st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders,milestone='shaders')
         else:
             st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp),milestone='extract')
             def shaders():
-                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,sh/'ios' if target=='ios' else sh/'cache'))
+                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'ios' if target=='ios' else sh/'cache'))
                 try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)
                 finally: up.PROG.watch(None)
                 if target=='ios':
                     from ipa import validate_shaders
-                    validate_shaders(sh/'ios',gp)
+                    validate_shaders(sh/'ios',gp,repo)
             st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders,milestone='shaders')
         if target == 'ios':
             from ipa import package
@@ -246,7 +261,7 @@ def migrate(c):
         c.begin('验证迁移来源',1,4); root,repo,env,up,gp,key=prepare(c,g)
         src=Path(c.r['path']).resolve(); app=src/'ZeldaBreathOfTheWild.app/Contents/Resources'
         old=src/(g['id']+'_build'); m=read(src/'mac-work/build-manifest.json',{})
-        chain=re.search(r'#define DMSH_CHAIN "(.*?)"',gp.table('dmsh_chain.h').read_text())[1]
+        chain=chain_of(repo,gp)
         oldchain=m.get('shader_chain','')
         if m.get('game')!=g['id'] or not re.fullmatch('[0-9a-f]{12}',oldchain): raise Failure('迁移来源没有有效的游戏与着色器构建记录。')
         patched=old/('patched_'+gp.get('package')); shader=old/'shader/cache'
@@ -270,7 +285,7 @@ def migrate(c):
                 pkg=old/'shader/pkg'
                 if not pkg.is_dir(): raise Failure('工具链已变化且迁移目录没有着色器包，请执行正常准备流程。')
                 out=root/'migration-shader';out.mkdir(exist_ok=True)
-                up.PROG.stage('migrate shaders',poll=ShaderProgress(gp,out))
+                up.PROG.stage('migrate shaders',poll=ShaderProgress(gp,repo,out))
                 try:c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',pkg,out],root/'logs/migration-shaders.log',dict(env,DMSH_PREFILL=str(shader)))
                 finally:up.PROG.watch(None)
                 shader=out

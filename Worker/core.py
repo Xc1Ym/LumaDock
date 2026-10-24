@@ -31,6 +31,13 @@ def read(path, default=None):
     try: return json.loads(Path(path).read_text())
     except FileNotFoundError: return default
 
+def chain_of(repo,gp=None):
+    """Read the shared chain header, or the selected profile's header on older engines."""
+    header=Path(repo)/'dm/gfx/nvn/dmsh_chain.h'
+    if not header.exists() and gp is not None: header=gp.table('dmsh_chain.h')
+    try: return re.search(r'#define DMSH_CHAIN "(.*?)"', header.read_text())[1]
+    except (OSError, TypeError): return None
+
 def digest(path, progress=None):
     h = hashlib.sha256(); n = 0; total = Path(path).stat().st_size
     with open(path, 'rb') as f:

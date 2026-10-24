@@ -19,6 +19,16 @@ In **Settings → Language & appearance**, choose **System default**, **English*
 
 Use the toolbar's input mapping button to configure global controls, or game details for a game-specific override. Mapping changes apply on the next launch without rebuilding. Settings also provides diagnostics export and a setup-assistant shortcut.
 
+## File conversion
+
+Open **File conversion** in the sidebar. You can convert NSP/XCI (including NSZ/XCZ inputs), compress NSP/XCI, decompress NSZ/XCZ, or merge files for one game into NSP/XCI. Choose files or drop them onto the page, select the operation and output folder, then start. Conversion does not require Xcode, nxnative or a configured game library.
+
+The conversion tools, Python and dependencies are bundled with LumaDock. No separate SAK-Mac installation or first-run download is needed. Conversion commands and progress parsing adapt [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac) at `c8e0baa59a168d9efaa0b556af70e0a08bda51de`; sources and notices are documented in [third-party licenses](Third-party-licenses.md).
+
+Existing library keys can be reused. **Import conversion keys…** stores a separate private copy of your own `prod.keys`; it does not replace library keys. Status shows which keys are in use.
+
+Tasks support progress, logs, cancellation and retry. Inputs are cloned/copied and verified before processing in a private temporary workspace. A failed or cancelled conversion leaves original files and earlier output intact. Successful outputs pass container-structure and copy-hash checks, then appear in a new folder under your chosen output directory. These checks do not validate game signatures or gameplay. Use **View conversion results** or **Import generated NSP files** from the task. Library import still performs its own metadata and setup checks.
+
 ## Export an IPA
 
 Choose **Generate IPA…** in game details and save outside the managed library. This builds an **unsigned iPhone / iPad game package** from the imported NSPs; a Mac runtime is not required first. Install the iOS platform and Metal compiler in your selected Xcode, and install XcodeGen with `brew install xcodegen` before exporting.

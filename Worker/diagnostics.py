@@ -8,7 +8,7 @@ def redact(text, c, limit=3000):
     text = re.sub(r'\x1b\[[0-9;]*m', '', str(text))
     text = re.sub(r'(?i)(authorization\s*:\s*(?:bearer|basic|token)\s+)\S+',r'\1[REDACTED]',text)
     text = re.sub(r'(?i)(https?://)[^/\s:@]+:[^/\s@]+@',r'\1[REDACTED]@',text)
-    text = re.sub(r'(?i)([\w-]*(?:key|secret|token|password)[\w-]*\s*[=:]\s*)[\"\']?[^\s,;\"\']+', r'\1[REDACTED]', text)
+    text = re.sub(r'(?i)([\w-]*(?:key|kek|secret|token|password)[\w-]*\s*[=:]\s*)[\"\']?[^\s,;\"\']+', r'\1[REDACTED]', text)
     text = re.sub(r'\b[0-9a-fA-F]{64,}\b', '[REDACTED]', text)
     for path, label in ((c.library,'[LIBRARY]'),(c.private,'[PRIVATE]'),(c.engine,'[ENGINE]'),(Path.home(),'~')):
         if path: text = text.replace(str(path), label)
@@ -65,6 +65,10 @@ def failure(c, output, *, log=None, tool=None, status=None):
         code='shader_compile_failed';summary='Metal 着色器编译失败。';suggestion='先重新检查 Xcode 和 Metal 组件；若环境通过仍失败，请核对引擎与游戏版本，并查看失败着色器的编译信息。'
     elif isinstance(output, FileNotFoundError) or 'command not found' in text or 'no such file or directory' in text:
         code='component_missing';summary='构建组件或输入文件缺失。';suggestion='检查磁盘连接、游戏源文件和外部引擎完整性，再重新检查环境；应用内置组件缺失时重新安装完整应用。'
+    elif c.r['operation']=='convertFiles' and any(s in text for s in ('missing from','could not load keys','crc32 mismatch','missingkeyerror')):
+        code='conversion_keys_invalid';summary='转换密钥缺失、不完整或校验失败。';suggestion='重新导入自己正确且完整的 prod.keys，并确认密钥与输入文件版本匹配。'
+    elif c.r['operation']=='convertFiles':
+        code='conversion_backend_failed';summary='文件转换工具运行失败。';suggestion='检查转换后端的安装依赖、自己的 prod.keys 和输入文件；查看本任务日志后重试。'
     else:
         code='component_failed';summary='本地组件运行失败。';suggestion='查看本任务的具体日志，修复提示的问题后重试；反馈时复制已脱敏的错误摘要。'
     return make(c,code,summary,suggestion,detail=output,log=log,tool=tool,status=status)

@@ -8,6 +8,15 @@ class Failure(Exception):
         super().__init__(message);self.diagnostic=diagnostic
 class Cancelled(Exception): pass
 
+def signal_process(process, sig):
+    """Signal our child group; macOS can report EPERM while an exited group is reaped."""
+    try: os.killpg(process.pid, sig)
+    except ProcessLookupError: pass
+    except PermissionError:
+        # Popen reaps and rechecks its own child PID before signalling. Do not let
+        # a duplicate cleanup signal replace the original cancellation error.
+        process.send_signal(sig)
+
 def atomic(path, obj, mode=0o600):
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.tmp')
@@ -69,6 +78,7 @@ class Context:
         self.jobpath = self.private / 'jobs' / (self.task + '.json')
         self.job = read(self.jobpath, {}) | {'schema': 1, 'id': self.task, 'operation': request['operation'], 'gameId': request.get('gameId'), 'state': 'running', 'started': time.time()}
         if request['operation'] == 'exportIPA': self.job['outputPath'] = request.get('outputPath')
+        if request['operation'] == 'convertFiles': self.job['conversion'] = request.get('conversion')
         for field in ('ended','message','done','total','elapsed','diagnostics'): self.job.pop(field,None)
         atomic(self.jobpath, self.job)
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
@@ -81,8 +91,10 @@ class Context:
         self.library = Path(request.get('library', self.private / 'library')).expanduser().resolve()
     def emit(self, kind='progress', message='', done=None, total=None, **kw):
         with self.guard:
-            if kind == 'progress' and time.monotonic() - self.last < .2 and done != total: return
-            self.last = time.monotonic()
+            if kind == 'stage' or kw.get('resetProgress'): self.last = 0
+            if kind == 'progress':
+                if time.monotonic() - self.last < .2 and done != total: return
+                self.last = time.monotonic()
             event = {'schema': 1, 'taskId': self.task, 'operation':self.r['operation'],'gameId':self.r.get('gameId'),'started':self.job['started'],'type': kind, 'stage': self.stage, 'stageIndex': self.number, 'stageCount': self.count, 'message': message, 'elapsed': time.monotonic()-self.stage_t}
             if done is not None: event['done'] = done
             if total and total > 0: event['total'] = total
@@ -120,13 +132,11 @@ class Context:
         self.cancelled = True; self.job['state'] = 'cancelling'; atomic(self.jobpath, self.job)
         for p in list(self.children):
             if p.poll() is None:
-                try: os.killpg(p.pid, signal.SIGTERM)
-                except ProcessLookupError: pass
+                signal_process(p, signal.SIGTERM)
         def kill():
             for p in list(self.children):
                 if p.poll() is None:
-                    try: os.killpg(p.pid, signal.SIGKILL)
-                    except ProcessLookupError: pass
+                    signal_process(p, signal.SIGKILL)
         threading.Timer(3, kill).start()
     def env(self, game=None, root=None):
         env = dict(os.environ)
@@ -181,9 +191,9 @@ class Context:
                     if diagnostic['severity']=='error': raise Failure(diagnostic['summary'],diagnostic)
             finally:
                 if p.poll() is None:
-                    os.killpg(p.pid, signal.SIGTERM)
+                    signal_process(p, signal.SIGTERM)
                     try: p.wait(timeout=3)
-                    except subprocess.TimeoutExpired: os.killpg(p.pid, signal.SIGKILL); p.wait()
+                    except subprocess.TimeoutExpired: signal_process(p, signal.SIGKILL); p.wait()
                 p.stdout.close();self.children.discard(p)
         return log
     @contextlib.contextmanager

@@ -12,10 +12,14 @@ def macho(p):
 
 def audit(root):
     files=[]
-    banned={'.nsp','.xci','.nsz','.ipa','.keys','.metallib','.patched.bin'}
+    banned={'.nsp','.xci','.nsz','.xcz','.ipa','.keys','.metallib','.patched.bin'}
     for p in root.rglob('*'):
         if not p.is_file():continue
         rel=p.relative_to(root)
+        converter=next((index for index,part in enumerate(rel.parts) if part=='converter' and index>0 and rel.parts[index-1]=='Runtime'),None)
+        if (any(part.lower() in ('nsc_builder','nsz') for part in rel.parts) or p.name in ('squirrel.py','nsz')) and converter is None:
+            raise RuntimeError('Conversion code outside the bundled runtime: '+str(rel))
+        if p.name=='keys.txt':raise RuntimeError('Player keys in distribution: '+str(rel))
         if any(part.lower() in ('vendor','nxnative','nx_extract','dmsh_xlate_bin') for part in rel.parts) or p.name in ('nx_extract.dll','dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','LibHac.dll'):
             raise RuntimeError('Bundled external engine in distribution: '+str(rel))
         if p.suffix.lower() in banned or p.name in ('prod.keys','catalog.json','preferences.json','control.nacp','romfs_manifest.tsv') or any(x in rel.parts for x in ('romfs','RomFS','ExeFS','save','saves','pso_user','shader','extract')):
@@ -32,6 +36,7 @@ def main():
     if not (selected/'Platforms/MacOSX.platform').is_dir():raise RuntimeError('Select a full Xcode installation with DEVELOPER_DIR; standalone Command Line Tools cannot build this app.')
     env['DEVELOPER_DIR']=str(selected)
     if not (ROOT/'work/Runtime/versions.json').is_file():raise RuntimeError('Run scripts/bundle_runtime.py first; a bundled runtime is required.')
+    if not (ROOT/'work/Runtime/converter/manifest.json').is_file():raise RuntimeError('Bundled conversion backend is missing; rebuild the runtime.')
     if not (ROOT/'Assets/LumaDock.icns').is_file():raise RuntimeError('Run swift scripts/make_icons.swift first.')
     if '--skip-build' not in sys.argv:run(['swift','build','--disable-sandbox','--cache-path',ROOT/'work/spm-cache','-c','release'],cwd=ROOT,env=env)
     result=subprocess.check_output(['swift','build','--disable-sandbox','--cache-path',str(ROOT/'work/spm-cache'),'-c','release','--show-bin-path'],cwd=ROOT,env=env,text=True).strip()

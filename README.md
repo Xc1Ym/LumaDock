@@ -15,13 +15,14 @@ nxnative provides native execution and Metal graphics; LumaDock provides the lib
 
 - **Library management** — Import or scan NSPs; match base games, updates and DLC by content metadata.
 - **Automated builds** — Prepare code, shaders and runtime files with validated caches, cancellation and retry.
+- **File conversion** — Convert NSP/XCI, compress or decompress NSZ/XCZ, and merge packages using bundled conversion tools adapted from [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac). Exported NSPs can be imported into the library.
 - **IPA export** — Generate an unsigned iPhone / iPad package from game details.
 - **Visible progress and errors** — Follow measured progress or the current stage; get shader warnings, repair suggestions, specific logs and redacted error summaries.
 - **Native Mac experience** — English / 简体中文, light / dark appearance, game-language settings and input mapping where supported by the selected engine.
 
 ## Get started
 
-**Requirements:** Apple Silicon, macOS 26+, full Xcode with Metal, and a compatible external nxnative source directory. The initial engine-tool build also needs the **.NET 10 SDK for macOS Arm64**. Generic runtime dependencies are bundled.
+**Requirements:** Apple Silicon and macOS 26+. Preparing games also requires full Xcode with Metal and a compatible external nxnative source directory. The initial engine-tool build also needs the **.NET 10 SDK for macOS Arm64**. Generic runtime dependencies are bundled.
 
 1. Download the latest **ARM64 DMG**, verify `SHA256SUMS`, and drag **LumaDock.app** into Applications. Current builds use **ad-hoc signing and are not notarized**.
 2. Follow setup: check the environment, select your nxnative source root, and choose **Prepare engine tools**.
@@ -60,6 +61,6 @@ For failures, open the task's log or copy its redacted error summary. [Report an
 
 ## Acknowledgements and license
 
-Special thanks to **[nxnative](https://github.com/seedds/nxnative)** for the core execution and graphics capabilities, and to **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** and **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** for their upstream contributions. The engine remains external. Thanks also to Ryujinx / Spv.Generator, LibHac, SPIRV-Cross, CPython, .NET and other dependencies; see the [full third-party notices](docs/Third-party-licenses.md).
+Special thanks to **[nxnative](https://github.com/seedds/nxnative)** for the core execution and graphics capabilities, and to **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** and **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** for their upstream contributions. File conversion adapts code from **[SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac)** (MIT). The engine remains external. Thanks also to Ryujinx / Spv.Generator, LibHac, SPIRV-Cross, CPython, .NET and other dependencies; see the [full third-party notices](docs/Third-party-licenses.md).
 
 Launcher code and original artwork use the **[MIT License](LICENSE)**; third-party components retain their own licenses. The software is provided “AS IS.” Use only content you are authorized to use. Nintendo and game trademarks belong to their respective owners; this project is not affiliated with or endorsed by Nintendo or any game publisher.

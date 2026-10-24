@@ -4,7 +4,7 @@ from pathlib import Path
 # The launcher starts Python in isolated mode; only this trusted Worker folder is added.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import Context, Failure, Cancelled
-import library, build, input_config, toolchain, engine, ipa, diagnostics
+import library, build, input_config, toolchain, engine, ipa, diagnostics, conversion
 
 def main():
     parser=argparse.ArgumentParser(); parser.add_argument('--request',required=True); args=parser.parse_args()
@@ -36,17 +36,18 @@ def main():
     ops={'prepareEngine':engine.prepare,'installMetal':toolchain.install_metal,'uninstallMetal':toolchain.uninstall_metal,'setup':library.setup,'preflight':library.preflight,'keys':library.keys,'import':library.import_games,'catalog':library.catalog,'remove':library.remove,'clean':library.clean,'diagnostics':library.diagnostics,'build':build.build,'migrate':build.migrate,'launch':build.launch,'saveInput':input_config.save,'defaultInput':lambda c:input_config.defaults()}
     try:
         ops['exportIPA'] = ipa.export
+        ops.update(convertFiles=conversion.convert,converterStatus=conversion.status,conversionKeys=conversion.import_keys)
         if request['operation'] not in ops: raise Failure('不支持的任务类型。')
         operation=request['operation']
-        if operation in ('installMetal','uninstallMetal','build','migrate','launch','exportIPA'):
-            with c.toolchain_lock(exclusive=operation in ('installMetal','uninstallMetal')):
+        if operation in ('installMetal','uninstallMetal','build','migrate','launch','exportIPA','convertFiles'):
+            with c.toolchain_lock(exclusive=operation in ('installMetal','uninstallMetal','convertFiles')):
                 result=ops[operation](c)
         else:
             result=ops[operation](c)
         c.finish('completed','操作完成',result)
         return 0
     except (Cancelled,KeyboardInterrupt):
-        c.stop(); c.finish('cancelled','任务已取消；上次成功的运行版本和存档已保留。'); return 130
+        c.stop(); c.finish('cancelled','任务已取消，原文件和已有输出已保留。' if request['operation']=='convertFiles' else '任务已取消；上次成功的运行版本和存档已保留。'); return 130
     except Exception as e:
         # Exceptions never include file contents; full tool output remains in local allowlisted logs.
         log=None

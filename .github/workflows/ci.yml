@@ -73,7 +73,9 @@ jobs:
       - name: Generate original app icons
         run: swift scripts/make_icons.swift
       - name: Build portable runtime
-        run: work/python-venv/bin/python -B scripts/bundle_runtime.py
+        run: |
+          work/python-venv/bin/python -B scripts/bundle_converter.py
+          work/python-venv/bin/python -B scripts/bundle_runtime.py
       - name: Build and sign app, then create DMG
         run: work/python-venv/bin/python -B scripts/package.py
       - name: Export sources; verify DMG, signatures and runtime relocation

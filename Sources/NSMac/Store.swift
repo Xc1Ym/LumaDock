@@ -21,6 +21,9 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var preferences = Preferences()
     @Published var games: [Game] = []
     @Published var tasks: [TaskRecord] = []
+    @Published var conversion = ConversionJob()
+    @Published var converterStatus:ConverterStatus?
+    @Published var checkingConverter = false
     @Published var checks: [ToolCheck] = []
     @Published private(set) var checkingEnvironment = false
     @Published private(set) var catalogWorkers = 0
@@ -115,6 +118,7 @@ final class WorkerOutput: @unchecked Sendable {
         else { resources = URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent() }
         try? FileManager.default.createDirectory(at:privateRoot,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         if let data = try? Data(contentsOf:privateRoot.appendingPathComponent("preferences.json")), let p = try? JSONDecoder().decode(Preferences.self,from:data) { preferences = p }
+        if let output=preferences.conversionOutput {conversion.outputDirectory=output}
         if let data = try? Data(contentsOf:privateRoot.appendingPathComponent("default-input.json")), let p = try? JSONDecoder().decode(InputConfig.self,from:data) { globalInput = p }
         if let i = args.firstIndex(of:"--language"), args.count > i+1, let language = AppLanguage(rawValue:args[i+1]) {
             preferences.language = language.rawValue
@@ -136,7 +140,9 @@ final class WorkerOutput: @unchecked Sendable {
                 obj["state"] = "interrupted"; obj["message"] = "上次运行被中断，可验证已有阶段后重试。"
                 if let d = try? JSONSerialization.data(withJSONObject:obj) { try? d.write(to:path,options:.atomic) }
             }
+            if obj["operation"] as? String == "convertFiles",let data=try? JSONSerialization.data(withJSONObject:obj),let record=try? JSONDecoder().decode(TaskRecord.self,from:data) {tasks.append(record)}
         }
+        tasks.sort{($0.started ?? 0)>($1.started ?? 0)}
     }
     func savePreferences() { if let d = try? JSONEncoder().encode(preferences) { try? d.write(to:privateRoot.appendingPathComponent("preferences.json"),options:.atomic) } }
     func chooseLibrary() {
@@ -307,6 +313,7 @@ final class WorkerOutput: @unchecked Sendable {
         if p.runModal() == .OK { addGames(p.urls) }
     }
     func addGames(_ urls: [URL]) {
+        if urls.contains(where:{["xci","nsz","xcz"].contains($0.pathExtension.lowercased())}) {addConversionFiles(urls);return}
         guard importPrerequisitesReady(), !urls.isEmpty else { return }
         let libraryId = preferences.libraryId
         let prepare = prepareAfterImport
@@ -342,7 +349,7 @@ final class WorkerOutput: @unchecked Sendable {
             self.hasImportedKeys = keys["ready"] as? Bool == true
             self.keyStatus = keys["message"] as? String ?? "尚未导入 prod.keys"
             if let records = Self.decode([TaskRecord].self,r["jobs"]) {
-                for rec in records where rec.state=="failed" || ["setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
+                for rec in records where rec.state=="failed" || ["setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","convertFiles","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
                     if !self.tasks.contains(where: { $0.id == rec.id }) { self.tasks.append(rec) }
                 }
                 self.tasks.sort { ($0.started ?? 0) > ($1.started ?? 0) }
@@ -361,7 +368,7 @@ final class WorkerOutput: @unchecked Sendable {
         var req: [String:Any] = ["schema":1,"taskId":id,"operation":operation,"privateRoot":privateRoot.path,"resources":resources.path,"engineDir":preferences.engineDir ?? "","library":preferences.library.isEmpty ? privateRoot.appendingPathComponent("unconfigured").path : preferences.library,"libraryId":preferences.libraryId,"developerDir":preferences.developerDir,"parentPid":ProcessInfo.processInfo.processIdentifier]
         extra.forEach { req[$0] = $1 }
         // Environment setup must remain available when an old library drive is offline.
-        if ["preflight","prepareEngine","installMetal","uninstallMetal"].contains(operation) {
+        if ["preflight","prepareEngine","installMetal","uninstallMetal","converterStatus","conversionKeys","convertFiles"].contains(operation) {
             req["libraryId"] = ""
             req["storageLibraryId"] = preferences.libraryId
         }
@@ -389,6 +396,7 @@ final class WorkerOutput: @unchecked Sendable {
                 DispatchQueue.main.asyncAfter(deadline:.now()+0.15) {
                     self.processes[id] = nil; try? FileManager.default.removeItem(at:file)
                     if operation=="catalog" {self.catalogWorkers=max(0,self.catalogWorkers-1)}
+                    if operation=="converterStatus" {self.checkingConverter=false}
                     self.lastWorkerEvent[id] = nil
                     if let i = self.tasks.firstIndex(where:{$0.id == id}), self.tasks[i].active {
                         self.tasks[i].state = p.terminationStatus == 130 ? "cancelled" : "interrupted"; self.tasks[i].message = "工作进程已退出。可重试并验证完成阶段。"
@@ -412,11 +420,12 @@ final class WorkerOutput: @unchecked Sendable {
                     if visible { self.refresh() }
                 }
             }
-            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String),at:0) }
+            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String,conversion:Self.decode(ConversionJob.self,extra["conversion"])),at:0) }
             callbacks[id] = completion; processes[id] = process
             try process.run()
             if operation == "preflight" {lastWorkerEvent[id]=Date();watchEnvironmentWorker(id)}
         } catch {
+            if operation=="converterStatus" {checkingConverter=false}
             if operation=="catalog" {catalogWorkers=max(0,catalogWorkers-1)}
             self.error = "无法启动本地组件：\(error.localizedDescription)"; processes[id] = nil; callbacks[id] = nil
             let diagnostic=nativeDiagnostic(code:"worker_start_failed",summary:self.error ?? "",detail:error.localizedDescription)
@@ -457,6 +466,10 @@ final class WorkerOutput: @unchecked Sendable {
                 tasks[i].diagnostics=Array(records.suffix(24))
             }
             if let diagnostics=Self.decode([TaskDiagnostic].self,e["diagnostics"]) {tasks[i].diagnostics=diagnostics}
+            if let result=e["result"] as? [String:Any] {
+                if let path=result["outputPath"] as? String {tasks[i].outputPath=path}
+                if let files=result["outputFiles"] as? [String] {tasks[i].outputFiles=files}
+            }
         }
         if e["type"] as? String == "result" {
             let state = e["state"] as? String
@@ -531,6 +544,7 @@ final class WorkerOutput: @unchecked Sendable {
         processes[task.id]?.terminate()
     }
     func retry(_ task: TaskRecord) {
+        if task.operation == "convertFiles",let conversion=task.conversion {startConversion(conversion);return}
         guard let game = games.first(where:{$0.id == task.gameId}) else { return }
         if task.operation == "launch" { launch(game) }
         else if task.operation == "exportIPA" { generateIPA(game,destination:task.outputPath.map { URL(fileURLWithPath:$0) }) }

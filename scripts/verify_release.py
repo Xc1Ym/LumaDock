@@ -3,6 +3,7 @@
 import hashlib
 import json
 import plistlib
+import shutil
 from pathlib import Path
 import os
 import struct
@@ -34,7 +35,7 @@ def verify_icons():
 
 def verify_source(path):
     from source_archive import EXCLUDED,SOURCE_DIRS,SOURCE_FILES,SOURCE_ARTWORK
-    banned = {'.keys', '.nsp', '.xci', '.nsz', '.ipa', '.metallib', '.pyc'}
+    banned = {'.keys', '.nsp', '.xci', '.nsz', '.xcz', '.ipa', '.metallib', '.pyc'}
     with zipfile.ZipFile(path) as archive:
         assert archive.testzip() is None
         names = archive.namelist()
@@ -45,6 +46,7 @@ def verify_source(path):
             assert rel.parts[1] in SOURCE_DIRS | SOURCE_FILES, f'Unexpected source root: {name}'
             assert not (set(rel.parts[1:]) & EXCLUDED), f'Private build directory: {name}'
             assert rel.suffix.lower() not in banned and rel.name not in ('prod.keys', 'catalog.json', 'preferences.json')
+            assert not any(part.lower() in ('nsc_builder','nsz') for part in rel.parts) and rel.name not in ('squirrel.py','nsz'), f'Bundled conversion backend: {name}'
             if rel.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg'):
                 assert '/'.join(rel.parts[1:]) in SOURCE_ARTWORK, f'Unexpected artwork: {name}'
             assert archive.getinfo(name).file_size < 100*1024*1024, f'File exceeds GitHub size limit: {name}'
@@ -128,7 +130,31 @@ print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet)))
         report=json.loads(result.stdout)
         assert all(str(moved) in path for path in report['paths'])
         assert str(moved) in report['dotnet']
+        verify_converter(resources,Path(directory)/'converter-check')
     print(f'Verified runtime relocation: {count} native files, relative symlinks, Python/extensions, .NET and generic conversion tools; no bundled engine')
+
+
+def verify_converter(resources, private):
+    """Start the real bundled backends after relocation, without player keys."""
+    root=resources/'Runtime/converter';python=resources/'Runtime/python/bin/python3'
+    manifest=json.loads((root/'manifest.json').read_text())
+    assert len(manifest['upstream'])==3 and len(manifest['packages'])>=14
+    for name in ('SAK-Mac','NSC_BUILDER','nsz'):
+        assert (root/'licenses'/(name+'-LICENSE.txt')).is_file()
+    for package in manifest['packages']:
+        if 'bundledSource' in package:
+            source=root/package['bundledSource']
+            assert hashlib.sha256(source.read_bytes()).hexdigest()==package['sha256']
+    private.mkdir(parents=True)
+    shutil.copytree(root/'NSC_BUILDER',private/'NSC_BUILDER')
+    ztools=private/'NSC_BUILDER/ztools'
+    bootstrap="import runpy,sys;sys.path.insert(0,sys.argv.pop(1));p=sys.argv.pop(1);sys.path.insert(1,str(__import__('pathlib').Path(p).parent));sys.argv[0]=p;runpy.run_path(p,run_name='__main__')"
+    env=dict(os.environ,PATH='/usr/bin:/bin:/usr/sbin:/sbin',HOME=str(private),TMPDIR=str(private),PYTHONHOME='/invalid',PYTHONPATH='/invalid',PYTHONDONTWRITEBYTECODE='1')
+    for tool,flag in ((root/'nsz.py','--help'),(ztools/'squirrel.py','-h')):
+        result=subprocess.run([python,'-B','-I','-c',bootstrap,str(root/'python'),str(tool),flag],cwd=ztools,env=env,text=True,capture_output=True,timeout=40)
+        assert result.returncode==0 and 'usage:' in (result.stdout+result.stderr).lower(),result.stdout+result.stderr
+    assert not list(root.rglob('keys.txt'))
+    print('Verified bundled converter relocation: real NSC_BUILDER/nsz startup, licenses and corresponding source hashes; no player keys')
 
 
 def main():

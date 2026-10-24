@@ -2426,5 +2426,353 @@
   {
     "source": "本地任务",
     "en": "Local task"
+  },
+  {
+    "source": "文件转换",
+    "en": "File conversion"
+  },
+  {
+    "source": "格式转换",
+    "en": "Convert format"
+  },
+  {
+    "source": "压缩",
+    "en": "Compress"
+  },
+  {
+    "source": "解压",
+    "en": "Decompress"
+  },
+  {
+    "source": "合并",
+    "en": "Merge"
+  },
+  {
+    "source": "选择 SAK-Mac 后端目录",
+    "en": "Choose a SAK-Mac backend directory"
+  },
+  {
+    "source": "导入自己的转换密钥 prod.keys",
+    "en": "Import your own conversion prod.keys"
+  },
+  {
+    "source": "转换密钥已导入，游戏库密钥保持不变。",
+    "en": "Conversion keys imported. Library keys are unchanged."
+  },
+  {
+    "source": "添加 NSP、XCI、NSZ 或 XCZ 文件",
+    "en": "Add NSP, XCI, NSZ or XCZ files"
+  },
+  {
+    "source": "请选择 NSP、XCI、NSZ 或 XCZ 文件。",
+    "en": "Choose NSP, XCI, NSZ or XCZ files."
+  },
+  {
+    "source": "选择转换输出文件夹",
+    "en": "Choose a conversion output folder"
+  },
+  {
+    "source": "转换完成，可在任务中查看或导入生成的 NSP。",
+    "en": "Conversion complete. View the results or import the generated NSP files from the task."
+  },
+  {
+    "source": "转换 NSP / XCI，压缩或解压 NSZ / XCZ，也可合并同一游戏的本体、更新和 DLC。",
+    "en": "Convert NSP / XCI, compress or decompress NSZ / XCZ, or merge a game's base, updates and DLC."
+  },
+  {
+    "source": "转换操作",
+    "en": "Operation"
+  },
+  {
+    "source": "添加文件…",
+    "en": "Add files…"
+  },
+  {
+    "source": "清空文件",
+    "en": "Clear files"
+  },
+  {
+    "source": "共 {0} 个文件",
+    "en": "Files: {0}"
+  },
+  {
+    "source": "拖入文件，或点击添加文件。原始文件不会被修改。",
+    "en": "Drop files here or add them. Original files will not be modified."
+  },
+  {
+    "source": "移除文件",
+    "en": "Remove file"
+  },
+  {
+    "source": "输出格式",
+    "en": "Output format"
+  },
+  {
+    "source": "压缩等级：{0}",
+    "en": "Compression level: {0}"
+  },
+  {
+    "source": "压缩后校验",
+    "en": "Verify after compression"
+  },
+  {
+    "source": "一次选择同一游戏的文件；同一内容有多个版本时由后端保留最新版本。",
+    "en": "Select files for one game. The backend keeps the latest version of duplicate content."
+  },
+  {
+    "source": "输出文件夹…",
+    "en": "Output folder…"
+  },
+  {
+    "source": "结果写入新的独立文件夹，不覆盖已有输出；转换成功不代表游戏可运行。",
+    "en": "Results go into a new folder without replacing existing output. Successful conversion does not guarantee a playable game."
+  },
+  {
+    "source": "开始转换",
+    "en": "Start conversion"
+  },
+  {
+    "source": "转换调度参考 SAK-Mac；实际处理使用你选择的本地 NSC_BUILDER / nsz 后端。",
+    "en": "Conversion orchestration is adapted from SAK-Mac. Processing uses your selected local NSC_BUILDER / nsz backend."
+  },
+  {
+    "source": "转换工具",
+    "en": "Conversion tools"
+  },
+  {
+    "source": "复用 SAK-Mac 已安装的后端，默认自动识别本机位置；也可选择其他安装目录。无需 Xcode 或 nxnative 即可转换。",
+    "en": "Use an installed SAK-Mac backend, detected at its default location, or choose another installation. Conversion does not require Xcode or nxnative."
+  },
+  {
+    "source": "格式转换就绪",
+    "en": "Format conversion ready"
+  },
+  {
+    "source": "格式转换后端未就绪",
+    "en": "Format conversion backend unavailable"
+  },
+  {
+    "source": "压缩解压就绪",
+    "en": "Compression ready"
+  },
+  {
+    "source": "压缩解压后端未就绪",
+    "en": "Compression backend unavailable"
+  },
+  {
+    "source": "选择后端…",
+    "en": "Choose backend…"
+  },
+  {
+    "source": "获取 SAK-Mac",
+    "en": "Get SAK-Mac"
+  },
+  {
+    "source": "尚未准备转换密钥",
+    "en": "Conversion keys are not ready"
+  },
+  {
+    "source": "导入转换密钥…",
+    "en": "Import conversion keys…"
+  },
+  {
+    "source": "查看转换结果",
+    "en": "View conversion results"
+  },
+  {
+    "source": "导入生成的 NSP",
+    "en": "Import generated NSP files"
+  },
+  {
+    "source": "导入转换密钥",
+    "en": "Import conversion keys"
+  },
+  {
+    "source": "使用转换专用密钥",
+    "en": "Using separate conversion keys"
+  },
+  {
+    "source": "使用游戏库密钥",
+    "en": "Using library keys"
+  },
+  {
+    "source": "转换参数无效。",
+    "en": "Invalid conversion options."
+  },
+  {
+    "source": "请选择要转换的文件。",
+    "en": "Choose files to convert."
+  },
+  {
+    "source": "合并至少需要两个文件。",
+    "en": "Merging requires at least two files."
+  },
+  {
+    "source": "请选择输出文件夹。",
+    "en": "Choose an output folder."
+  },
+  {
+    "source": "输出位置必须位于游戏库、私有数据、引擎和转换后端目录之外。",
+    "en": "Choose an output folder outside the library, private data, engine and conversion backend directories."
+  },
+  {
+    "source": "输出位置不是文件夹。",
+    "en": "The output location is not a folder."
+  },
+  {
+    "source": "转换后端源码目录不能使用符号链接。",
+    "en": "The conversion backend source directory cannot be a symbolic link."
+  },
+  {
+    "source": "转换后端目录过大，请选择 SAK-Mac 安装的后端目录。",
+    "en": "The conversion backend is too large. Choose SAK-Mac's installed backend directory."
+  },
+  {
+    "source": "转换后端不可用。",
+    "en": "The conversion backend is unavailable."
+  },
+  {
+    "source": "在 SAK-Mac 中安装后端，再在文件转换页面选择其本地后端目录。",
+    "en": "Install the backend in SAK-Mac, then select its local directory on the conversion page."
+  },
+  {
+    "source": "转换密钥不可用。",
+    "en": "Conversion keys are unavailable."
+  },
+  {
+    "source": "导入自己的有效 prod.keys；转换密钥独立保存，不会覆盖已有游戏库密钥。",
+    "en": "Import your own valid prod.keys. Conversion keys are stored separately and do not replace library keys."
+  },
+  {
+    "source": "输出磁盘空间不足，转换尚未开始。",
+    "en": "The output disk has insufficient space. Conversion has not started."
+  },
+  {
+    "source": "临时文件磁盘空间不足，转换尚未开始。",
+    "en": "The temporary-files disk has insufficient space. Conversion has not started."
+  },
+  {
+    "source": "转换输入不能使用符号链接或包含换行的路径。",
+    "en": "Conversion input cannot use symbolic links or paths containing line breaks."
+  },
+  {
+    "source": "所选文件格式与转换操作不匹配。",
+    "en": "The selected file formats do not match the conversion operation."
+  },
+  {
+    "source": "输入文件为空。",
+    "en": "An input file is empty."
+  },
+  {
+    "source": "转换后端在复制时发生变化，请重试。",
+    "en": "The conversion backend changed while being copied. Try again."
+  },
+  {
+    "source": "准备转换工作区",
+    "en": "Prepare conversion workspace"
+  },
+  {
+    "source": "复制并校验转换输入",
+    "en": "Copy and verify conversion inputs"
+  },
+  {
+    "source": "输入文件在复制时发生变化，请重试。",
+    "en": "An input changed while being copied. Try again."
+  },
+  {
+    "source": "校验并导出转换产物",
+    "en": "Verify and export conversion results"
+  },
+  {
+    "source": "文件转换完成",
+    "en": "File conversion complete"
+  },
+  {
+    "source": "转换后端包含目录外链接，请重新安装后端。",
+    "en": "The conversion backend contains an external link. Reinstall the backend."
+  },
+  {
+    "source": "转换产物不是有效的 PFS0 容器。",
+    "en": "A conversion result is not a valid PFS0 container."
+  },
+  {
+    "source": "转换产物的文件表无效。",
+    "en": "A conversion result has an invalid file table."
+  },
+  {
+    "source": "转换产物不是有效的 XCI 容器。",
+    "en": "A conversion result is not a valid XCI container."
+  },
+  {
+    "source": "另一个转换任务正在运行，请稍后重试。",
+    "en": "Another conversion is running. Try again later."
+  },
+  {
+    "source": "合并文件",
+    "en": "Merge files"
+  },
+  {
+    "source": "转换文件",
+    "en": "Convert files"
+  },
+  {
+    "source": "转换工具报告错误，产物未导出。",
+    "en": "The conversion tool reported an error. Results were not exported."
+  },
+  {
+    "source": "检查自己的密钥、输入文件和转换后端依赖；查看任务日志后重试。",
+    "en": "Check your own keys, input files and backend dependencies. Read the task log before retrying."
+  },
+  {
+    "source": "转换工具没有生成有效产物。",
+    "en": "The conversion tool produced no valid output."
+  },
+  {
+    "source": "检查自己的密钥与输入格式，查看任务日志中的转换错误后重试。",
+    "en": "Check your own keys and input formats, then review conversion errors in the task log before retrying."
+  },
+  {
+    "source": "转换工具生成了符号链接，产物未导出。",
+    "en": "The conversion tool created a symbolic link. Results were not exported."
+  },
+  {
+    "source": "导出校验失败，原文件保持不变。",
+    "en": "Export verification failed. Original files are unchanged."
+  },
+  {
+    "source": "任务已取消，原文件和已有输出已保留。",
+    "en": "Task cancelled. Original files and existing output were preserved."
+  },
+  {
+    "source": "文件转换工具运行失败。",
+    "en": "The file conversion tool failed."
+  },
+  {
+    "source": "检查转换后端的安装依赖、自己的 prod.keys 和输入文件；查看本任务日志后重试。",
+    "en": "Check conversion backend dependencies, your own prod.keys and input files. Read this task's log before retrying."
+  },
+  {
+    "source": "转换密钥缺失、不完整或校验失败。",
+    "en": "Conversion keys are missing, incomplete or failed validation."
+  },
+  {
+    "source": "重新导入自己正确且完整的 prod.keys，并确认密钥与输入文件版本匹配。",
+    "en": "Import your own correct, complete prod.keys again and check that the keys match the input version."
+  },
+  {
+    "source": "SAK-Mac 转换后端与依赖已内置，无需额外安装 Python、Xcode 或 nxnative。导入自己的密钥后即可转换。",
+    "en": "SAK-Mac conversion tools and dependencies are included. Import your own keys to convert files without installing Python, Xcode or nxnative."
+  },
+  {
+    "source": "SAK-Mac 项目",
+    "en": "SAK-Mac project"
+  },
+  {
+    "source": "转换功能参考 SAK-Mac，内置 NSC_BUILDER / nsz；第三方来源与许可可在设置中查看。",
+    "en": "Conversion is adapted from SAK-Mac with bundled NSC_BUILDER / nsz. View third-party sources and licenses in Settings."
+  },
+  {
+    "source": "重新安装完整的 LumaDock 应用，内置转换组件缺失或损坏。",
+    "en": "Reinstall the complete LumaDock app. Bundled conversion components are missing or damaged."
   }
 ]

@@ -15,13 +15,14 @@ nxnative 提供原生执行和 Metal 图形能力，璃游负责游戏库与图�
 
 - **游戏库管理** — 导入或扫描 NSP，按内容元数据匹配本体、更新和 DLC。
 - **自动构建** — 完成代码、着色器和运行文件准备，支持缓存校验、取消和重试。
+- **文件转换** — 内置参考 [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac) 的转换工具，转换 NSP/XCI、压缩解压 NSZ/XCZ、合并文件；生成的 NSP 可导入游戏库。
 - **IPA 导出** — 在游戏详情中生成未签名的 iPhone / iPad 安装包。
 - **进度与错误提示** — 显示实际进度或当前阶段，提供着色器警告、修复建议、对应日志与脱敏错误摘要。
 - **原生 Mac 体验** — 中英双语、浅色 / 深色外观、游戏语言设置，以及所选引擎支持的输入映射。
 
 ## 快速开始
 
-**环境要求：** Apple Silicon、macOS 26+、完整 Xcode 及 Metal 组件，以及兼容的外部 nxnative 源码目录。首次编译引擎工具还需要 **.NET 10 SDK（macOS Arm64）**。通用运行依赖随应用提供。
+**环境要求：** Apple Silicon、macOS 26+。准备游戏还需完整 Xcode 及 Metal 组件，以及兼容的外部 nxnative 源码目录。首次编译引擎工具还需要 **.NET 10 SDK（macOS Arm64）**。通用运行依赖随应用提供。
 
 1. 下载最新版 **ARM64 DMG**，核对 `SHA256SUMS`，将 **LumaDock.app** 拖入“应用程序”。当前版本采用 **ad-hoc 签名，尚未公证**。
 2. 按向导检查环境，选择 nxnative 源码根目录，点击“准备引擎工具”。
@@ -60,6 +61,6 @@ IPA 导出额外需要 Xcode 的 **iOS 平台**和 **XcodeGen**（`brew install 
 
 ## 致谢与许可
 
-特别感谢 **[nxnative](https://github.com/seedds/nxnative)** 提供核心执行与图形能力，以及 **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)**、**[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** 的上游贡献。引擎由玩家自行提供。同时感谢 Ryujinx / Spv.Generator、LibHac、SPIRV-Cross、CPython、.NET 等依赖项目，详见[完整第三方许可](docs/第三方许可.md)。
+特别感谢 **[nxnative](https://github.com/seedds/nxnative)** 提供核心执行与图形能力，以及 **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)**、**[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** 的上游贡献。文件转换参考 **[SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac)**（MIT）的代码实现。引擎由玩家自行提供。同时感谢 Ryujinx / Spv.Generator、LibHac、SPIRV-Cross、CPython、.NET 等依赖项目，详见[完整第三方许可](docs/第三方许可.md)。
 
 启动器代码与原创图标采用 **[MIT License](LICENSE)**，第三方组件保留各自许可。软件按 “AS IS” 提供，仅使用有权使用的内容。Nintendo 及游戏商标归相应权利人所有；本项目与 Nintendo 或游戏发行商没有隶属或认可关系。

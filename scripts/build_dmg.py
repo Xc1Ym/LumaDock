@@ -36,6 +36,7 @@ def build_dmg(app, output):
         for name in ('Getting-started.md','使用说明.md','Environment.md','环境要求.md','Third-party-licenses.md','第三方许可.md'):
             shutil.copy2(ROOT/'docs'/name, guides/name)
         shutil.copy2(ROOT/'LICENSE', guides/'LumaDock-LICENSE.txt')
+        shutil.copytree(ROOT/'docs/licenses',guides/'licenses')
         subprocess.run(['xcrun','swift',str(ROOT/'scripts/make_dmg_background.swift'),str(work),PRODUCT['version']],cwd=ROOT,env=env,check=True)
         settings = {
             'format':'UDZO', 'filesystem':'HFS+',

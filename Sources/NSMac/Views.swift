@@ -17,6 +17,7 @@ struct ContentView: View {
                 HStack(spacing:10) { BrandMark(); VStack(alignment:.leading,spacing:3) { Text(Brand.name).font(.title2.bold()); Text(L("Mac 游戏启动器")).font(.caption.weight(.medium)).tracking(1.2).foregroundStyle(.secondary) } }.padding(.top,16).padding(.leading,4)
                 List(selection:$store.selection) {
                     Label(L("游戏库"),systemImage:"square.grid.2x2").tag("library")
+                    Label(L("文件转换"),systemImage:"doc.zipper").tag("conversion")
                     Label(L("准备任务"),systemImage:"arrow.triangle.2.circlepath").badge(store.tasks.filter(\.active).count + store.queue.count).tag("tasks")
                     Label(L("设置"),systemImage:"gearshape").tag("settings")
                 }.listStyle(.sidebar).scrollContentBackground(.hidden)
@@ -29,11 +30,12 @@ struct ContentView: View {
         } detail: {
             Group {
                 switch store.selection {
+                case "conversion": ConversionView()
                 case "tasks": TasksView()
                 case "settings": SettingsView()
                 default: library
                 }
-            }.background(LibraryBackdrop()).navigationTitle(store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
+            }.background(LibraryBackdrop()).navigationTitle(store.selection=="conversion" ? L("文件转换") : store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
                 .toolbar {
                     ToolbarItemGroup(placement:.primaryAction) {
                         Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:"plus")}.help(L("先检查环境、选择游戏库并导入 prod.keys，再添加 NSP（⌘O）"))
@@ -240,7 +242,13 @@ struct TaskCard: View {
             if task.operation=="exportIPA",task.state=="completed",let path=task.outputPath {
                 Button(L("在访达中查看 IPA")) {store.reveal(URL(fileURLWithPath:path))}
             }
-            HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
+            if task.operation=="convertFiles",task.state=="completed",let path=task.outputPath {
+                HStack {
+                    Button(L("查看转换结果")){store.reveal(URL(fileURLWithPath:path))}
+                    if (task.outputFiles ?? []).contains(where:{URL(fileURLWithPath:$0).pathExtension.lowercased()=="nsp"}) {Button(L("导入生成的 NSP")){store.importConverted(task)}}
+                }
+            }
+            HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
         }.padding(18).contentCard(18)
     }
 }

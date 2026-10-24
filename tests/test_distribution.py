@@ -35,7 +35,7 @@ class DistributionTests(unittest.TestCase):
     def test_release_audit_rejects_private_data_and_game_art(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            for name in ('prod.keys', 'game.nsp', 'cache/shaders.metallib', 'saves/slot.dat', 'cover.png', 'Vendor/nxnative/source.c', 'Runtime/nx_extract/nx_extract.dll', 'tools/dmsh_xlate.dll'):
+            for name in ('prod.keys', 'game.nsp', 'game.xcz', 'cache/shaders.metallib', 'saves/slot.dat', 'cover.png', 'Vendor/nxnative/source.c', 'Runtime/nx_extract/nx_extract.dll', 'tools/dmsh_xlate.dll', 'Runtime/NSC_BUILDER/ztools/squirrel.py', 'Runtime/nsz/module.py'):
                 path = root/name
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(b'private-fixture')
@@ -44,12 +44,19 @@ class DistributionTests(unittest.TestCase):
                 path.unlink()
             (root/'LumaDock.icns').write_bytes(b'icon')
             self.assertEqual(len(audit(root)), 1)
+            bundled=root/'Runtime/converter/NSC_BUILDER/ztools/squirrel.py'
+            bundled.parent.mkdir(parents=True,exist_ok=True);bundled.write_text('original fixture')
+            self.assertEqual(len(audit(root)),2)
+            keys=bundled.with_name('keys.txt');keys.write_text('private key fixture')
+            with self.assertRaisesRegex(RuntimeError,'keys'):audit(root)
 
     def test_source_audit_rejects_hidden_private_directories(self):
         with tempfile.TemporaryDirectory() as directory:
-            for name in ('work/key.txt', 'Runtime/lib.txt', 'game.nsp', '../outside.txt'):
+            for name in ('work/key.txt', 'Runtime/lib.txt', 'game.nsp', '../outside.txt','docs/game.XCZ','Sources/NSC_BUILDER/squirrel.py','Sources/nsz/__init__.py'):
                 archive = pathlib.Path(directory)/'test.zip'
                 with zipfile.ZipFile(archive, 'w') as output:
+                    for required in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico'):
+                        output.writestr(PRODUCT['name']+'/'+required,'fixture')
                     output.writestr(PRODUCT['name']+'/'+name, 'fixture')
                 with self.assertRaises(AssertionError, msg=name):
                     verify_source(archive)

@@ -15,7 +15,7 @@ struct TaskDiagnostic: Codable, Identifiable, Equatable {
     static func redact(_ text: String, paths: [(String,String)]) -> String {
         var result=text.replacingOccurrences(of:#"(?i)(authorization\s*:\s*(?:bearer|basic|token)\s+)\S+"#,with:"$1[REDACTED]",options:.regularExpression)
         result=result.replacingOccurrences(of:#"(?i)(https?://)[^/\s:@]+:[^/\s@]+@"#,with:"$1[REDACTED]@",options:.regularExpression)
-        result=result.replacingOccurrences(of:#"(?i)([\w-]*(?:key|secret|token|password)[\w-]*\s*[=:]\s*)["']?[^\s,;"']+"#,with:"$1[REDACTED]",options:.regularExpression)
+        result=result.replacingOccurrences(of:#"(?i)([\w-]*(?:key|kek|secret|token|password)[\w-]*\s*[=:]\s*)["']?[^\s,;"']+"#,with:"$1[REDACTED]",options:.regularExpression)
         result=result.replacingOccurrences(of:#"\b[0-9a-fA-F]{64,}\b"#,with:"[REDACTED]",options:.regularExpression)
         for (path,label) in paths where !path.isEmpty {result=result.replacingOccurrences(of:path,with:label)}
         return String(result.suffix(3000))

@@ -75,9 +75,13 @@ def build(out):
     cp(dotnet/'host', out/'dotnet/host')
     cp(dotnet/'dotnet', out/'dotnet/dotnet')
     (out/'bin/dotnet').symlink_to('../dotnet/dotnet')
+    converter=ROOT/'work/Converter'
+    if not (converter/'manifest.json').is_file():
+        raise RuntimeError('Run scripts/bundle_converter.py before collecting the runtime.')
+    shutil.copytree(converter,out/'converter',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
     libs = out/'lib'
     libs.mkdir()
-    todo = [p for root in (out/'python', out/'bin') for p in root.rglob('*')
+    todo = [p for root in (out/'python', out/'bin',out/'converter') for p in root.rglob('*')
             if p.is_file() and not p.is_symlink() and macho(p)]
     seen = set()
     while todo:

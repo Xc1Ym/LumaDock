@@ -1,33 +1,33 @@
-# LumaDock 0.2.7
-
-LumaDock is a game launcher for Apple Silicon Macs running macOS 26 or later, using a player-selected external [nxnative](https://github.com/seedds/nxnative) engine.
+# LumaDock 0.2.8
 
 ## Changes
 
-- **Bundled file conversion.** Convert NSP/XCI (including NSZ/XCZ inputs), compress or decompress NSZ/XCZ, and merge one game's base, update and DLC packages. The new File conversion page uses bundled tools adapted from [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac), with NSC_BUILDER, nsz and pinned dependencies. Conversion needs your own valid keys; it does not need a separate Python, Xcode or nxnative installation. Generated NSPs can be imported into the library. (#8)
-- **Protected inputs and outputs.** Conversion runs with private input/backend copies, separate conversion keys, progress, cancellation/retry, task history and log actions. Validated results are exported into a new folder without replacing existing output. Upstream licenses, dependency notices and corresponding GPL/MPL component sources are included.
-- **DLC preparation fix.** Pass the engine source directory to the upstream seven-argument `extract_aoc` interface. This fixes `TypeError: extract_aoc() missing 1 required positional argument: 'logs'` during Mac preparation and IPA export. The reported exception was caused by an incorrect call; it did not establish a console/firmware version mismatch. (#9, #10)
+- **Shader preparation fix (#12).** Read newer nxnative's shared `dm/gfx/nvn/dmsh_chain.h`, with fallback to the selected game's header for older engines. This fixes the missing-header crash reported in the #9 follow-up, before shader compilation starts. Missing or invalid headers trigger one private engine-workspace rebuild before an actionable error.
+- **Milestone progress and time estimates (#11).** Game preparation and IPA export show their steps, purposes, elapsed time, estimated remaining time and completion time in both the task page and global task bar. Successful uncached stages train local median estimates by game, target and toolchain. Initial timings are reference estimates; unknown totals do not produce numeric percentages. Adapted from S2Arm with its attribution and MIT notice retained.
+- **Correct iOS shader progress.** Count completed iOS reflection/library pairs instead of the Mac cache, including with older per-game chain headers. A finished Mac cache no longer makes an unfinished iOS shader stage appear complete.
 
 ## Installation and validation
 
-Download **LumaDock-0.2.7-arm64.dmg**, verify `SHA256SUMS`, and drag **LumaDock.app** into Applications. Packages use **ad-hoc signing and are not notarized**. Game preparation still requires full Xcode, Metal and a compatible external engine; IPA export also requires the iOS platform and XcodeGen.
+Download **LumaDock-0.2.8-arm64.dmg**, verify `SHA256SUMS`, and drag **LumaDock.app** into Applications. Requires Apple Silicon and macOS 26+. Packages use **ad-hoc signing and are not notarized**. Preparation requires full Xcode, Metal and a compatible external nxnative engine; IPA export also requires the iOS platform and XcodeGen.
 
-The combined changes passed **98 Python tests and 51 Swift Release tests**, real macOS/iOS Metal success/failure checks, and original unsigned UIKit IPA packaging/validation. DLC regression coverage includes Mac/iOS calls, multiple DLC packages, no DLC, cache reuse and failure/retry. Conversion success tests use original containers and backend protocol fixtures; real bundled backends are checked for startup, relocation and invalid-key rejection. These checks do not establish commercial-game conversion, in-game DLC behavior or physical iPhone/iPad compatibility.
+The combined changes passed **114 Python tests and 57 Swift Release tests**, real macOS/iOS Metal checks, original unsigned UIKit IPA validation, and CI package, signature and runtime-relocation checks. Tests exercise both header layouts through actual synthetic header-generation subprocesses and iOS counting while the Mac cache is complete. The tag workflow repeats the full build and validation before publishing assets.
 
-**No engine, games, updates, DLC, firmware, player keys, game artwork, saves or player caches are included.** Import only content you are authorized to use. The project is not affiliated with Nintendo or any game publisher. Thanks to nxnative, MacNativeGames, d2r-mobile, SAK-Mac and their contributors; full notices remain in the bundled documentation.
+**Validation limits:** #9's reporter bypassed the missing-file error by copying the header, then reported 0% shader progress. Those logs do not establish successful compilation or a complete game build. Real-game preparation, gameplay and physical iOS devices have not been revalidated. Newer nxnative NVN IPA export has a separate existing C1 table inputs-stamp compatibility issue; this release does not resolve it.
+
+No engine, games, updates, DLC, firmware, player keys, game artwork, saves or player caches are included. Thanks to nxnative, MacNativeGames, d2r-mobile, SAK-Mac, S2Arm and their contributors; full notices remain in the bundled documentation.
 
 ---
 
 ## 中文说明
 
-璃游 0.2.7 面向 Apple Silicon Mac、macOS 26 及以上，使用玩家自行提供的外部 nxnative 引擎。
+- **修复着色器准备崩溃（#12）。** 优先读取新版 nxnative 的共享 `dm/gfx/nvn/dmsh_chain.h`，兼容旧版每游戏头文件，修复 #9 追评中在编译启动前发生的缺失头文件异常。缺失或无效头文件会触发一次私有引擎工作区重建，仍无效时给出明确提示。
+- **里程碑进度与耗时估算（#11）。** 游戏准备和 IPA 导出显示阶段、步骤作用、已用时间、预计剩余和完成时刻，任务页与全局底栏同步。成功且未命中缓存的阶段按游戏、目标和工具链积累本机耗时中位数；初始耗时明确为参考估计，未知总量不显示数字百分比。实现参考 S2Arm，保留来源和 MIT 声明。
+- **修正 iOS 着色器计数。** IPA 任务读取 iOS 产物，避免 Mac 缓存完成后提前显示 iOS 阶段完成，旧版头文件同样适用。
 
-- **内置文件转换。** 新增“文件转换”页面，支持 NSP/XCI 转换（可输入 NSZ/XCZ）、压缩解压及同一游戏本体、更新和 DLC 合并。内置参考 SAK-Mac 的调度逻辑、NSC_BUILDER、nsz 和固定版本依赖；导入自己的有效密钥即可使用，无需另装 Python、Xcode 或 nxnative。生成的 NSP 可直接入库。（#8）
-- **保护原文件和已有输出。** 使用私有输入与后端副本、独立转换密钥，提供进度、取消重试、任务历史、日志和结果入口。校验后导出至新文件夹，不覆盖旧结果；保留上游许可、依赖声明及 GPL/MPL 组件对应源码。
-- **修复 DLC 准备失败。** 补齐 `extract_aoc` 所需的引擎源码目录参数，修复 Mac 准备和 IPA 导出时的 `missing 1 required positional argument: 'logs'`。此异常来自调用参数错误，现有日志没有证明主机或固件版本不匹配。（#9、#10）
+下载 **LumaDock-0.2.8-arm64.dmg**，核对 `SHA256SUMS` 后拖入“应用程序”。需要 Apple Silicon、macOS 26 及以上。安装包采用 **ad-hoc 签名，尚未公证**。游戏准备仍需完整 Xcode、Metal 和兼容的外部引擎；IPA 导出还需 iOS 平台与 XcodeGen。
 
-下载 **LumaDock-0.2.7-arm64.dmg**，核对 `SHA256SUMS` 后拖入“应用程序”。安装包采用 **ad-hoc 签名，尚未公证**。游戏准备仍需要完整 Xcode、Metal 和兼容的外部引擎；IPA 导出还需要 iOS 平台与 XcodeGen。
+组合版本通过 **114 项 Python、57 项 Swift Release 测试**、真实 macOS/iOS Metal 检查、原创 UIKit 未签名 IPA 校验，以及 CI 的安装包、签名与运行时搬移检查。新增回归实际启动原创头文件生成子进程，并确认 Mac 缓存完成时 iOS 进度不会提前完成。版本标签流水线会在公开附件前重新执行完整构建与校验。
 
-组合版本通过 **98 项 Python、51 项 Swift Release 测试**、真实 macOS/iOS Metal 成功与失败检查，以及原创 UIKit 未签名 IPA 构建校验。DLC 回归覆盖 Mac/iOS、多 DLC、无 DLC、缓存复用和失败重试。转换成功测试使用原创容器和后端协议夹具；真实内置后端检查覆盖启动、搬移和无效密钥拒绝。尚未验证商业游戏转换、游戏内 DLC 加载或实体 iPhone/iPad 兼容性。
+**验证范围：** #9 报告者仅确认复制头文件后越过缺失文件异常，随后反馈进度停在 0%；附件不能证明编译或完整游戏准备成功。本次未重验真实游戏准备、游玩或 iOS 真机。新版 nxnative 的 NVN IPA 导出另有既存 C1 表 inputs 标记兼容问题，本版尚未处理。
 
-项目不附带引擎、游戏、更新、DLC、固件、玩家密钥、游戏封面、存档或玩家缓存；仅导入有权使用的内容。项目与 Nintendo 及游戏发行商无隶属或认可关系。感谢 nxnative、MacNativeGames、d2r-mobile、SAK-Mac 及贡献者；完整致谢和许可保留在随包文档中。
+项目不附带引擎、游戏、更新、DLC、固件、玩家密钥、游戏封面、存档或玩家缓存。感谢 nxnative、MacNativeGames、d2r-mobile、SAK-Mac、S2Arm 及贡献者；完整致谢与许可保留在随包文档中。

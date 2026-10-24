@@ -38,7 +38,7 @@ struct ContentView: View {
             }.background(LibraryBackdrop()).navigationTitle(store.selection=="conversion" ? L("文件转换") : store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
                 .toolbar {
                     ToolbarItemGroup(placement:.primaryAction) {
-                        Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:"plus")}.help(L("先检查环境、选择游戏库并导入 prod.keys，再添加 NSP（⌘O）"))
+                        Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:"plus")}.help(L("先检查环境、选择游戏库并导入 prod.keys，再添加游戏（⌘O）"))
                         Button {store.inputGame=nil;store.editingInput=true} label:{Label(L("输入映射"),systemImage:"keyboard")}.help(L("设置全局键鼠与手柄映射"))
                     }
                 }
@@ -77,7 +77,7 @@ struct ContentView: View {
                     VStack(spacing:16) {
                         BrandMark(size:104)
                         Text(L("收藏你的第一段旅程")).font(.title2.bold())
-                        Text(!store.environmentReady ? L("先检查系统、Xcode 与 Metal 组件，\n再选择游戏库、导入密钥和游戏。") : store.hasImportedKeys ? L("密钥已就绪，添加支持版本的 NSP。\n文件齐全后自动准备，完成后点击启动。") : L("先选择游戏库并导入 prod.keys，\n再添加游戏、准备运行文件。")).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        Text(!store.environmentReady ? L("先检查系统、Xcode 与 Metal 组件，\n再选择游戏库、导入密钥和游戏。") : store.hasImportedKeys ? L("添加 NSP、XCI、NSZ 或 XCZ 游戏文件。\n压缩文件自动解压，文件齐全后自动准备。") : L("先选择游戏库并导入 prod.keys，\n再添加游戏、准备运行文件。")).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:store.hasImportedKeys ? "plus" : "key")}.buttonStyle(.glassProminent).controlSize(.large)
                         Text(L("游戏、密钥与固件均需自行提供")).font(.caption).foregroundStyle(.tertiary)
                     }.frame(maxWidth:.infinity,maxHeight:.infinity)
@@ -249,7 +249,7 @@ struct TaskCard: View {
                     if (task.outputFiles ?? []).contains(where:{URL(fileURLWithPath:$0).pathExtension.lowercased()=="nsp"}) {Button(L("导入生成的 NSP")){store.importConverted(task)}}
                 }
             }
-            HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
+            HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil || task.importPaths != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
         }.padding(18).contentCard(18)
     }
 }

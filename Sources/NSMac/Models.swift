@@ -21,6 +21,7 @@ struct TaskRecord: Codable, Identifiable {
     var outputPath: String?
     var outputFiles: [String]?
     var conversion: ConversionJob?
+    var importPaths: [String]?
     var milestones:[Milestone]?; var milestone:String?; var milestoneStarted:[String:Double]?
     var milestoneCached:[String]?
     var diagnostics: [TaskDiagnostic]?

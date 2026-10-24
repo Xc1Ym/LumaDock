@@ -1,12 +1,12 @@
 """Real subprocess conversion protocol with original containers; no player content."""
-import contextlib, io, json, os, signal, struct, subprocess, sys, tempfile, time, unittest, venv
+import contextlib, io, json, os, signal, struct, subprocess, sys, tempfile, threading, time, unittest, venv
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'Worker'))
 from core import Context, Failure, Cancelled, digest
-import conversion
+import conversion, library
 
 SCRIPT = r'''
 import json, os, struct, sys
@@ -76,6 +76,99 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(digest(self.source),self.before)
         self.assertEqual((self.ztools/'keys.txt').read_text(),'external backend key must not change')
         self.assertEqual(list((self.c.private/'converter/work').glob('*')),[])
+
+    def import_fixture(self, paths):
+        self.c=Context(self.c.r|{'operation':'import','taskId':'import-fixture','paths':list(map(str,paths))})
+        self.quiet(library.setup,self.c)
+        def inspect(c,path,key=None,icon=None):
+            if path.suffix.lower() not in {'.nsp','.xci'}: raise AssertionError('Only native containers may reach the engine reader')
+            if '/converter/import/' in str(path): conversion.validate_output(path)
+            return dict(baseId='0100000000000000',titleId='0100000000000000',name='Synthetic import',display='1.0',type='base',version=0,builds={})
+        return patch.object(library,'inspect',side_effect=inspect)
+
+    def test_mixed_folder_import_converts_in_private_storage_then_registers_all_content(self):
+        folder=self.root/'mixed';nested=folder/'nested';nested.mkdir(parents=True)
+        paths=[folder/'base.XCI',nested/'update.NSZ',nested/'extra.xcz',folder/'direct.nsp']
+        for index,path in enumerate(paths): path.write_bytes(f'synthetic input {index}'.encode())
+        before={p:digest(p) for p in paths}
+        with self.import_fixture([folder]):
+            result=self.quiet(library.import_games,self.c)
+        self.assertEqual(len(result['imports']),4)
+        self.assertTrue(all(not item['duplicate'] for item in result['imports']))
+        packages=self.c.catalog()['games'][0]['packages'];self.assertEqual(len(packages),4)
+        self.assertTrue(all((self.c.library/p['path']).is_file() for p in packages))
+        self.assertEqual(sorted(Path(p['path']).suffix for p in packages),['.nsp','.nsp','.xci','.xci'])
+        self.assertEqual(before,{p:digest(p) for p in paths})
+        self.assertEqual(list((self.c.private/'converter/import').iterdir()),[])
+        self.assert_isolated()
+        self.assertNotIn('outputFiles',self.c.job)
+        self.assertEqual(self.c.job['importPaths'],[str(folder)])
+        events=[json.loads(line) for line in self.events.getvalue().splitlines()]
+        self.assertTrue(any(event.get('unit')=='%' and event.get('done')==25 for event in events))
+
+    def test_nsp_and_xci_import_do_not_require_or_invoke_the_converter(self):
+        cartridge=self.root/'base.XCI';cartridge.write_text('synthetic native cartridge')
+        with self.import_fixture([self.source,cartridge]),patch.object(conversion,'_convert',side_effect=AssertionError('Native containers must bypass conversion')):
+            result=self.quiet(library.import_games,self.c)
+        self.assertEqual(len(result['imports']),2)
+        self.assertTrue(any(p['path'].endswith('.xci') for p in self.c.catalog()['games'][0]['packages']))
+        self.assertFalse((self.c.private/'converter/import').exists())
+
+    def test_automatic_conversion_uses_library_keys_instead_of_independent_converter_keys(self):
+        source=self.root/'base.nsz';source.write_text('synthetic compressed package')
+        with self.import_fixture([source]):
+            dedicated=self.c.private/'converter/keys/prod.keys';dedicated.parent.mkdir(parents=True)
+            dedicated.write_text('invalid dedicated converter key')
+            self.assertFalse(conversion.status(self.c)['keysReady'])
+            result=self.quiet(library.import_games,self.c)
+        self.assertEqual(len(result['imports']),1)
+        package=self.c.library/self.c.catalog()['games'][0]['packages'][0]['path']
+        data=package.read_bytes();payload=json.loads(data[40+struct.unpack_from('<I',data,8)[0]:])
+        self.assertEqual(payload['args'][payload['args'].index('--keys')+1],str(self.c.keys))
+        self.assertEqual(dedicated.read_text(),'invalid dedicated converter key')
+        self.assert_isolated()
+
+    def test_failed_conversion_does_not_register_partial_mixed_import_or_leave_temporary_output(self):
+        source=self.root/'base.nsz';source.write_text('synthetic compressed package')
+        self.behavior('exit_zero_error')
+        with self.import_fixture([self.source,source]) as inspect:
+            with self.assertRaises(Failure): self.quiet(library.import_games,self.c)
+            inspect.assert_not_called()
+        self.assertEqual(self.c.catalog()['games'],[])
+        self.assertEqual(list((self.c.private/'converter/import').iterdir()),[])
+        self.assert_isolated()
+
+    def test_cancelled_conversion_cleans_import_staging_and_does_not_register_content(self):
+        source=self.root/'base.xcz';source.write_text('synthetic compressed cartridge')
+        with self.import_fixture([source]) as inspect,patch.object(self.c,'run',side_effect=Cancelled):
+            with self.assertRaises(Cancelled): self.quiet(library.import_games,self.c)
+            inspect.assert_not_called()
+        self.assertEqual(self.c.catalog()['games'],[])
+        self.assertEqual(list((self.c.private/'converter/import').iterdir()),[])
+        self.assert_isolated()
+
+    def test_import_waits_for_existing_build_and_waiting_can_be_cancelled(self):
+        source=self.root/'base.nsz';source.write_text('synthetic compressed package')
+        with self.import_fixture([source]):
+            owner=Context(self.c.r|{'taskId':'lock-owner'})
+            locked=threading.Event();release=threading.Event()
+            def hold():
+                with owner.toolchain_lock():
+                    locked.set();release.wait(5)
+            thread=threading.Thread(target=hold);thread.start();self.assertTrue(locked.wait(2))
+            timer=threading.Timer(.4,release.set);timer.start()
+            try: result=self.quiet(library.import_games,self.c)
+            finally: release.set();thread.join();timer.cancel()
+            self.assertEqual(len(result['imports']),1)
+            events=[json.loads(line) for line in self.events.getvalue().splitlines()]
+            self.assertTrue(any(event.get('stage')=='等待游戏或工具链任务结束' for event in events))
+            begin=self.c.begin
+            def cancel_wait(stage,*args):
+                begin(stage,*args)
+                if stage=='等待游戏或工具链任务结束': self.c.cancelled=True
+            with owner.toolchain_lock(),patch.object(self.c,'begin',side_effect=cancel_wait):
+                with self.assertRaises(Cancelled): self.quiet(library.import_games,self.c)
+        self.assertEqual(list((self.c.private/'converter/import').iterdir()),[])
 
     def test_real_child_converts_private_copies_and_preserves_previous_output(self):
         old=self.root/'output/old.nsp';old.parent.mkdir();old.write_text('previous result')

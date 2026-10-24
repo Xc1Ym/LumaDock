@@ -2886,5 +2886,49 @@
   {
     "source": "预计 {0} 完成",
     "en": "Estimated finish: {0}"
+  },
+  {
+    "source": "添加游戏文件或扫描文件夹",
+    "en": "Add game files or scan a folder"
+  },
+  {
+    "source": "先检查环境、选择游戏库并导入 prod.keys，再添加游戏（⌘O）",
+    "en": "Check the environment, choose a library and import prod.keys, then add games (⌘O)"
+  },
+  {
+    "source": "添加 NSP、XCI、NSZ 或 XCZ 游戏文件。\n压缩文件自动解压，文件齐全后自动准备。",
+    "en": "Add NSP, XCI, NSZ or XCZ game files.\nDecompress archives and prepare automatically when all files are available."
+  },
+  {
+    "source": "扫描游戏文件",
+    "en": "Scan game files"
+  },
+  {
+    "source": "请选择 NSP、XCI、NSZ、XCZ 文件或包含这些文件的文件夹。",
+    "en": "Choose NSP, XCI, NSZ or XCZ files, or a folder containing them."
+  },
+  {
+    "source": "所选位置没有支持的游戏文件。",
+    "en": "No supported game files were found at the selected location."
+  },
+  {
+    "source": "等待游戏或工具链任务结束",
+    "en": "Waiting for the game or toolchain task to finish"
+  },
+  {
+    "source": "无法解密或验证游戏元数据，请检查密钥、文件完整性及引擎格式支持。",
+    "en": "Unable to decrypt or verify game metadata. Check your keys, file integrity and engine format support."
+  },
+  {
+    "source": "无法识别游戏元数据，请检查密钥、文件完整性和文件类型。",
+    "en": "Unable to read game metadata. Check your keys, file integrity and file type."
+  },
+  {
+    "source": "读取游戏元数据（{0}/{1}）",
+    "en": "Read game metadata ({0}/{1})"
+  },
+  {
+    "source": "复制游戏文件到游戏库",
+    "en": "Copy game files into the library"
   }
 ]

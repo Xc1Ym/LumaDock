@@ -7,13 +7,13 @@
 <p align="center">Apple Silicon · macOS 26+ · SwiftUI / Liquid Glass</p>
 <p align="center"><a href="https://github.com/Xc1Ym/LumaDock/releases/latest">Download for Mac</a> · <a href="https://github.com/Xc1Ym/LumaDock/actions/workflows/ci.yml">Build status</a></p>
 
-LumaDock is a native Switch game launcher for Apple Silicon Macs. With your own **[nxnative](https://github.com/seedds/nxnative) engine**, authorized NSP files and `prod.keys`, import games, prepare and launch them on Mac, or export an unsigned iPhone / iPad IPA.
+LumaDock is a native Switch game launcher for Apple Silicon Macs. With your own **[nxnative](https://github.com/seedds/nxnative) engine**, authorized NSP/XCI files and `prod.keys`, import games, prepare and launch them on Mac, or export an unsigned iPhone / iPad IPA.
 
 nxnative provides native execution and Metal graphics; LumaDock provides the library and graphical workflow. **No engine, games, updates, DLC, firmware, keys, game artwork or player caches are included or offered for download.**
 
 ## Features
 
-- **Library management** — Import or scan NSPs; match base games, updates and DLC by content metadata.
+- **Library management** — Add NSP/XCI/NSZ/XCZ files or scan a folder; import NSP/XCI directly, decompress NSZ/XCZ, then prepare automatically.
 - **Automated builds** — Prepare code, shaders and runtime files with validated caches, cancellation and retry.
 - **File conversion** — Convert NSP/XCI, compress or decompress NSZ/XCZ, and merge packages using bundled conversion tools adapted from [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac). Exported NSPs can be imported into the library.
 - **IPA export** — Generate an unsigned iPhone / iPad package from game details.
@@ -26,7 +26,7 @@ nxnative provides native execution and Metal graphics; LumaDock provides the lib
 
 1. Download the latest **ARM64 DMG**, verify `SHA256SUMS`, and drag **LumaDock.app** into Applications. Current builds use **ad-hoc signing and are not notarized**.
 2. Follow setup: check the environment, select your nxnative source root, and choose **Prepare engine tools**.
-3. Choose a library, import your own `prod.keys`, then add the base game, updates and DLC as NSP files.
+3. Choose a library, import your own `prod.keys`, then add the base game, updates and DLC as NSP, XCI, NSZ or XCZ files.
 4. Prepare the game and choose **Launch game**, or choose **Generate IPA…** in game details. Tasks show progress and support cancellation and retry.
 
 IPA export additionally requires Xcode's **iOS platform** and **XcodeGen** (`brew install xcodegen`). Sign the exported IPA with your installation tool before installing it.

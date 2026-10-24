@@ -7,13 +7,13 @@
 <p align="center">Apple Silicon · macOS 26+ · SwiftUI / Liquid Glass</p>
 <p align="center"><a href="https://github.com/Xc1Ym/LumaDock/releases/latest">下载 Mac 版</a> · <a href="https://github.com/Xc1Ym/LumaDock/actions/workflows/ci.yml">构建状态</a></p>
 
-璃游是面向 Apple Silicon Mac 的原生 Switch 游戏启动器。使用自备的 **[nxnative 引擎](https://github.com/seedds/nxnative)**、有权使用的 NSP 文件和 `prod.keys`，即可在图形界面中导入、准备并启动游戏，或导出未签名的 iPhone / iPad IPA。
+璃游是面向 Apple Silicon Mac 的原生 Switch 游戏启动器。使用自备的 **[nxnative 引擎](https://github.com/seedds/nxnative)**、有权使用的 NSP/XCI 文件和 `prod.keys`，即可在图形界面中导入、准备并启动游戏，或导出未签名的 iPhone / iPad IPA。
 
 nxnative 提供原生执行和 Metal 图形能力，璃游负责游戏库与图形化操作流程。**项目不附带或提供引擎、游戏、更新、DLC、固件、密钥、游戏封面及玩家缓存的下载。**
 
 ## 主要功能
 
-- **游戏库管理** — 导入或扫描 NSP，按内容元数据匹配本体、更新和 DLC。
+- **游戏库管理** — 添加 NSP/XCI/NSZ/XCZ 或扫描文件夹，NSP/XCI 直接导入，压缩格式自动解压，再准备游戏。
 - **自动构建** — 完成代码、着色器和运行文件准备，支持缓存校验、取消和重试。
 - **文件转换** — 内置参考 [SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac) 的转换工具，转换 NSP/XCI、压缩解压 NSZ/XCZ、合并文件；生成的 NSP 可导入游戏库。
 - **IPA 导出** — 在游戏详情中生成未签名的 iPhone / iPad 安装包。
@@ -26,7 +26,7 @@ nxnative 提供原生执行和 Metal 图形能力，璃游负责游戏库与图�
 
 1. 下载最新版 **ARM64 DMG**，核对 `SHA256SUMS`，将 **LumaDock.app** 拖入“应用程序”。当前版本采用 **ad-hoc 签名，尚未公证**。
 2. 按向导检查环境，选择 nxnative 源码根目录，点击“准备引擎工具”。
-3. 选择游戏库，导入自己的 `prod.keys`，再添加本体、更新和 DLC 的 NSP 文件。
+3. 选择游戏库，导入自己的 `prod.keys`，再添加本体、更新和 DLC 的 NSP、XCI、NSZ 或 XCZ 文件。
 4. 准备完成后点击“启动游戏”，或在详情中点击“生成 IPA…”。任务页显示进度，支持取消和重试。
 
 IPA 导出额外需要 Xcode 的 **iOS 平台**和 **XcodeGen**（`brew install xcodegen`）。导出后需使用自己的安装工具签名，再安装到设备。

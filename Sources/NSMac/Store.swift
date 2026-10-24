@@ -57,7 +57,7 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var executionTask: String?
     var refreshTimer: Timer?
     var libraryURL: URL { URL(fileURLWithPath: preferences.library) }
-    var executionBusy: Bool { executionTask != nil }
+    var executionBusy: Bool { executionTask != nil || tasks.contains { $0.operation == "import" && $0.active } }
     var refreshingLibrary: Bool {catalogWorkers>0}
     var activeTasks: [TaskRecord] {tasks.filter{$0.active && $0.state != "queued" && $0.operation != "launch"}}
     var environmentReady: Bool { environmentReportComplete && !checkingEnvironment && !checks.isEmpty && checks.filter{$0.required(for:"prepare")}.allSatisfy(\.ok) }
@@ -309,14 +309,15 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func chooseGames() {
         guard importPrerequisitesReady() else { return }
-        let p = NSOpenPanel(); p.title = L("添加 NSP 文件或扫描文件夹"); p.allowsMultipleSelection = true; p.canChooseDirectories = true; p.canChooseFiles = true
+        let p = NSOpenPanel(); p.title = L("添加游戏文件或扫描文件夹"); p.allowsMultipleSelection = true; p.canChooseDirectories = true; p.canChooseFiles = true
+        p.allowedContentTypes = ["nsp","xci","nsz","xcz"].compactMap { UTType(filenameExtension:$0) }
         if p.runModal() == .OK { addGames(p.urls) }
     }
     func addGames(_ urls: [URL]) {
-        if urls.contains(where:{["xci","nsz","xcz"].contains($0.pathExtension.lowercased())}) {addConversionFiles(urls);return}
         guard importPrerequisitesReady(), !urls.isEmpty else { return }
         let libraryId = preferences.libraryId
         let prepare = prepareAfterImport
+        selection = "tasks"
         worker("import",extra:["paths":urls.map(\.path)]) { result in
             guard libraryId == self.preferences.libraryId else { return }
             let ids = Set((result["imports"] as? [[String:Any]] ?? []).compactMap { item in item["duplicate"] as? Bool == false ? item["id"] as? String : nil })
@@ -416,11 +417,12 @@ final class WorkerOutput: @unchecked Sendable {
                         self.executionTask = nil
                         if !["prepareEngine","installMetal","uninstallMetal"].contains(operation) { self.startNext() }
                     }
+                    if operation == "import" { self.startNext() }
                     if ["prepareEngine","installMetal","uninstallMetal"].contains(operation) { self.checkEnvironment() }
                     if visible { self.refresh() }
                 }
             }
-            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String,conversion:Self.decode(ConversionJob.self,extra["conversion"])),at:0) }
+            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String,conversion:Self.decode(ConversionJob.self,extra["conversion"]),importPaths:operation == "import" ? extra["paths"] as? [String] : nil),at:0) }
             callbacks[id] = completion; processes[id] = process
             try process.run()
             if operation == "preflight" {lastWorkerEvent[id]=Date();watchEnvironmentWorker(id)}
@@ -437,7 +439,10 @@ final class WorkerOutput: @unchecked Sendable {
             }
             try? FileManager.default.removeItem(at:file)
             if operation == "preflight" { failEnvironmentBootstrap(error.localizedDescription) }
-            DispatchQueue.main.async {if self.executionTask==id {self.executionTask=nil;self.startNext()}}
+            DispatchQueue.main.async {
+                if self.executionTask==id {self.executionTask=nil;self.startNext()}
+                if operation == "import" {self.startNext()}
+            }
         }
         return id
     }
@@ -557,6 +562,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func retry(_ task: TaskRecord) {
         if task.operation == "convertFiles",let conversion=task.conversion {startConversion(conversion);return}
+        if task.operation == "import",let paths=task.importPaths {addGames(paths.map {URL(fileURLWithPath:$0)});return}
         guard let game = games.first(where:{$0.id == task.gameId}) else { return }
         if task.operation == "launch" { launch(game) }
         else if task.operation == "exportIPA" { generateIPA(game,destination:task.outputPath.map { URL(fileURLWithPath:$0) }) }

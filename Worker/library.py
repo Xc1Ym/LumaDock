@@ -45,9 +45,9 @@ def inspect(c,path,key=None,icon=None):
     lines=[]
     reader=c.nx()
     try: c.run([reader,key or c.keys,'--inspect',path]+([icon] if icon else []),on_line=lines.append)
-    except Failure: raise Failure('无法解密或验证 NSP 元数据，请检查密钥是否正确、文件是否完整。')
+    except Failure: raise Failure('无法解密或验证游戏元数据，请检查密钥、文件完整性及引擎格式支持。')
     try: return json.loads(next(l for l in reversed(lines) if l.startswith('{')))
-    except (StopIteration,ValueError): raise Failure('无法识别 NSP 元数据，请检查密钥、文件完整性和文件类型。')
+    except (StopIteration,ValueError): raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
 
 def requirements(g,p):
     if not p: return ['此游戏尚无原生适配配置']
@@ -62,18 +62,26 @@ def requirements(g,p):
     return missing
 
 def import_games(c):
+    import conversion
     if not c.keys.exists(): raise Failure('请先导入玩家自己的 prod.keys。')
-    validate_keys(c.keys); files=[];c.begin('扫描 NSP 文件',1,1)
+    validate_keys(c.keys); files=[];c.begin('扫描游戏文件',1,1)
     for s in c.r['paths']:
-        p=Path(s).expanduser().resolve()
-        if p.is_dir(): files.extend(x for x in p.rglob('*') if x.suffix.lower()=='.nsp' and x.is_file() and not x.is_symlink())
-        elif p.suffix.lower()=='.nsp': files.append(p)
-        else: raise Failure('首版只接受 NSP 文件或包含 NSP 的文件夹。')
+        p=Path(s).expanduser()
+        if p.is_symlink(): raise Failure('不接受指向游戏库之外的符号链接。')
+        p=p.resolve()
+        if p.is_dir(): files.extend(x for x in sorted(p.rglob('*')) if x.suffix.lower()[1:] in conversion.FORMATS and x.is_file() and not x.is_symlink())
+        elif p.suffix.lower()[1:] in conversion.FORMATS: files.append(p)
+        else: raise Failure('请选择 NSP、XCI、NSZ、XCZ 文件或包含这些文件的文件夹。')
     files=list(dict.fromkeys(files))
-    if not files: raise Failure('所选位置没有 NSP 文件。')
+    if not files: raise Failure('所选位置没有支持的游戏文件。')
+    with conversion.import_packages(c,files) as packages:
+        return import_containers(c,packages)
+
+
+def import_containers(c, files):
     ps=profiles(c.engine); results=[]
     for i,src in enumerate(files):
-        c.begin(f'读取 NSP 元数据（{i+1}/{len(files)}）',i*5+1,len(files)*5)
+        c.begin(f'读取游戏元数据（{i+1}/{len(files)}）',i*5+1,len(files)*5)
         info=inspect(c,src); tid=info['baseId']
         if not re.fullmatch('[0-9A-F]{16}',tid): raise Failure('无效的游戏标识。')
         c.begin('正在校验源文件内容',i*5+2,len(files)*5); sha=digest(src,c.progress)
@@ -85,13 +93,13 @@ def import_games(c):
             if any(x['sha256']==sha for x in g['packages']):
                 c.save_catalog(cat); results.append({'name':src.name,'duplicate':True})
                 c.begin('跳过重复内容',i*5+5,len(files)*5);c.emit(done=1,total=1);continue
-            dest=c.library/'sources'/tid/f'{info["titleId"]}_v{info["version"]}_{sha[:12]}.nsp'
+            dest=c.library/'sources'/tid/f'{info["titleId"]}_v{info["version"]}_{sha[:12]}{src.suffix.lower()}'
             free=shutil.disk_usage(c.library).free
             reserve=512*2**20 if src.stat().st_dev==c.library.stat().st_dev else src.stat().st_size+512*2**20
             if free<reserve: raise Failure('游戏库可用空间不足，复制尚未开始。')
             tmp=dest.with_suffix('.partial'); tmp.parent.mkdir(parents=True,exist_ok=True); tmp.unlink(missing_ok=True)
             try:
-                c.begin('复制 NSP 到游戏库',i*5+3,len(files)*5);clone(src,tmp,c.progress)
+                c.begin('复制游戏文件到游戏库',i*5+3,len(files)*5);clone(src,tmp,c.progress)
                 c.begin('校验托管副本',i*5+4,len(files)*5)
                 if digest(tmp,c.progress)!=sha: raise Failure('复制后校验失败，原始文件未改动。')
                 c.check(); os.replace(tmp,dest)

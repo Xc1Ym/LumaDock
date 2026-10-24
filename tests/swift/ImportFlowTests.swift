@@ -17,7 +17,7 @@ import json, pathlib, sys
 r=json.loads(pathlib.Path(sys.argv[2]).read_text())
 root=pathlib.Path(r['resources']).parent
 with (root/'operations.jsonl').open('a') as f:
-    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'confirmed':r.get('confirmed'),'engineDir':r.get('engineDir'),'gameLanguage':r.get('gameLanguage'),'outputPath':r.get('outputPath')})+'\n')
+    f.write(json.dumps({'operation':r['operation'],'gameId':r.get('gameId'),'paths':r.get('paths'),'confirmed':r.get('confirmed'),'engineDir':r.get('engineDir'),'gameLanguage':r.get('gameLanguage'),'outputPath':r.get('outputPath')})+'\n')
 if r['operation']=='catalog':
     result=json.loads((root/'catalog.json').read_text())
 elif r['operation']=='import':
@@ -133,6 +133,47 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         XCTAssertFalse(operations(root).contains{$0["operation"] as? String == "build"})
         let saved=try JSONDecoder().decode(Preferences.self,from:Data(contentsOf:store.privateRoot.appendingPathComponent("preferences.json")))
         XCTAssertEqual(saved.prepareAfterImport,false)
+        await cleanup(root,store)
+    }
+    func testMixedFormatsStayInImportFlowAndAutomaticallyPrepare() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true
+        try configure(root,games:[game("g1")],imports:[["id":"g1","duplicate":false]])
+        let files=["base.XCI","update.NSZ","dlc.xcz","extra.nsp"].map {root.appendingPathComponent($0)}
+        store.conversion.mode = .compress;store.conversion.target="xci"
+        store.conversion.paths=["unrelated.nsp"]
+        store.addGames(files)
+        XCTAssertEqual(store.selection,"tasks")
+        XCTAssertEqual(store.tasks.first?.operation,"import")
+        XCTAssertEqual(store.tasks.first?.importPaths,files.map(\.path))
+        XCTAssertTrue(store.executionBusy)
+        store.launch(Store.decode(Game.self,game("g1",ready:true))!)
+        try await waitUntil {self.operations(root).contains{$0["operation"] as? String == "build"} && !store.executionBusy}
+        XCTAssertEqual(operations(root).first?["paths"] as? [String],files.map(\.path))
+        XCTAssertFalse(operations(root).contains {["convertFiles","launch"].contains($0["operation"] as? String ?? "")})
+        XCTAssertEqual(store.conversion.paths,["unrelated.nsp"])
+        XCTAssertEqual(store.conversion.mode,.compress)
+        await cleanup(root,store)
+    }
+    func testImportRetryRetainsSourcePathsAfterTaskPersistence() async throws {
+        let (root,store)=try fixture();store.hasImportedKeys=true;store.prepareAfterImport=false
+        try configure(root,games:[game("g1")],imports:[["id":"g1","duplicate":false]])
+        let paths=[root.appendingPathComponent("base.xcz").path]
+        let failed=TaskRecord(id:"failed-import",operation:"import",state:"failed",importPaths:paths)
+        store.persistTask(failed)
+        let saved=try JSONDecoder().decode(TaskRecord.self,from:Data(contentsOf:store.privateRoot.appendingPathComponent("jobs/failed-import.json")))
+        store.retry(saved)
+        try await waitUntil {store.games.count==1 && store.processes.isEmpty}
+        XCTAssertEqual(operations(root).filter{$0["operation"] as? String == "import"}.first?["paths"] as? [String],paths)
+        XCTAssertFalse(operations(root).contains {$0["operation"] as? String == "build"})
+        XCTAssertEqual(store.selection,"tasks")
+        await cleanup(root,store)
+    }
+    func testCompressedInputCannotBypassImportPrerequisites() async throws {
+        let (root,store)=try fixture()
+        store.addGames([root.appendingPathComponent("base.xci")])
+        XCTAssertTrue(store.showOnboarding);XCTAssertEqual(store.onboardingStep,2)
+        XCTAssertNotEqual(store.selection,"conversion")
+        XCTAssertTrue(operations(root).isEmpty);XCTAssertTrue(store.conversion.paths.isEmpty)
         await cleanup(root,store)
     }
     func testMissingToolchainKeepsImportedGameWithoutBuilding() async throws {

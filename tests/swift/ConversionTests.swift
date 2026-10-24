@@ -36,10 +36,10 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
     private func cleanup(_ root:URL,_ store:Store) async {
         store.terminate();try? await Task.sleep(nanoseconds:250_000_000);try? FileManager.default.removeItem(at:root)
     }
-    func testCompressedAndCartridgeInputRoutesToConverterWithoutSetupOrAutomaticWork() async throws {
+    func testExplicitConverterAcceptsCompressedAndCartridgeInputWithoutSetupOrAutomaticWork() async throws {
         let (root,store)=try fixture()
         XCTAssertFalse(store.environmentReady)
-        store.addGames([root.appendingPathComponent("中文's.xcz"),root.appendingPathComponent("base.nsp")])
+        store.addConversionFiles([root.appendingPathComponent("中文's.xcz"),root.appendingPathComponent("base.nsp")])
         XCTAssertEqual(store.selection,"conversion");XCTAssertFalse(store.showOnboarding)
         XCTAssertEqual(store.conversion.paths.count,2)
         XCTAssertTrue(operations(root).isEmpty)

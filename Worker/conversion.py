@@ -4,7 +4,7 @@ Copyright (c) 2026 ggaoph-lab. Upstream c8e0baa59a168d9efaa0b556af70e0a08bda51de
 See docs/licenses/SAK-Mac-LICENSE.txt. Pinned backends and dependencies are bundled in Runtime/converter.
 """
 from __future__ import annotations
-import fcntl, json, math, os, re, shutil, struct, tempfile, uuid
+import contextlib, fcntl, json, math, os, re, shutil, struct, tempfile, uuid
 from pathlib import Path
 from core import Failure, atomic, clone, digest, validate_keys
 import diagnostics
@@ -26,12 +26,12 @@ def key_path(c):
     return own if own.is_file() else c.keys
 
 
-def status(c):
+def status(c, *, keys=None):
     root = backend_root(c)
     python = c.runtime/'python/bin/python3'
     nscb = root/'NSC_BUILDER/ztools/squirrel.py'
     runtime = python.is_file() and os.access(python, os.X_OK)
-    keys = key_path(c)
+    keys = keys if keys is not None else key_path(c)
     try: validate_keys(keys); keys_ready = True
     except (Failure, OSError, UnicodeError): keys_ready = False
     return {'path': str(root), 'conversionReady': runtime and nscb.is_file(),
@@ -67,14 +67,7 @@ def options(c):
     if not isinstance(paths, list) or not 1 <= len(paths) <= 256 or any(not isinstance(p,str) for p in paths):
         raise Failure('请选择要转换的文件。')
     allowed = {'nsp','xci'} if mode == 'compress' else {'nsz','xcz'} if mode == 'decompress' else FORMATS
-    files = []
-    for raw in paths:
-        path = Path(raw).expanduser()
-        if '\n' in str(path) or '\r' in str(path) or path.is_symlink(): raise Failure('转换输入不能使用符号链接或包含换行的路径。')
-        path = path.resolve()
-        if not path.is_file() or path.suffix.lower()[1:] not in allowed: raise Failure('所选文件格式与转换操作不匹配。')
-        if path.stat().st_size == 0: raise Failure('输入文件为空。')
-        if path not in files: files.append(path)
+    files = input_files(paths, allowed)
     if mode == 'merge' and len(files) < 2: raise Failure('合并至少需要两个文件。')
     raw_output = value.get('outputDirectory')
     if not isinstance(raw_output, str) or not raw_output.strip(): raise Failure('请选择输出文件夹。')
@@ -84,6 +77,18 @@ def options(c):
         raise Failure('输出位置必须位于游戏库、私有数据、引擎和转换后端目录之外。')
     if output.exists() and not output.is_dir(): raise Failure('输出位置不是文件夹。')
     return value, files, output
+
+
+def input_files(paths, allowed):
+    files = []
+    for raw in paths:
+        path = Path(raw).expanduser()
+        if '\n' in str(path) or '\r' in str(path) or path.is_symlink(): raise Failure('转换输入不能使用符号链接或包含换行的路径。')
+        path = path.resolve()
+        if not path.is_file() or path.suffix.lower()[1:] not in allowed: raise Failure('所选文件格式与转换操作不匹配。')
+        if path.stat().st_size == 0: raise Failure('输入文件为空。')
+        if path not in files: files.append(path)
+    return files
 
 
 class Progress:
@@ -112,7 +117,7 @@ class Progress:
             self.error=True
 
 
-def snapshot(c, root, destination):
+def snapshot(c, root, destination, *, keys=None):
     source = root/'NSC_BUILDER'
     if source.is_symlink(): raise Failure('转换后端源码目录不能使用符号链接。')
     excluded = {'keys.txt','prod.keys','title.keys','DB','__pycache__','bin','web','.git'}
@@ -133,8 +138,9 @@ def snapshot(c, root, destination):
         c.check(); target=destination/source.relative_to(root/'NSC_BUILDER')
         clone(source,target,lambda n,t:c.progress(done+n,total));done+=size
         if source.stat().st_size != size or source.stat().st_mtime_ns != mtime: raise Failure('转换后端在复制时发生变化，请重试。')
+    source_keys=keys if keys is not None else key_path(c)
     keys=destination/'ztools/keys.txt';keys.parent.mkdir(parents=True,exist_ok=True)
-    keys.write_bytes(key_path(c).read_bytes());os.chmod(keys,0o600)
+    keys.write_bytes(source_keys.read_bytes());os.chmod(keys,0o600)
     return destination/'ztools'
 
 
@@ -178,7 +184,30 @@ def validate_output(path):
 
 def convert(c):
     value, inputs, output=options(c)
-    info=status(c);mode=value['mode'];target=value['target']
+    return _convert(c,value,inputs,output)
+
+
+@contextlib.contextmanager
+def import_packages(c, paths):
+    """Decompress import-only inputs; nxnative reads NSP and XCI directly."""
+    pending=[p for p in paths if p.suffix.lower() in {'.nsz','.xcz'}]
+    if not pending:
+        yield paths
+        return
+    pending=input_files(pending,{'nsz','xcz'})
+    root=c.private/'converter/import';root.mkdir(parents=True,exist_ok=True,mode=0o700)
+    with tempfile.TemporaryDirectory(prefix='job-',dir=root) as temporary:
+        # Library imports always use the library key, even if the independent
+        # converter has another key. Output options from that page do not apply.
+        with c.toolchain_lock(exclusive=True,wait=True):
+            result=_convert(c,{'mode':'decompress','target':'nsp'},pending,Path(temporary),keys=c.keys,persist_output=False)
+        c.check()
+        yield [p for p in paths if p.suffix.lower() in {'.nsp','.xci'}]+[Path(p) for p in result['outputFiles']]
+
+
+def _convert(c, value, inputs, output, *, keys=None, persist_output=True):
+    keys=keys if keys is not None else key_path(c)
+    info=status(c,keys=keys);mode=value['mode'];target=value['target']
     needed='compressionReady' if mode in ('compress','decompress') else 'conversionReady'
     if not info[needed]: fail(c,'conversion_backend_missing','转换后端不可用。','重新安装完整的 LumaDock 应用，内置转换组件缺失或损坏。')
     if not info['keysReady']: fail(c,'conversion_keys_missing','转换密钥不可用。','导入自己的有效 prod.keys；转换密钥独立保存，不会覆盖已有游戏库密钥。')
@@ -195,7 +224,7 @@ def convert(c):
             work=Path(private_work);os.chmod(work,0o700)
             count=(len(inputs) if mode!='merge' else 1)+4
             c.begin('准备转换工作区',1,count)
-            ztools=snapshot(c,root,work/'NSC_BUILDER') if mode in ('convert','merge') else None
+            ztools=snapshot(c,root,work/'NSC_BUILDER',keys=keys) if mode in ('convert','merge') else None
             env=c.env();env.update(HOME=str(work),TMPDIR=str(work),PYTHONUNBUFFERED='1',PYTHONIOENCODING='utf-8')
             c.begin('复制并校验转换输入',2,count)
             copies=[]
@@ -217,7 +246,7 @@ def convert(c):
                     if mode=='compress':
                         args+=['-l',str(value.get('level',18))]
                         if value.get('verify',True): args+=['-V']
-                    args+=['--keys',str(key_path(c)),'-o',str(folder),str(files[0])]
+                    args+=['--keys',str(keys),'-o',str(folder),str(files[0])]
                     expected={'.nsz' if files[0].suffix.lower()=='.nsp' else '.xcz'} if mode=='compress' else {'.nsp' if files[0].suffix.lower()=='.nsz' else '.xci'}
                 else:
                     # Command composition is adapted from SAK-Mac AppModel.startConvert/startMerge.
@@ -255,5 +284,6 @@ def convert(c):
                 c.check();os.rename(stage,final)
             c.stage='文件转换完成';c.number=count;c.count=count;c.emit('stage',c.stage);c.emit(done=1,total=1)
             paths=[str(final/name) for name in report]
-            c.job.update(outputPath=str(final),outputFiles=paths);atomic(c.jobpath,c.job)
+            if persist_output:
+                c.job.update(outputPath=str(final),outputFiles=paths);atomic(c.jobpath,c.job)
             return {'outputPath':str(final),'outputFiles':paths}

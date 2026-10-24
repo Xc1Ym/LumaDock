@@ -86,6 +86,7 @@ class Context:
         self.job = read(self.jobpath, {}) | {'schema': 1, 'id': self.task, 'operation': request['operation'], 'gameId': request.get('gameId'), 'state': 'running', 'started': time.time()}
         if request['operation'] == 'exportIPA': self.job['outputPath'] = request.get('outputPath')
         if request['operation'] == 'convertFiles': self.job['conversion'] = request.get('conversion')
+        if request['operation'] == 'import': self.job['importPaths'] = request.get('paths')
         for field in ('ended','message','done','total','elapsed','diagnostics'): self.job.pop(field,None)
         atomic(self.jobpath, self.job)
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
@@ -212,12 +213,20 @@ class Context:
                 p.stdout.close();self.children.discard(p)
         return log
     @contextlib.contextmanager
-    def toolchain_lock(self, exclusive=False):
+    def toolchain_lock(self, exclusive=False, wait=False):
         self.check()
         with (self.private / '.toolchain.lock').open('a') as f:
-            try: fcntl.flock(f, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise Failure('工具链正在使用中，请等待游戏运行、准备或组件管理任务结束后重试。')
+            announced=False
+            while True:
+                self.check()
+                try:
+                    fcntl.flock(f, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if not wait: raise Failure('工具链正在使用中，请等待游戏运行、准备或组件管理任务结束后重试。')
+                    if not announced:
+                        self.begin('等待游戏或工具链任务结束',1,1);announced=True
+                    time.sleep(.2)
             try: yield
             finally: fcntl.flock(f, fcntl.LOCK_UN)
     @contextlib.contextmanager

@@ -61,7 +61,7 @@ static partial class P {
             Console.WriteLine(JsonSerializer.Serialize(new { titleId=title.ToString("X16"), baseId=baseTitle.ToString("X16"), version, type, name, display, builds }));
             return 0;
         } catch (Exception) {
-            Console.Error.WriteLine("NSP metadata could not be decrypted or verified. Check keys and file integrity.");
+            Console.Error.WriteLine("Game metadata could not be decrypted or verified. Check keys, file integrity and engine format support.");
             return 3;
         }
     }

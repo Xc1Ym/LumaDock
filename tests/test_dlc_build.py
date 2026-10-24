@@ -14,7 +14,7 @@ import build
 
 
 class DLCBuildTests(unittest.TestCase):
-    def pipeline(self, target, *, dlc=True, retry=False):
+    def pipeline(self, target, *, dlc=True, retry=False, base_extension='nsp'):
         with tempfile.TemporaryDirectory(prefix="lumadock-dlc-中文's-") as directory:
             root=Path(directory)
             c=Context(dict(operation='exportIPA' if target=='ios' else 'build',
@@ -26,7 +26,7 @@ class DLCBuildTests(unittest.TestCase):
             for name,kind,tid,version in [('base','base',game['id'],0)]+([
                 ('dlc-one','dlc','0100000000011001',0),
                 ('dlc-two','dlc','0100000000011002',65536)] if dlc else []):
-                path=c.library/(name+'.nsp');path.write_text('synthetic '+name)
+                path=c.library/(name+('.'+base_extension if kind=='base' else '.nsp'));path.write_text('synthetic '+name)
                 game['packages'].append(dict(type=kind,titleId=tid,version=version,
                     path=path.name,size=path.stat().st_size,sha256=digest(path)))
             c.save_catalog({'games':[game]})
@@ -38,6 +38,8 @@ class DLCBuildTests(unittest.TestCase):
             calls=[]
 
             def extract(nx,keys,dst,version,base,update,extra,logs,profile):
+                self.assertEqual(base,c.library/('base.'+base_extension))
+                self.assertEqual(base.read_text(),'synthetic base')
                 (dst/version/'RomFS').mkdir(parents=True)
                 (dst/version/'RomFS/marker').write_text('synthetic base')
 
@@ -98,6 +100,8 @@ class DLCBuildTests(unittest.TestCase):
     def test_ios_without_dlc(self): self.pipeline('ios',dlc=False)
     def test_mac_failed_dlc_can_retry(self): self.pipeline('macos',retry=True)
     def test_ios_failed_dlc_can_retry(self): self.pipeline('ios',retry=True)
+    def test_mac_xci_reaches_native_extractor_without_repacking(self): self.pipeline('macos',base_extension='xci')
+    def test_ios_xci_reaches_native_extractor_without_repacking(self): self.pipeline('ios',base_extension='xci')
 
 
 if __name__=='__main__': unittest.main()

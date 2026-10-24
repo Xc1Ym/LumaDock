@@ -1076,6 +1076,10 @@
     "en": "The Metal toolchain is unavailable. A consistent shader chain cannot be created."
   },
   {
+    "source": "着色器链头文件仍未生成，请查看 toolchain.log；若 nxnative 与当前版本不兼容，请更新后删除该游戏缓存重试。",
+    "en": "The shader chain header was still not generated. Check toolchain.log; if nxnative is incompatible with this version, update it and delete the game's cache, then retry."
+  },
+  {
     "source": "着色器常量表版本不一致。",
     "en": "Shader constant table version mismatch."
   },

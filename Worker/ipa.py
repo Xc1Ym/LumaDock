@@ -10,7 +10,7 @@ import stat
 import sys
 import uuid
 import zipfile
-from core import Failure, clone, digest, read
+from core import Failure, chain_of, clone, digest, read
 
 IOS_FILES = ('dm/ios/tools/build_ipa.sh', 'dm/ios/tools/pack_ipa.py',
              'dm/ios/tools/ios_metal.py', 'dm/ios/project.yml', 'dm/ios/Sources/main.m')
@@ -81,11 +81,11 @@ def validate(path, c):
         raise Failure('生成的 IPA 结构或完整性检查失败，请查看任务日志后重试。') from error
 
 
-def validate_shaders(path, gp):
+def validate_shaders(path, gp, repo):
     if gp.get('graphics','nvn') == 'vulkan':
         if (path/'vk/vk_shaders.metallib').is_file(): return
     else:
-        chain = re.search(r'#define DMSH_CHAIN "(.*?)"', gp.table('dmsh_chain.h').read_text())[1]
+        chain = chain_of(repo)
         directory = path/('b-'+chain)
         reflections = list(directory.glob('*_b.json'))
         if reflections and all(p.with_suffix('.metallib').is_file() and read(p,{}).get('chain') == chain and 'iphoneos' in read(p,{}).get('chain_metal','') for p in reflections): return
@@ -94,14 +94,14 @@ def validate_shaders(path, gp):
 
 def package(c, root, repo, env, gp, selected, patched, shaders, aoc, up=None):
     out = destination(c)
-    validate_shaders(shaders, gp)
+    validate_shaders(shaders, gp, repo)
     if shutil.disk_usage(out.parent).free < sum(p.stat().st_size for p in (selected/'RomFS').rglob('*') if p.is_file()) + 2**30:
         raise Failure('IPA 保存磁盘空间不足，请释放空间后重试。')
     built = root/'ipa/game.ipa'; built.parent.mkdir(exist_ok=True)
     font = next((p for p in (Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'), Path('/System/Library/Fonts/Helvetica.ttc')) if p.is_file()), None)
     if font is None: raise Failure('找不到本机系统字体。')
     if gp.get('graphics','nvn') != 'vulkan':
-        chain = re.search(r'#define DMSH_CHAIN "(.*?)"', gp.table('dmsh_chain.h').read_text())[1]
+        chain = chain_of(repo)
         c.run([sys.executable, Path(__file__).parent/'c1_generate.py', repo/'dm/gfx/tools/c1_guard.py',
                root/'shader/cache'/('b-'+chain), gp.table('c1_full.tsv')], root/'logs/c1.log', env)
     packing = dict(env, GAME=gp.id, W=str(root/'ipa/work'), PATCHED=str(patched),

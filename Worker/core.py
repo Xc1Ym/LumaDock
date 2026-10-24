@@ -31,6 +31,11 @@ def read(path, default=None):
     try: return json.loads(Path(path).read_text())
     except FileNotFoundError: return default
 
+def chain_of(repo):
+    """The B shader library chain version held by dm/gfx/nvn/dmsh_chain.h (None when absent); upstream keeps one header per source tree."""
+    try: return re.search(r'#define DMSH_CHAIN "(.*?)"', (Path(repo)/'dm/gfx/nvn/dmsh_chain.h').read_text())[1]
+    except (OSError, TypeError): return None
+
 def digest(path, progress=None):
     h = hashlib.sha256(); n = 0; total = Path(path).stat().st_size
     with open(path, 'rb') as f:

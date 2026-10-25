@@ -2930,5 +2930,45 @@
   {
     "source": "复制游戏文件到游戏库",
     "en": "Copy game files into the library"
+  },
+  {
+    "source": "当前 nxnative 配置要求指定版本及着色器素材；这与 DLC 或本体是否完整无关。",
+    "en": "The selected nxnative profile requires specific versions and shader inputs. This is independent of DLC or whether the base game is complete."
+  },
+  {
+    "source": "按实际游戏版本生成配置与着色器；可玩性仍需验证。",
+    "en": "Generating a profile and shaders for the imported game version; gameplay still needs validation."
+  },
+  {
+    "source": "生成版本配置",
+    "en": "Generate version profile"
+  },
+  {
+    "source": "根据实际游戏版本生成独立配置。",
+    "en": "Generate a separate profile for the imported game version."
+  },
+  {
+    "source": "解码游戏着色器",
+    "en": "Decode game shaders"
+  },
+  {
+    "source": "采集运行时着色器",
+    "en": "Capture runtime shaders"
+  },
+  {
+    "source": "版本配置与着色器产物不一致，请重新准备游戏。",
+    "en": "The version profile and shader outputs do not match. Prepare the game again."
+  },
+  {
+    "source": "将按导入版本生成独立配置与着色器；可玩性仍需验证。",
+    "en": "A separate profile and shaders will be generated for the imported version. Gameplay still needs validation."
+  },
+  {
+    "source": "找不到着色器转换工具 spirv-cross。",
+    "en": "The spirv-cross shader conversion tool could not be found."
+  },
+  {
+    "source": "确认应用未在任务运行中被移动或替换；退出后重新打开完整应用并重试。游戏源文件、密钥和已完成阶段无需删除。",
+    "en": "Check whether the app was moved or replaced while the task was running. Quit and reopen the complete app, then retry. Keep the game sources, keys, and completed stages."
   }
 ]

@@ -45,6 +45,15 @@ class DiagnosticTests(unittest.TestCase):
                 self.assertEqual(result['code'],expected);self.assertTrue(result['suggestion'])
                 self.assertEqual(result['logPath'],str(self.log))
 
+    def test_missing_spirv_cross_is_not_reported_as_game_shader_incompatibility(self):
+        for message in ("FileNotFoundError: [Errno 2] No such file or directory: 'spirv-cross'", "sh: spirv-cross: command not found"):
+            with self.subTest(message=message):
+                result=diagnostics.failure(self.c,message,tool='own_compilers.py',status=1)
+                self.assertEqual(result['code'],'shader_tool_missing')
+                self.assertNotIn('上游',result['suggestion'])
+        self.assertEqual(diagnostics.failure(self.c,'spirv-cross: unsupported instruction',tool='own_compilers.py',status=1)['code'],'shader_translation_failed')
+        self.assertEqual(diagnostics.failure(self.c,"spirv-cross input.spv\nFileNotFoundError: No such file or directory: 'input.spv'",tool='own_compilers.py',status=1)['code'],'shader_translation_failed')
+
     def test_nonzero_process_preserves_specific_log_stage_and_early_compiler_error(self):
         self.quiet(self.c.begin,'转换并编译 Metal 着色器')
         command=self.script("print('first.metal:9: error: unknown type')\nfor i in range(1000):print('build output',i,'x'*2000)\nraise SystemExit(2)\n")

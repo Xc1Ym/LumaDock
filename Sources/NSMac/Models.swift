@@ -3,14 +3,14 @@ import AppKit
 import SwiftUI
 
 struct NSPPackage: Codable, Identifiable {
-    var id: String { sha256 }
+    var id: String { "\(sha256):\(titleId):\(type):\(version)" }
     var titleId: String; var baseId: String; var version: Int; var type: String; var name: String; var display: String
     var path: String; var size: Int64; var sha256: String; var builds: [String:String]
     var kindName: String { ["base":L("本体"),"update":L("更新"),"dlc":"DLC"][type] ?? L("未知内容") }
 }
 struct Game: Codable, Identifiable {
     var id: String; var name: String; var display: String; var packages: [NSPPackage]; var hidden: Bool
-    var compatibility: String?; var missing: [String]?; var cover: String?; var ready: Bool?; var needsPreparation: Bool?; var inputConfig:Bool?
+    var compatibility: String?; var missing: [String]?; var cover: String?; var ready: Bool?; var needsPreparation: Bool?; var inputConfig:Bool?; var preparationMode:String?; var preparationVersion:String?
     var compatibilityName: String { ["startup":L("仅验证启动"),"verified":L("Mac 已验证"),"experimental":L("实验性"),"unsupported":L("暂不支持")][compatibility ?? "unsupported"] ?? L("实验性") }
     var buildable: Bool { compatibility != "unsupported" && (missing ?? []).isEmpty }
 }

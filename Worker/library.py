@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json, os, re, shutil, subprocess, time, uuid, zipfile
+import json, os, re, shutil, subprocess, tempfile, time, uuid, zipfile
 from pathlib import Path
 from core import *
 
@@ -49,8 +49,9 @@ def inspect(c,path,key=None,icon=None):
     try: return json.loads(next(l for l in reversed(lines) if l.startswith('{')))
     except (StopIteration,ValueError): raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
 
-def requirements(g,p):
+def requirements(g,p,derived_profiles=False):
     if not p: return ['此游戏尚无原生适配配置']
+    if derived_profiles and any(x['type']=='base' and x['version']==0 for x in g['packages']): return []
     packages=g['packages']; need=['v0']+list(dict.fromkeys([p['package']]+p.get('shader_versions',p['package']).split()))
     have={f"v{x['version']}" for x in packages if x['type'] in ('base','update')}
     missing=['缺少本体 v0' if v=='v0' else f'缺少更新 {v}（{p["builds"].get(v,{}).get("display","配置指定版本")}）' for v in need if v not in have]
@@ -78,44 +79,92 @@ def import_games(c):
         return import_containers(c,packages)
 
 
-def import_containers(c, files):
+def container_packages(info):
+    # Legacy reader responses remain readable; all new snapshots emit schema 2.
+    if not isinstance(info,dict): raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
+    packages=info.get('packages') if info.get('schema')==2 else [info]
+    if not isinstance(packages,list) or not packages: raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
+    identities=set()
+    for package in packages:
+        if not isinstance(package,dict) or any(not isinstance(package.get(k),str) or not re.fullmatch('[0-9A-F]{16}',package[k]) for k in ('titleId','baseId')):
+            raise Failure('无效的游戏标识。')
+        if package.get('type') not in ('base','update','dlc') or type(package.get('version')) is not int or not 0<=package['version']<=0xffffffff:
+            raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
+        identity=(package['titleId'],package['version'],package['type'])
+        if identity in identities: raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
+        identities.add(identity)
+    return packages
+
+
+def import_containers(c, files, *, unhide=True, expected_hashes=None):
+    from derived import supported
+    dynamic=supported(c.engine)
     ps=profiles(c.engine); results=[]
     for i,src in enumerate(files):
         c.begin(f'读取游戏元数据（{i+1}/{len(files)}）',i*5+1,len(files)*5)
-        info=inspect(c,src); tid=info['baseId']
-        if not re.fullmatch('[0-9A-F]{16}',tid): raise Failure('无效的游戏标识。')
-        c.begin('正在校验源文件内容',i*5+2,len(files)*5); sha=digest(src,c.progress)
-        with c.lock():
-            cat=c.catalog(); g=next((g for g in cat['games'] if g['id']==tid),None)
-            if not g:
-                g={'id':tid,'name':info['name'] or ps.get(tid,{}).get('name',tid),'display':info['display'],'packages':[],'hidden':False}; cat['games'].append(g)
-            g['hidden']=False
-            if any(x['sha256']==sha for x in g['packages']):
-                c.save_catalog(cat); results.append({'name':src.name,'duplicate':True})
-                c.begin('跳过重复内容',i*5+5,len(files)*5);c.emit(done=1,total=1);continue
-            dest=c.library/'sources'/tid/f'{info["titleId"]}_v{info["version"]}_{sha[:12]}{src.suffix.lower()}'
-            free=shutil.disk_usage(c.library).free
-            reserve=512*2**20 if src.stat().st_dev==c.library.stat().st_dev else src.stat().st_size+512*2**20
-            if free<reserve: raise Failure('游戏库可用空间不足，复制尚未开始。')
-            tmp=dest.with_suffix('.partial'); tmp.parent.mkdir(parents=True,exist_ok=True); tmp.unlink(missing_ok=True)
-            try:
-                c.begin('复制游戏文件到游戏库',i*5+3,len(files)*5);clone(src,tmp,c.progress)
-                c.begin('校验托管副本',i*5+4,len(files)*5)
-                if digest(tmp,c.progress)!=sha: raise Failure('复制后校验失败，原始文件未改动。')
-                c.check(); os.replace(tmp,dest)
-            finally: tmp.unlink(missing_ok=True)
-            icon=c.library/'games'/tid/'cover.jpg'; icon.parent.mkdir(parents=True,exist_ok=True)
-            c.begin('登记游戏内容',i*5+5,len(files)*5)
-            inspect(c,dest,icon=icon)
-            package=info|{'path':str(dest.relative_to(c.library)),'size':dest.stat().st_size,'sha256':sha}
-            g['packages'].append(package)
-            if info['name']: g['name']=info['name']
-            if info['display']: g['display']=info['display']
-            g['compatibility']=ps.get(tid,{}).get('compatibility','unsupported'); g['missing']=requirements(g,ps.get(tid)); g['cover']=str(icon.relative_to(c.library)) if icon.exists() else ''
-            c.save_catalog(cat)
-            results.append({'name':src.name,'duplicate':False,'id':tid})
+        with tempfile.TemporaryDirectory(prefix='metadata-',dir=c.private) as directory:
+            icons=Path(directory); info=inspect(c,src,icon=icons); packages=container_packages(info)
+            metadata_schema=2 if info.get('schema')==2 else 1
+            c.begin('正在校验源文件内容',i*5+2,len(files)*5); sha=digest(src,c.progress)
+            if expected_hashes is not None and expected_hashes[str(src)]!=sha:
+                raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
+            with c.lock():
+                cat=c.catalog()
+                previous=[p for g in cat['games'] for p in g['packages'] if p['sha256']==sha]
+                old_ids={(p['titleId'],p['version'],p['type']) for p in previous}
+                new_ids={(p['titleId'],p['version'],p['type']) for p in packages}
+                duplicate=bool(previous) and old_ids==new_ids
+                # A merged container is copied once; every logical package points at it.
+                first=packages[0]
+                dest=contained(c.library,c.library/previous[0]['path']) if previous else c.library/'sources'/first['baseId']/f'{first["titleId"]}_v{first["version"]}_{sha[:12]}{src.suffix.lower()}'
+                if not dest.is_file() or dest.resolve()!=src.resolve():
+                    free=shutil.disk_usage(c.library).free
+                    reserve=512*2**20 if src.stat().st_dev==c.library.stat().st_dev else src.stat().st_size+512*2**20
+                    if free<reserve: raise Failure('游戏库可用空间不足，复制尚未开始。')
+                    tmp=dest.with_suffix('.partial'); tmp.parent.mkdir(parents=True,exist_ok=True); tmp.unlink(missing_ok=True)
+                    try:
+                        c.begin('复制游戏文件到游戏库',i*5+3,len(files)*5);clone(src,tmp,c.progress)
+                        c.begin('校验托管副本',i*5+4,len(files)*5)
+                        if digest(tmp,c.progress)!=sha: raise Failure('复制后校验失败，原始文件未改动。')
+                        c.check(); os.replace(tmp,dest)
+                    finally: tmp.unlink(missing_ok=True)
+                c.begin('登记游戏内容',i*5+5,len(files)*5)
+                for g in cat['games']:
+                    g['packages']=[p for p in g['packages'] if p['sha256']!=sha]
+                for package in sorted(packages,key=lambda p:p['version']):
+                    tid=package['baseId']; g=next((g for g in cat['games'] if g['id']==tid),None)
+                    if g is None:
+                        g={'id':tid,'name':package.get('name') or ps.get(tid,{}).get('name',tid),'display':'','packages':[],'hidden':False}; cat['games'].append(g)
+                    if unhide: g['hidden']=False
+                    g['packages'].append(package|{'path':str(dest.relative_to(c.library)),'size':dest.stat().st_size,'sha256':sha,'metadataSchema':metadata_schema})
+                    if package.get('name'): g['name']=package['name']
+                    selected=max((p for p in g['packages'] if p['type'] in ('base','update')),key=lambda p:p['version'],default={})
+                    g['display']=selected.get('display','')
+                    icon=c.library/'games'/tid/'cover.jpg'; candidate=icons/(package['titleId']+'.jpg')
+                    if candidate.is_file():
+                        icon.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(candidate,icon)
+                    g['compatibility']=ps.get(tid,{}).get('compatibility','unsupported'); g['missing']=requirements(g,ps.get(tid),dynamic); g['cover']=str(icon.relative_to(c.library)) if icon.exists() else ''
+                c.save_catalog(cat)
+                for tid in dict.fromkeys(p['baseId'] for p in packages): results.append({'name':src.name,'duplicate':duplicate,'id':tid})
     atomic(c.private/'keys/status.json',read(c.private/'keys/status.json',{})|{'verified':True})
     return {'imports':results}
+
+
+def refresh_container_metadata(c):
+    # Upgrade already imported merged files once the new private reader is ready.
+    cat=c.catalog()
+    pending={p['path']:p['sha256'] for g in cat['games'] for p in g['packages'] if p.get('metadataSchema',0)<2 and not g.get('hidden')}
+    if not pending or not c.keys.is_file(): return
+    try: c.nx()
+    except Failure: return
+    for path in sorted(pending):
+        try:
+            source=contained(c.library,c.library/path)
+            if source.is_file(): import_containers(c,[source],unhide=False,expected_hashes={str(source):pending[path]})
+        except Failure:
+            # Keep the last successful catalogue when a disk/key is unavailable.
+            continue
+
 
 def key_status(c):
     if not c.keys.is_file():
@@ -132,11 +181,17 @@ def catalog(c):
     from engine import inspect_source
     try: selected_engine = inspect_source(c)
     except Failure: selected_engine = None
+    if selected_engine: refresh_container_metadata(c)
     c.begin('读取游戏库',1,1); cat=c.catalog(); ps=profiles(c.engine) if selected_engine else {}
     for g in cat['games']:
-        g['missing']=requirements(g,ps.get(g['id'])); g['compatibility']=ps.get(g['id'],{}).get('compatibility','unsupported')
-        p=ps.get(g['id']); selected=next((x for x in g['packages'] if p and f"v{x['version']}"==p.get('package') and x['type'] in ('base','update')),None)
-        if selected: g['display']=selected['display'] or p['builds'].get(p['package'],{}).get('display','')
+        g['missing']=requirements(g,ps.get(g['id']),bool(selected_engine and selected_engine.get('derivedProfiles'))); g['compatibility']=ps.get(g['id'],{}).get('compatibility','unsupported')
+        p=ps.get(g['id'])
+        from derived import plan
+        strategy=plan(g,p,bool(selected_engine and selected_engine.get('derivedProfiles'))) if p else {}
+        g['preparationMode']=strategy.get('mode','registered')
+        g['preparationVersion']=strategy.get('version','')
+        selected=next((x for x in g['packages'] if p and f"v{x['version']}"==strategy.get('version',p.get('package')) and x['type'] in ('base','update')),None)
+        if selected: g['display']=selected['display'] or p['builds'].get(strategy.get('version',p['package']),{}).get('display',strategy.get('version',''))
         manifest=read(c.library/'games'/g['id']/'current/manifest.json',{})
         cover=c.library/'games'/g['id']/'cover.jpg'; g['cover']=str(cover) if cover.exists() else ''
         g['ready']=bool(manifest)

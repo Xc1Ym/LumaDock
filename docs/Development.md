@@ -37,6 +37,9 @@ work/python-venv/bin/python -B scripts/source_archive.py
 work/python-venv/bin/python -B scripts/verify_release.py
 ```
 
+Packaging refuses to replace a running output app or its active runtime children. Use `scripts/package.py --output-dir release/local-preview --app-only` to build a separate copy while testing. A complete signed app is validated in a staging directory before publication; failed publication or relocated-runtime validation restores the previous app.
+
+
 Outputs are placed in `release/`. Bundled dependency versions are recorded in the app's `Runtime/versions.json`; toolchains vary with the build environment, so byte-for-byte reproducibility is not guaranteed.
 
 Use the ignored `work/` directory for development. Launch with `--data-root <directory>` to isolate application data. Never commit `work/`, `release/`, `Runtime`, games, keys, saves or player caches.

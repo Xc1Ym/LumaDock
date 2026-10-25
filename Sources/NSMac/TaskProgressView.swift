@@ -58,7 +58,8 @@ struct ActiveTaskBanner: View {
             HStack {
                 Text(L("正在处理 \(store.activeTasks.count) 个任务")).font(.caption.bold())
                 Spacer()
-                Button(L("查看全部任务")) {store.selection="tasks"}.controlSize(.small)
+                Button(L("查看全部任务")) {store.selection="tasks"}
+                    .buttonStyle(.borderless).controlSize(.small)
             }
             ForEach(Array(store.activeTasks.prefix(2))) {task in
                 VStack(alignment:.leading,spacing:4) {
@@ -66,6 +67,6 @@ struct ActiveTaskBanner: View {
                     TaskProgressView(task:task,compact:true)
                 }
             }
-        }.padding(12).background(.regularMaterial,in:RoundedRectangle(cornerRadius:12)).padding(.horizontal).padding(.bottom,8)
+        }.padding(16).glassSurface(18).padding(.horizontal,24).padding(.bottom,16)
     }
 }

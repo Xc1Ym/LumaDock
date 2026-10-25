@@ -11,7 +11,6 @@ struct ContentView: View {
     @EnvironmentObject var store: Store
     @State private var search = ""
     var body: some View {
-        VStack(spacing:0) {
         NavigationSplitView {
             VStack(alignment:.leading,spacing:20) {
                 HStack(spacing:10) { BrandMark(); VStack(alignment:.leading,spacing:3) { Text(Brand.name).font(.title2.bold()); Text(L("Mac 游戏启动器")).font(.caption.weight(.medium)).tracking(1.2).foregroundStyle(.secondary) } }.padding(.top,16).padding(.leading,4)
@@ -35,15 +34,19 @@ struct ContentView: View {
                 case "settings": SettingsView()
                 default: library
                 }
-            }.background(LibraryBackdrop()).navigationTitle(store.selection=="conversion" ? L("文件转换") : store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
+            }
+                .safeAreaInset(edge:.bottom,spacing:0) {
+                    if !store.showOnboarding,store.selection != "tasks",!store.activeTasks.isEmpty {
+                        ActiveTaskBanner()
+                    }
+                }
+                .background(LibraryBackdrop())
+                .navigationTitle(store.selection=="conversion" ? L("文件转换") : store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
                 .toolbar {
                     ToolbarItemGroup(placement:.primaryAction) {
                         Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:"plus")}.help(L("先检查环境、选择游戏库并导入 prod.keys，再添加游戏（⌘O）"))
-                        Button {store.inputGame=nil;store.editingInput=true} label:{Label(L("输入映射"),systemImage:"keyboard")}.help(L("设置全局键鼠与手柄映射"))
                     }
                 }
-        }
-        if !store.showOnboarding,store.selection != "tasks",!store.activeTasks.isEmpty {ActiveTaskBanner()}
         }
         .frame(minWidth:1100,minHeight:720)
         .onAppear {store.checkEnvironmentAtStartup()}
@@ -165,6 +168,7 @@ struct GameDetail: View {
             Text(game.id).font(.caption.monospaced()).foregroundStyle(.secondary)
             if game.compatibility=="startup" {Text(L("已验证启动；完整游戏流程仍需玩家验证。")).font(.caption).foregroundStyle(.secondary)}
             if game.compatibility=="experimental" {Text(L("已有引擎配置，尚未完成 Mac 实机验收。")).font(.caption).foregroundStyle(.secondary)}
+            if game.preparationMode=="derived" {Text(L("将按导入版本生成独立配置与着色器；可玩性仍需验证。")).font(.caption).foregroundStyle(.orange)}
             if game.needsPreparation==true {Text(L("新增内容或引擎更新尚未准备；启动将使用上次成功版本。")).font(.caption).foregroundStyle(.orange)}
             GameLanguagePicker(gameId:game.id)
             Text(L("下次启动生效，无需重新准备。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
@@ -180,6 +184,7 @@ struct GameDetail: View {
                     if !(game.missing ?? []).isEmpty {
                         Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
                         ForEach(game.missing ?? [],id:\.self){Text(L($0)).font(.caption)}
+                        Text(L("当前 nxnative 配置要求指定版本及着色器素材；这与 DLC 或本体是否完整无关。")).font(.caption).foregroundStyle(.secondary)
                         Divider()
                     }
                     Text(L("导入内容")).font(.headline)

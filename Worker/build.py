@@ -1,6 +1,6 @@
 """Build macOS runtime files directly using supported game profiles."""
 from __future__ import annotations
-import importlib.util, json, os, re, shutil, subprocess, sys, time
+import contextlib, importlib.util, json, os, re, shutil, subprocess, sys, time
 from pathlib import Path
 from core import *
 from library import requirements, inspect
@@ -107,12 +107,33 @@ def ensure_chain_header(c,root,repo,env,tc,gp=None):
     if not chain_of(repo,gp): raise Failure('着色器链头文件仍未生成，请查看 toolchain.log；若 nxnative 与当前版本不兼容，请更新后删除该游戏缓存重试。')
 
 
+def container_runner(c, g):
+    def run(args, *positional, **keywords):
+        if Path(args[0]).name == 'nx_extract' and Path(args[0]) == c.nx() and len(args)>=5 and str(args[2]) != '--inspect':
+            if str(args[2]) == '--aoc':
+                index=int(Path(args[4]).name)
+                title=int(g['id'],16)+0x1000+index
+                package=max((p for p in g['packages'] if p['type']=='dlc' and int(p['titleId'],16)==title),key=lambda p:p['version'])
+                version=package['version']
+            else:
+                title=int(g['id'],16)
+                match=re.fullmatch(r'v([0-9]+)(?:\.partial)?',Path(args[4]).name)
+                if not match: raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
+                version=int(match[1])
+            args=[*args,f'--lumadock-title={title:016X}',f'--lumadock-version={version}']
+        return c.run(args,*positional,**keywords)
+    return run
+
+
 def prepare(c,g,target='macos'):
     from engine import inspect_source
-    inspect_source(c)
-    ps=profiles(c.engine); profile=ps.get(g['id']); missing=requirements(g,profile)
+    info=inspect_source(c)
+    dynamic=info.get('derivedProfiles',False) and getattr(c,'r',{}).get('operation')!='migrate'
+    ps=profiles(c.engine); profile=ps.get(g['id']); missing=requirements(g,profile,dynamic)
     if missing: raise Failure('；'.join(missing))
-    tc=tools(c,target); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'target':target,'schema':1}
+    from derived import plan
+    strategy=plan(g,profile,dynamic)
+    tc=tools(c,target); identity={'tools':tc,'sources':sorted(x['sha256'] for x in g['packages']),'game':g['id'],'target':target,'schema':2,'preparation':strategy}
     key=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()[:24]
     root=c.library/'cache'/g['id']/key; root.mkdir(parents=True,exist_ok=True)
     repo=root/'engine'
@@ -126,6 +147,9 @@ def prepare(c,g,target='macos'):
     spec=importlib.util.spec_from_file_location('nsmac_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
     sys.path.insert(0,str(repo/'dm/games')); import game
     game.HERE=repo/'dm/games'; gp=game.load(g['id'])
+    if dynamic and strategy['mode']=='registered' and strategy['version']!=gp.get('package'):
+        from derived import select_registered
+        gp=select_registered(gp,strategy['version'])
     ensure_chain_header(c,root,repo,env,tc,gp)
     class Bridge(up.Progress):
         def __init__(self): super().__init__('off')
@@ -140,7 +164,7 @@ def prepare(c,g,target='macos'):
                 # Estimated totals are intentionally indeterminate in the UI.
                 c.emit(message=st.step,done=st.done,total=None if st.est else st.total,unit=st.unit)
         def say(self,msg): c.emit('message',msg)
-    up.PROG=Bridge(); up.run=c.run
+    up.PROG=Bridge(); up.run=container_runner(c,g)
     return root,repo,env,up,gp,key
 
 def compile_host(c,up,repo,env,root,gp):
@@ -160,7 +184,12 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
     for name in ['shader_map.tsv','pso_manifest.tsv']:
         if gp.table(name).exists(): clone(gp.table(name),stage/'profile'/name)
     chain=chain_of(repo,gp)
-    if gp.get('graphics','nvn')!='vulkan':
+    own=read(root/'identity.json',{}).get('preparation',{}).get('mode')=='derived'
+    if own and gp.get('graphics','nvn')=='nvn':
+        from derived import validate_tables
+        validate_tables(shader,gp,chain)
+        for name in ('c1_full.tsv','cb_extent.tsv'): clone(gp.table(name),stage/'profile'/name)
+    elif gp.get('graphics','nvn') not in ('vulkan','gl'):
         c.run([sys.executable,Path(__file__).parent/'c1_generate.py',repo/'dm/gfx/tools/c1_guard.py',stage/'shaders'/('b-'+chain),stage/'profile/c1_full.tsv'],root/'logs/c1.log',c.env(gp.id,root))
         if not (stage/'profile/c1_full.tsv').read_text().startswith('# chain b-'+chain+' '): raise Failure('着色器常量表版本不一致。')
     if font: cp(font,'font')
@@ -170,7 +199,7 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
         if not fontpath: raise Failure('找不到本机系统字体。')
         clone(fontpath,stage/'font/standard.ttf')
         c.run([sys.executable,repo/'dm/tools/make_ext_font.py',stage/'font/nintendo_ext.ttf'],root/'logs/font.log',c.env(gp.id,root))
-    manifest={'schema':1,'gameId':gp.id,'engine':read(root/'identity.json',{}).get('tools',{}).get('engine','external'),'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'inputConfig':read(root/'identity.json',{}).get('tools',{}).get('inputConfig',False),'created':time.time()}
+    manifest={'schema':1,'gameId':gp.id,'engine':read(root/'identity.json',{}).get('tools',{}).get('engine','external'),'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'inputConfig':read(root/'identity.json',{}).get('tools',{}).get('inputConfig',False),'created':time.time(),'preparationMode':'derived' if own else 'registered'}
     atomic(stage/'manifest.json',manifest)
     validate_runtime(stage,gp)
     # A symlink switch is atomic; the old successful release remains intact on every failure.
@@ -187,9 +216,14 @@ def validate_runtime(path,gp=None):
         for ext in ('patched.bin','fixups.tsv','gates.tsv'):
             if not (path/'modules'/f'{mod}.{ext}').is_file(): raise Failure('重写代码模块不完整。')
     if gp and not (path/'romfs'/gp.get('romfs_marker')).exists(): raise Failure('游戏资源缺少配置指定的文件。')
-    if m.get('graphics')=='vulkan':
-        if not (path/'shaders/vk/vk_shaders.metallib').is_file(): raise Failure('Vulkan 着色器库缺失。')
+    if m.get('graphics') in ('vulkan','gl'):
+        api='vk' if m['graphics']=='vulkan' else 'gl'
+        if not (path/'shaders'/api/(api+'_shaders.metallib')).is_file(): raise Failure('Vulkan 着色器库缺失。')
     else:
+        if m.get('preparationMode')=='derived':
+            from types import SimpleNamespace
+            from derived import validate_tables
+            validate_tables(path/'shaders',SimpleNamespace(id=m['gameId'],table=lambda name:path/'profile'/name),m['chain'])
         b=path/'shaders'/('b-'+m['chain']); reflected=list(b.glob('*_b.json'))
         if not reflected: raise Failure('Metal 着色器缓存缺失。')
         for p in reflected:
@@ -197,25 +231,34 @@ def validate_runtime(path,gp=None):
             if r.get('chain')!=m['chain'] or not p.with_suffix('.metallib').is_file(): raise Failure('Metal 着色器缓存不完整或版本不一致。')
 
 def build(c,target='macos'):
-    with c.lock('execution'):
+    with c.lock('execution'), contextlib.ExitStack() as cleanup:
         g=c.game(); c.begin('验证游戏、工具链与缓存',1,10)
-        root,repo,env,up,gp,key=prepare(c,g,target); logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
-        versions=list(dict.fromkeys(gp.words('shader_versions',gp.get('package'))+[gp.get('package')]))
+        root,repo,env,up,gp,key=prepare(c,g,target)
+        if hasattr(getattr(up,'PROG',None),'watch'): cleanup.callback(up.PROG.watch,None)
+        logs=root/'logs'; logs.mkdir(exist_ok=True); st=Stages(c,root)
+        strategy=read(root/'identity.json',{}).get('preparation',{})
+        own=strategy.get('mode')=='derived'
+        versions=strategy.get('versions') or list(dict.fromkeys(gp.words('shader_versions',gp.get('package'))+[gp.get('package')]))
         capture_gl=gp.get('shader_glslc_capture','off')=='on'; capture_vk=gp.get('shader_vk_capture','off')=='on'; vk=gp.get('graphics','nvn')=='vulkan'
         ms.plan(c,g,target,versions,gp,read(root/'identity.json',{}))
         base=next(x for x in g['packages'] if x['type']=='base' and x['version']==0)
-        ms.enter(c,'verify','校验游戏源文件');source_total=sum(x['size'] for x in g['packages']);source_done=0
-        for x in g['packages']:
+        sources=list({x['path']:x for x in g['packages']}.values())
+        ms.enter(c,'verify','校验游戏源文件');source_total=sum(x['size'] for x in sources);source_done=0
+        for x in sources:
             c.check(); p=c.library/x['path']
             if not p.is_file() or digest(p,lambda n,t:c.progress(source_done+n,source_total))!=x['sha256']: raise Failure('托管源文件已丢失或内容发生改变，请重新导入。')
             source_done+=x['size']
-        needed=sum(x['size'] for x in g['packages'])*2+(10 if target=='ios' else 3)*2**30
+        needed=sum(x['size'] for x in sources)*2+(10 if target=='ios' else 3)*2**30
         if shutil.disk_usage(c.library).free<needed and not st.saved: raise Failure(f'准备游戏需要约 {needed/2**30:.0f} GB 可用空间。')
         dirs={}
         for index,ver in enumerate(versions):
             upd=next((c.library/x['path'] for x in g['packages'] if x['type']=='update' and f"v{x['version']}"==ver),None)
             d=root/'extract'/ver; dirs[ver]=d
             st.run('解包与合并 '+ver,[d],lambda ver=ver,upd=upd: up.extract(c.nx(),c.keys,root/'extract',ver,c.library/base['path'],upd,None,logs,gp),milestone=f'unpack-{index}')
+        if own:
+            import derived
+            gp,sources_info=derived.prepare_profile(c,st,up,gp,root,repo,env,dirs[strategy['version']],strategy['version'])
+            c.emit('message','按实际游戏版本生成配置与着色器；可玩性仍需验证。')
         aoc=root/'aoc'; dlcs=[(int(x['titleId'],16),x['version'],c.library/x['path']) for x in g['packages'] if x['type']=='dlc']
         def dlc():
             if dlcs: up.extract_aoc(c.nx(),c.keys,repo,root,int(gp.id,16),{'dlc':dlcs},logs)
@@ -223,27 +266,31 @@ def build(c,target='macos'):
         st.run('处理 DLC',[aoc],dlc,milestone='dlc')
         patched=root/('patched_'+gp.get('package')); selected=dirs[gp.get('package')]
         st.run('重写原生代码',[patched],lambda:up.rewrite(sys.executable,repo,selected/'ExeFS',patched,env,logs,gp),milestone='rewrite')
-        if capture_gl: st.run('采集运行时 GLSLC 着色器',[selected/'glslc_capture'],lambda:up.capture_glslc(repo,dirs,gp.get('package'),patched,root,env,logs,gp),milestone='capture_gl')
-        if capture_vk: st.run('采集运行时 Vulkan 着色器',[selected/'vk_capture'],lambda:up.capture_vk(repo,selected,patched,root,env,logs,gp),milestone='capture_vk')
-        sh=root/'shader'; sh.mkdir(exist_ok=True)
-        if vk:
-            roots=[selected/'RomFS']+([selected/'vk_capture'] if capture_vk else [])
-            def vulkan_shaders():
-                c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh]+(['--ios',sh/'ios'] if target=='ios' else []),logs/'vk_shaders.log',env)
-                if target=='ios':
-                    from ipa import validate_shaders
-                    validate_shaders(sh/'ios',gp,repo)
-            st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders,milestone='shaders')
+        if own:
+            gp=up.refine_after_rewrite(gp,selected,patched);derived.seal_profile(st,gp)
+            sh=derived.shaders(c,st,up,repo,root,env,gp,selected,patched,dirs,sources_info,target)
         else:
-            st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp),milestone='extract')
-            def shaders():
-                up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'ios' if target=='ios' else sh/'cache'))
-                try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)
-                finally: up.PROG.watch(None)
-                if target=='ios':
-                    from ipa import validate_shaders
-                    validate_shaders(sh/'ios',gp,repo)
-            st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders,milestone='shaders')
+            if capture_gl: st.run('采集运行时 GLSLC 着色器',[selected/'glslc_capture'],lambda:up.capture_glslc(repo,dirs,gp.get('package'),patched,root,env,logs,gp),milestone='capture_gl')
+            if capture_vk: st.run('采集运行时 Vulkan 着色器',[selected/'vk_capture'],lambda:up.capture_vk(repo,selected,patched,root,env,logs,gp) if hasattr(up,'capture_vk') else up.capture_shaders(repo,selected,patched,root,env,logs,gp,'vk'),milestone='capture_vk')
+            sh=root/'shader'; sh.mkdir(exist_ok=True)
+            if vk:
+                roots=[selected/'RomFS']+([selected/'vk_capture'] if capture_vk else [])
+                def vulkan_shaders():
+                    c.run([sys.executable,repo/'dm/gfx/tools/vk_shaders.py',*roots,sh]+(['--ios',sh/'ios'] if target=='ios' else []),logs/'vk_shaders.log',env)
+                    if target=='ios':
+                        from ipa import validate_shaders
+                        validate_shaders(sh/'ios',gp,repo)
+                st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders,milestone='shaders')
+            else:
+                st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp),milestone='extract')
+                def shaders():
+                    up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'ios' if target=='ios' else sh/'cache'))
+                    try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)
+                    finally: up.PROG.watch(None)
+                    if target=='ios':
+                        from ipa import validate_shaders
+                        validate_shaders(sh/'ios',gp,repo)
+                st.run('转换并编译 Metal 着色器',[sh/'cache']+([sh/'ios'] if target=='ios' else []),shaders,milestone='shaders')
         if target == 'ios':
             from ipa import package
             ms.enter(c,'ipa')
@@ -251,7 +298,7 @@ def build(c,target='macos'):
             ms.record(c);return result
         st.run('编译 Mac 主程序',[root/'tools/dmhost'],lambda:compile_host(c,up,repo,env,root,gp),milestone='host')
         ms.enter(c,'install')
-        result=install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if vk else sh/'cache',aoc)
+        result=install(c,root,repo,gp,key,root/'tools/dmhost',selected/'RomFS',patched,sh if gp.get('graphics','nvn') in ('vulkan','gl') else sh/'cache',aoc)
         ms.record(c);return result
 
 def migrate(c):

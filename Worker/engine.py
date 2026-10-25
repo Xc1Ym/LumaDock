@@ -67,7 +67,7 @@ def inspect_source(c):
         if not ps or any(not p.get('package') or not p.get('name') or not p['builds'] for p in ps.values()):
             raise ValueError('missing profiles')
         for flag, function in (('shader_glslc_capture','capture_glslc'), ('shader_vk_capture','capture_vk')):
-            if any(profile.get(flag)=='on' for profile in ps.values()) and function not in names:
+            if any(profile.get(flag)=='on' for profile in ps.values()) and function not in names and not (flag=='shader_vk_capture' and 'capture_shaders' in names):
                 raise ValueError('unsupported capture API')
         program = (c.engine/'dm/tools/nx_extract/Program.cs').read_text()
         if '--inspect' not in program and not all(token in program for token in ('static class P', 'OpenNsp(', 'Nacp(', 'TitleName(', 'Icon(')):
@@ -75,12 +75,13 @@ def inspect_source(c):
         raw = source_hash(c.engine)
     except (OSError, ValueError, KeyError, SyntaxError) as error:
         raise Failure('所选 nxnative 的构建接口或配置不兼容，请查看环境说明并选择完整的兼容源码。') from error
-    bridge = hashlib.sha256(Path(__file__).read_bytes()+(Path(__file__).parent/'NspMetadata.cs').read_bytes()).hexdigest()
+    bridge = hashlib.sha256(Path(__file__).read_bytes()+(Path(__file__).parent/'NspMetadata.cs').read_bytes()+(Path(__file__).parent/'derived.py').read_bytes()).hexdigest()
     fingerprint = 'external-'+hashlib.sha256((raw+bridge).encode()).hexdigest()
     frontend = (c.engine/'dm/host/front_mac.m').read_text()
     header = c.engine/'dm/host/input_config_mac.h'
     inputs = 'DM_INPUT_CONFIG' in frontend or 'input_config_mac.h' in frontend and header.is_file() and 'DM_INPUT_CONFIG' in header.read_text()
-    return dict(fingerprint=fingerprint, sourceHash=raw, inputConfig=bool(inputs))
+    from derived import supported
+    return dict(fingerprint=fingerprint, sourceHash=raw, inputConfig=bool(inputs), derivedProfiles=supported(c.engine))
 
 def sdk_candidates():
     values = [os.environ.get('DOTNET_HOST_PATH'), shutil.which('dotnet')]
@@ -135,14 +136,22 @@ def prepared_tools(c, info=None):
 def adapt_snapshot(repo):
     program = repo/'dm/tools/nx_extract/Program.cs'
     text = program.read_text()
-    if '--inspect' not in text:
-        text, changed = re.subn(r'\bstatic class P\b', 'static partial class P', text, count=1)
+    if 'LumaDockInspect(a)' not in text:
+        text, changed = re.subn(r'\bstatic (?:partial )?class P\b', 'static partial class P', text, count=1)
         entry = re.search(r'static int Main\(string\[\] a\)\s*\{', text)
         if changed != 1 or not entry: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         start = entry.end()
-        text = text[:start]+'\n        if (a.Length >= 3 && a[1] == "--inspect") return LumaDockInspect(a);\n'+text[start:]
+        text = text[:start]+'\n        a = LumaDockArgs(a);\n        if (a.Length >= 3 && a[1] == "--inspect") return LumaDockInspect(a);\n'+text[start:]
+        # The base/update can share one XCI. Select their CNMT content IDs before
+        # the upstream extractor picks Program/Control/Data NCAs.
+        for index,kind in ((1,'base'),(2,'update')):
+            text, count = re.subn(r'OpenNsp\(ks,\s*a\['+str(index)+r'\]\)',
+                'LumaDockSelected(ks, a['+str(index)+'], "'+kind+'")',text,count=1)
+            if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
+        text, count = re.subn(r'OpenNsp\(ks,\s*nsp\)', 'LumaDockSelected(ks, nsp, "dlc")',text,count=1)
+        if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         program.write_text(text)
-        shutil.copy2(Path(__file__).parent/'NspMetadata.cs', program.parent/'LumaDockMetadata.cs')
+    shutil.copy2(Path(__file__).parent/'NspMetadata.cs', program.parent/'LumaDockMetadata.cs')
     chain = repo/'dm/gfx/tools/dmsh_chain.py'
     text = chain.read_text()
     if 'DM_MAC_ONLY' not in text:

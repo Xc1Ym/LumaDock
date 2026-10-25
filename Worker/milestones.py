@@ -19,6 +19,7 @@ STEPS = {
     'verify': ('校验游戏文件', '确认源文件与已登记的内容一致。', 20, True),
     'unpack': ('解包与合并', '解出程序与资源，并合并所需更新。', 15, True),
     'dlc': ('处理 DLC', '准备该游戏已导入的附加内容。', 5, True),
+    'profile': ('生成版本配置', '根据实际游戏版本生成独立配置。', 5, False),
     'rewrite': ('重写原生代码', '将游戏程序转换为引擎所需的原生代码。', 60, False),
     'capture_gl': ('采集运行时 GLSLC 着色器', '采集当前配置所需的运行时着色器。', 300, False),
     'capture_vk': ('采集运行时 Vulkan 着色器', '采集当前配置所需的运行时着色器。', 300, False),
@@ -48,12 +49,12 @@ def history(c):
 
 
 def plan(c, game, target, versions, profile, identity):
-    size = max(.1, sum(p.get('size', 0) for p in game['packages']) / 1e9)
+    size = max(.1, sum(p.get('size', 0) for p in {p.get('path',p.get('sha256',str(i))):p for i,p in enumerate(game['packages'])}.values()) / 1e9)
     history_id = hashlib.sha256(json.dumps(dict(game=game['id'], target=target,
         tools=identity.get('tools', {})), sort_keys=True).encode()).hexdigest()[:24]
     c.milestone_history=history_id;c.milestone_size=size
     rows=history(c)
-    ids=['verify']+[f'unpack-{i}' for i in range(len(versions))]+['dlc','rewrite']
+    ids=['verify']+[f'unpack-{i}' for i in range(len(versions))]+(['profile'] if identity.get('preparation',{}).get('mode')=='derived' else [])+['dlc','rewrite']
     for key in ('capture_gl','capture_vk'):
         if profile.get('shader_glslc_capture' if key=='capture_gl' else 'shader_vk_capture','off')=='on':ids.append(key)
     if profile.get('graphics','nvn')!='vulkan':ids.append('extract')

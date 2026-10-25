@@ -59,6 +59,8 @@ def failure(c, output, *, log=None, tool=None, status=None):
         code='shader_chain_mismatch';summary='着色器缓存与当前工具链不一致。';suggestion='重新准备引擎工具，再重新准备游戏；不要混用 Mac 与 iOS 的着色器产物。'
     elif status in (-9,137) or 'out of memory' in text or 'cannot allocate memory' in text:
         code='memory_exhausted';summary='构建进程被终止，可能内存不足。';suggestion='关闭占用大量内存的应用后重试；若仍失败，请保留日志检查系统终止原因。'
+    elif re.search(r"(?:no such file or directory|command not found)[^\n]*['\"]?spirv-cross(?:['\"]|\s|$)",text) or re.search(r'\bspirv-cross:\s*(?:command )?not found',text) or ('spirv-cross' in text and isinstance(output,FileNotFoundError)):
+        code='shader_tool_missing';summary='找不到着色器转换工具 spirv-cross。';suggestion='确认应用未在任务运行中被移动或替换；退出后重新打开完整应用并重试。游戏源文件、密钥和已完成阶段无需删除。'
     elif any(s in text for s in ('translation failed','msl failed','spirv-cross','unsupported instruction','no spv')):
         code='shader_translation_failed';summary='着色器转换失败。';suggestion='核对游戏版本与引擎配置，并确认使用完整的兼容引擎源码；保留日志中的失败着色器信息反馈上游。'
     elif tool in ('dmsh_build.py','vk_shaders.py') or 'metal failed' in text or '.metal:' in text:

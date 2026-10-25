@@ -9,7 +9,7 @@ def make_engine(root):
     for name in engine.REQUIRED:
         path=root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('# protocol fixture\n')
     (root/'scripts/build_ipa_from_nsp.py').write_text('\n'.join('def '+name+'(*args): pass' for name in ('extract','extract_aoc','rewrite','split_shaders','build_mac_host'))+'\nclass Progress: pass\n')
-    (root/'dm/tools/nx_extract/Program.cs').write_text('static class P { static int Main(string[] a) { return 0; } void OpenNsp() {} void Nacp() {} void TitleName() {} void Icon() {} }')
+    (root/'dm/tools/nx_extract/Program.cs').write_text('static class P { static int Main(string[] a) { var b=OpenNsp(ks, a[1]); var u=OpenNsp(ks, a[2]); return 0; } void Aoc() { var p=OpenNsp(ks, nsp); } void OpenNsp() {} void Nacp() {} void TitleName() {} void Icon() {} }')
     (root/'dm/gfx/tools/dmsh_chain.py').write_text("def tools_now():\n    for sdk in ('macosx', 'iphoneos'):\n        pass\n")
     for tid in ('01007EF00011E000','0100000000010000'):
         path=root/'dm/games'/tid/'game.tsv';path.parent.mkdir()

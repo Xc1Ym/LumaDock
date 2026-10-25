@@ -83,8 +83,9 @@ def validate(path, c):
 
 
 def validate_shaders(path, gp, repo):
-    if gp.get('graphics','nvn') == 'vulkan':
-        if (path/'vk/vk_shaders.metallib').is_file(): return
+    if gp.get('graphics','nvn') in ('vulkan','gl'):
+        api='vk' if gp.get('graphics')=='vulkan' else 'gl'
+        if (path/api/(api+'_shaders.metallib')).is_file(): return
     else:
         chain = chain_of(repo,gp)
         directory = path/('b-'+chain)
@@ -101,7 +102,11 @@ def package(c, root, repo, env, gp, selected, patched, shaders, aoc, up=None):
     built = root/'ipa/game.ipa'; built.parent.mkdir(exist_ok=True)
     font = next((p for p in (Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'), Path('/System/Library/Fonts/Helvetica.ttc')) if p.is_file()), None)
     if font is None: raise Failure('找不到本机系统字体。')
-    if gp.get('graphics','nvn') != 'vulkan':
+    own=read(root/'identity.json',{}).get('preparation',{}).get('mode')=='derived'
+    if own and gp.get('graphics','nvn')=='nvn':
+        from derived import validate_tables
+        validate_tables(root/'shader/cache',gp,chain_of(repo,gp))
+    elif gp.get('graphics','nvn') not in ('vulkan','gl'):
         chain = chain_of(repo,gp)
         c.run([sys.executable, Path(__file__).parent/'c1_generate.py', repo/'dm/gfx/tools/c1_guard.py',
                root/'shader/cache'/('b-'+chain), gp.table('c1_full.tsv')], root/'logs/c1.log', env)

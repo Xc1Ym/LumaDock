@@ -39,7 +39,9 @@ def build_dmg(app, output):
         shutil.copytree(ROOT/'docs/licenses',guides/'licenses')
         subprocess.run(['xcrun','swift',str(ROOT/'scripts/make_dmg_background.swift'),str(work),PRODUCT['version']],cwd=ROOT,env=env,check=True)
         settings = {
-            'format':'UDZO', 'filesystem':'HFS+',
+            # LZMA materially reduces the bundled engine/runtime download size.
+            # The supported macOS 26+ systems can mount this format directly.
+            'format':'ULMO', 'filesystem':'HFS+',
             'files':[str(app),str(guides)], 'symlinks':{'Applications':'/Applications'},
             'icon':str(ROOT/'Assets/LumaDock.icns'),
             'background':str(work/'installer-background.tiff'),

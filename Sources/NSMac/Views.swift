@@ -154,6 +154,7 @@ struct GameDetail: View {
     let game:Game
     @State private var cleanKind="cache"
     @State private var confirmClean=false
+    @State private var showingRecovery=false
     var body:some View {
         ScrollView {
         VStack(alignment:.leading,spacing:14) {
@@ -173,6 +174,7 @@ struct GameDetail: View {
             GameLanguagePicker(gameId:game.id)
             Text(L("下次启动生效，无需重新准备。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
             if game.ready==true {
+                LabeledContent(L("当前运行版本"),value:game.runtimeVersion?.isEmpty == false ? game.runtimeVersion! : L("版本待识别"))
                 Button {store.launch(game)} label:{Label(L("启动游戏"),systemImage:"play.fill").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(store.executionBusy || !store.queue.isEmpty)
             }
             Button {store.enqueue(game)} label:{Label(game.ready==true ? L("重新检查并准备") : L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable)
@@ -198,6 +200,7 @@ struct GameDetail: View {
                 }.frame(maxWidth:.infinity,alignment:.leading)
                 .id(Localization.language)
             Divider()
+            Button(L("存档备份与版本回滚…")) {showingRecovery=true}
             Button(L("在访达中查看存档")) {
                 let url=store.libraryURL.appendingPathComponent("saves/\(game.id)")
                 try? FileManager.default.createDirectory(at:url,withIntermediateDirectories:true);store.reveal(url)
@@ -212,10 +215,11 @@ struct GameDetail: View {
             }.disabled(store.executionBusy)
         }.padding(20)
         }
+        .sheet(isPresented:$showingRecovery) {GameRecoveryView(game:game).environmentObject(store)}
         .alert(cleanKind=="sources" ? L("删除托管 NSP 副本？") : L("清理构建缓存？"),isPresented:$confirmClean) {
             Button(L("取消"),role:.cancel){}
             Button(L("确认清理"),role:.destructive){store.clean(game,kind:cleanKind)}
-        } message:{Text(L("仅处理托管副本；原始文件、存档和上次成功的运行版本保留。"))}
+        } message:{Text(L("仅处理托管副本；原始文件、存档和上次成功的运行版本保留。其他游戏仍在引用的共享文件会保留。"))}
     }
 }
 struct TasksView: View {

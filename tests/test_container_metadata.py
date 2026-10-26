@@ -101,6 +101,40 @@ class ContainerMetadataTests(unittest.TestCase):
         with self.assertRaises(Failure): self.imported()
         self.assertEqual(self.c.catalog()['games'],[])
         self.assertEqual(list((self.c.library/'sources').iterdir()),[])
+    def test_clean_shared_container_keeps_other_games_including_hidden_ones(self):
+        other='0100000000020000'
+        self.response['packages'].append(package(title=other,base=other))
+        self.imported();cat=self.c.catalog();cat['games'][1]['hidden']=True;self.c.save_catalog(cat)
+        shared=self.c.library/cat['games'][0]['packages'][0]['path']
+        self.c.r.update(gameId=TITLE,kind='sources')
+        result=self.quiet(library.clean,self.c)
+        self.assertEqual(result['retainedShared'],1)
+        self.assertTrue(shared.exists())
+        self.assertEqual(self.c.catalog()['games'][0]['packages'],[])
+        self.assertEqual(len(self.c.catalog()['games'][1]['packages']),1)
+        # The last owner can clean a container stored under a different title.
+        self.c.r['gameId']=other;self.quiet(library.clean,self.c)
+        self.assertFalse(shared.exists())
+    def test_cancelled_source_cleanup_leaves_other_references_intact(self):
+        self.imported();cat=self.c.catalog()
+        source=self.c.library/cat['games'][0]['packages'][0]['path']
+        self.c.r.update(gameId=TITLE,kind='sources')
+        original=self.c.save_catalog
+        def save_then_cancel(value):
+            original(value);self.c.cancelled=True
+        from core import Cancelled
+        with patch.object(self.c,'save_catalog',side_effect=save_then_cancel):
+            with self.assertRaises(Cancelled): self.quiet(library.clean,self.c)
+        self.assertTrue(source.exists())
+        self.assertEqual(self.c.catalog()['games'][0]['packages'],[])
+    def test_source_cleanup_rejects_paths_outside_sources(self):
+        self.imported();cat=self.c.catalog()
+        save=self.c.library/'saves/keep';save.write_text('save')
+        cat['games'][0]['packages'][0]['path']='saves/keep';self.c.save_catalog(cat)
+        self.c.r.update(gameId=TITLE,kind='sources')
+        with self.assertRaises(Failure): self.quiet(library.clean,self.c)
+        self.assertEqual(save.read_text(),'save')
+        self.assertEqual(self.c.catalog(),cat)
     def test_update_does_not_satisfy_another_required_profile_version(self):
         profile={'package':'v327680','shader_versions':'v0 v327680',
             'builds':{'v0':{'main':'synthetic'},'v327680':{'display':'1.2.1','main':'other'}}}

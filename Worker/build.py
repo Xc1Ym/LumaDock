@@ -202,6 +202,10 @@ def install(c,root,repo,gp,key,host,romfs,modules,shader,aoc=None,font=None):
     manifest={'schema':1,'gameId':gp.id,'engine':read(root/'identity.json',{}).get('tools',{}).get('engine','external'),'cacheKey':key,'sourceHashes':read(root/'identity.json',{}).get('sources',[]),'chain':chain,'graphics':gp.get('graphics','nvn'),'version':gp.builds()[gp.get('package')]['display'],'inputConfig':read(root/'identity.json',{}).get('tools',{}).get('inputConfig',False),'created':time.time(),'preparationMode':'derived' if own else 'registered'}
     atomic(stage/'manifest.json',manifest)
     validate_runtime(stage,gp)
+    if (dst/'current').exists():
+        from recovery import snapshot
+        snapshot(c,gp.id,'beforeVersionChange',optional=True)
+    c.check()
     # A symlink switch is atomic; the old successful release remains intact on every failure.
     target=releases/(key+'-'+str(time.time_ns())); stage.rename(target)
     link=dst/'current.next'; link.unlink(missing_ok=True); link.symlink_to(target.relative_to(dst),target_is_directory=True); os.replace(link,dst/'current')

@@ -122,6 +122,13 @@ resources=Path(sys.argv[1]);sys.path.insert(0,str(resources/'Worker'))
 from core import Context
 from toolchain import probe
 import capstone,lz4.block,fontTools
+from fontTools.misc.bezierTools import calcCubicBounds
+from fontTools.cu2qu import cu2qu
+from fontTools.qu2cu import qu2cu
+from fontTools.varLib import iup
+from fontTools.pens import momentsPen
+from fontTools.feaLib import lexer
+assert calcCubicBounds((0,0),(1,1),(2,1),(3,0)) == (0,0,3,0.75)
 c=Context(dict(schema=1,operation='preflight',resources=str(resources),privateRoot=sys.argv[2]))
 paths=[sys.executable,sys.base_prefix,capstone.__file__,lz4.block.__file__,fontTools.__file__]
 assert all(Path(p).resolve().is_relative_to(c.runtime.resolve()) for p in paths),paths
@@ -169,6 +176,25 @@ def verify_converter(resources, private):
     ztools=private/'NSC_BUILDER/ztools'
     bootstrap="import runpy,sys;sys.path.insert(0,sys.argv.pop(1));p=sys.argv.pop(1);sys.path.insert(1,str(__import__('pathlib').Path(p).parent));sys.argv[0]=p;runpy.run_path(p,run_name='__main__')"
     env=dict(os.environ,PATH='/usr/bin:/bin:/usr/sbin:/sbin',HOME=str(private),TMPDIR=str(private),PYTHONHOME='/invalid',PYTHONPATH='/invalid',PYTHONDONTWRITEBYTECODE='1')
+    # Exercise native extensions whose Intel slices were removed, plus retained
+    # dictionary data. Help output alone does not establish that these work.
+    smoke='''
+import io, sys
+sys.path.insert(0, sys.argv[1])
+from Crypto.Cipher import AES
+from Crypto.Hash import SHA256
+import zstandard, charset_normalizer, pykakasi
+from PIL import Image
+cipher=AES.new(bytes(16), AES.MODE_ECB)
+assert cipher.decrypt(cipher.encrypt(bytes(16))) == bytes(16)
+assert SHA256.new(b'portable').hexdigest() == __import__('hashlib').sha256(b'portable').hexdigest()
+assert zstandard.ZstdDecompressor().decompress(zstandard.ZstdCompressor().compress(b'portable')) == b'portable'
+assert str(charset_normalizer.from_bytes(b'portable').best()) == 'portable'
+assert pykakasi.kakasi().convert('日本')[0]['hepburn']
+buffer=io.BytesIO(); Image.new('RGB',(1,1),(12,34,56)).save(buffer,format='PNG'); buffer.seek(0)
+assert Image.open(buffer).getpixel((0,0)) == (12,34,56)
+'''
+    subprocess.run([python,'-B','-I','-c',smoke,str(root/'python')],env=env,check=True,timeout=40)
     for tool,flag in ((root/'nsz.py','--help'),(ztools/'squirrel.py','-h')):
         result=subprocess.run([python,'-B','-I','-c',bootstrap,str(root/'python'),str(tool),flag],cwd=ztools,env=env,text=True,capture_output=True,timeout=40)
         assert result.returncode==0 and 'usage:' in (result.stdout+result.stderr).lower(),result.stdout+result.stderr

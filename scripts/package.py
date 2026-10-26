@@ -3,6 +3,7 @@
 import argparse,hashlib,json,os,pathlib,plistlib,shutil,subprocess,sys,tempfile
 from product import ROOT, RELEASE, PRODUCT, checksums
 from build_dmg import build_dmg
+from runtime_size import compact_runtime
 def run(a,**kw):return subprocess.run([str(x) for x in a],check=True,**kw)
 def macho(p):
     try:
@@ -106,6 +107,7 @@ def main():
         ignore=shutil.ignore_patterns('__pycache__','*.pyc','.git','gen','bin','obj','dmhost')
         shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
         shutil.copytree(ROOT/'work/Runtime',resources/'Runtime',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        compact_runtime(resources/'Runtime')
         shutil.copytree(ROOT/'Engine/nxnative',resources/'Engine/nxnative')
         if not (ROOT/'work/EngineReader/manifest.json').is_file(): raise RuntimeError('Run scripts/bundle_engine.py first.')
         shutil.copytree(ROOT/'work/EngineReader',resources/'Engine/reader')

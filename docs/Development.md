@@ -43,6 +43,8 @@ Packaging refuses to replace a running output app or its active runtime children
 
 Outputs are placed in `release/`. Bundled dependency versions are recorded in the app's `Runtime/versions.json`; toolchains vary with the build environment, so byte-for-byte reproducibility is not guaranteed.
 
+DMGs use LZMA (`ULMO`) compression. Runtime staging removes Python development examples, generated fontTools C files and Crypto self-tests, and keeps only the ARM64 slice of universal binaries before signing. Runtime modules, engine profiles, notices and corresponding dependency source archives remain bundled for offline use. Packaging applies the same optimization to previously collected runtimes without modifying `work/Runtime` or a running app.
+
 Use the ignored `work/` directory for development. Launch with `--data-root <directory>` to isolate application data. Never commit `work/`, `release/`, `Runtime`, games, keys, saves or player caches.
 
 Conversion collection pins SAK-Mac, NSC_BUILDER and nsz commits in `scripts/bundle_converter.py`, plus Python versions in `requirements-conversion.txt`. It downloads sources and dependencies on the release builder, applies the upstream macOS patch, retains notices and corresponding GPL/MPL sources, and excludes keys, title databases and player content. The app uses these bundled tools offline. `Runtime/converter/manifest.json` records exact upstream commits, package versions, source URLs and hashes.

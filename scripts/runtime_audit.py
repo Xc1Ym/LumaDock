@@ -35,6 +35,9 @@ def verify_portable_runtime(runtime):
             if path.readlink().is_absolute() or not path.resolve().is_relative_to(runtime):
                 raise RuntimeError(f'External runtime symlink: {path}')
         elif path.is_file() and macho(path):
+            architectures=subprocess.check_output(['lipo','-archs',path],text=True).strip()
+            if architectures != 'arm64':
+                raise RuntimeError(f'Expected ARM64-only runtime binary in {path}: {architectures}')
             dependencies=subprocess.check_output(['otool','-L',path],text=True)
             commands=subprocess.check_output(['otool','-l',path],text=True)
             check_load_paths(path,dependencies,commands);count+=1

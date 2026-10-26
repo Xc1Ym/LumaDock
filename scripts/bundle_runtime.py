@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from product import ROOT
 from runtime_audit import SYSTEM_PATHS, rpaths, verify_portable_runtime
+from runtime_size import compact_runtime
 
 
 def run(args, **kw):
@@ -79,6 +80,7 @@ def build(out):
     if not (converter/'manifest.json').is_file():
         raise RuntimeError('Run scripts/bundle_converter.py before collecting the runtime.')
     shutil.copytree(converter,out/'converter',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+    compact_runtime(out)
     libs = out/'lib'
     libs.mkdir()
     todo = [p for root in (out/'python', out/'bin',out/'converter') for p in root.rglob('*')

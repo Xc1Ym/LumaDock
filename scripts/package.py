@@ -21,7 +21,7 @@ def audit(root):
         if p.name=='keys.txt':raise RuntimeError('Player keys in distribution: '+str(rel))
         if any(part.lower() in ('vendor','nxnative','nx_extract','dmsh_xlate_bin') for part in rel.parts) or p.name in ('nx_extract.dll','dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','LibHac.dll'):
             raise RuntimeError('Bundled external engine in distribution: '+str(rel))
-        if p.suffix.lower() in banned or p.name in ('prod.keys','catalog.json','preferences.json','control.nacp','romfs_manifest.tsv') or any(x in rel.parts for x in ('romfs','RomFS','ExeFS','save','saves','pso_user','shader','extract')):
+        if p.suffix.lower() in banned or p.name in ('prod.keys','catalog.json','preferences.json','control.nacp','romfs_manifest.tsv') or any(x in rel.parts for x in ('romfs','RomFS','ExeFS','save','saves','backups','pso_user','shader','extract')):
             raise RuntimeError('Private data in distribution: '+str(rel))
         if p.suffix.lower() in ('.jpg','.jpeg','.png','.webp') and 'Runtime' not in rel.parts: raise RuntimeError('Unexpected artwork in release: '+str(rel))
         files.append({'path':str(rel),'size':p.stat().st_size})

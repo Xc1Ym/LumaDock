@@ -195,6 +195,7 @@ def catalog(c):
         manifest=read(c.library/'games'/g['id']/'current/manifest.json',{})
         cover=c.library/'games'/g['id']/'cover.jpg'; g['cover']=str(cover) if cover.exists() else ''
         g['ready']=bool(manifest)
+        g['runtimeVersion']=manifest.get('version','')
         g['inputConfig']=manifest.get('inputConfig',True) if manifest else bool(selected_engine and selected_engine['inputConfig'])
         g['needsPreparation']=bool(manifest) and (selected_engine is not None and manifest.get('engine') != selected_engine['fingerprint'] or manifest.get('sourceHashes') != sorted(x['sha256'] for x in g['packages']))
     cat['profiles']=[{'id':x['id'],'name':x['name'],'compatibility':x['compatibility'],'version':x['builds'].get(x['package'],{}).get('display','')} for x in ps.values()]
@@ -212,8 +213,32 @@ def remove(c):
 def clean(c):
     with c.lock('execution'), c.lock():
         g=c.game(); kind=c.r['kind']
-        if kind=='cache': paths=[c.library/'cache'/g['id']]
-        elif kind=='sources': paths=[c.library/'sources'/g['id']]
+        if kind=='sources':
+            c.begin('删除托管 NSP 副本',1,1)
+            cat=c.catalog()
+            game=next(x for x in cat['games'] if x['id']==g['id'])
+            if (c.library/'sources').is_symlink(): raise Failure('托管源文件路径无效，未执行清理。')
+            sources=contained(c.library,c.library/'sources')
+            def source_path(package):
+                return contained(sources,c.library/package['path'])
+            candidates={source_path(p) for p in game['packages']}
+            # Hidden games still own their files. A container may live under another title.
+            shared={source_path(p) for other in cat['games'] if other['id']!=g['id'] for p in other['packages']}
+            paths=sorted(candidates-shared)
+            if any(p.is_dir() for p in paths): raise Failure('托管源文件路径无效，未执行清理。')
+            c.check()
+            # Detach references first: cancellation can leave orphans, never dangling
+            # references belonging to another game or a partially deleted catalogue.
+            game['packages']=[]
+            c.save_catalog(cat)
+            for index,path in enumerate(paths,1):
+                c.check();path.unlink(missing_ok=True)
+                c.emit(done=index,total=len(paths),unit='files')
+            return {'retainedShared':len(candidates & shared)}
+        if kind=='cache':
+            cache=c.library/'cache';path=cache/g['id']
+            if cache.is_symlink() or path.is_symlink(): raise Failure('托管源文件路径无效，未执行清理。')
+            paths=[contained(cache,path)]
         else: raise Failure('无效的清理范围。')
         c.begin('清理构建缓存' if kind=='cache' else '删除托管 NSP 副本',1,1)
         for p in paths:
@@ -225,8 +250,6 @@ def clean(c):
                     if path.is_symlink() or path.is_file():path.unlink()
                     else:path.rmdir()
                     c.emit(done=index,total=len(entries),unit='files')
-        if kind=='sources':
-            cat=c.catalog(); next(x for x in cat['games'] if x['id']==g['id'])['packages']=[]; c.save_catalog(cat)
     return {}
 
 def diagnostics(c):

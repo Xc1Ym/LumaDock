@@ -2970,5 +2970,193 @@
   {
     "source": "确认应用未在任务运行中被移动或替换；退出后重新打开完整应用并重试。游戏源文件、密钥和已完成阶段无需删除。",
     "en": "Check whether the app was moved or replaced while the task was running. Quit and reopen the complete app, then retry. Keep the game sources, keys, and completed stages."
+  },
+  {
+    "source": "切换到此版本…",
+    "en": "Switch to this version…"
+  },
+  {
+    "source": "切换前会校验运行文件并备份当前存档。存档不会自动回退。",
+    "en": "Runtime files will be validated and current saves backed up before switching. Saves will not be rolled back automatically."
+  },
+  {
+    "source": "切换存档",
+    "en": "Switch saves"
+  },
+  {
+    "source": "切换版本",
+    "en": "Switch version"
+  },
+  {
+    "source": "切换运行版本",
+    "en": "Switch runtime version"
+  },
+  {
+    "source": "切换运行版本前会自动备份存档。切换不会自动恢复旧存档；旧版本可能无法读取新版本存档。",
+    "en": "Saves are backed up before switching runtime versions. Older saves are not restored automatically; an older version may not read newer saves."
+  },
+  {
+    "source": "切换运行版本？",
+    "en": "Switch runtime version?"
+  },
+  {
+    "source": "刷新",
+    "en": "Refresh"
+  },
+  {
+    "source": "备份并校验存档",
+    "en": "Back up and verify saves"
+  },
+  {
+    "source": "备份期间存档发生变化，请退出游戏后重试。",
+    "en": "Saves changed during backup. Quit the game and try again."
+  },
+  {
+    "source": "备份存档",
+    "en": "Back up saves"
+  },
+  {
+    "source": "存档与运行版本",
+    "en": "Saves and runtime versions"
+  },
+  {
+    "source": "存档备份",
+    "en": "Save backups"
+  },
+  {
+    "source": "存档备份与版本回滚…",
+    "en": "Save backups and version rollback…"
+  },
+  {
+    "source": "存档备份已保存。",
+    "en": "Save backup created."
+  },
+  {
+    "source": "存档备份或恢复所需空间不足，当前存档未改动。",
+    "en": "Not enough space to back up or restore saves. Current saves are unchanged."
+  },
+  {
+    "source": "存档备份记录无效，当前存档未改动。",
+    "en": "Invalid save backup record. Current saves are unchanged."
+  },
+  {
+    "source": "存档已恢复，恢复前的存档已自动备份。",
+    "en": "Saves restored. Previous saves were backed up automatically."
+  },
+  {
+    "source": "存档或运行目录不可用。",
+    "en": "The save or runtime directory is unavailable."
+  },
+  {
+    "source": "存档校验失败，当前存档未改动。",
+    "en": "Save verification failed. Current saves are unchanged."
+  },
+  {
+    "source": "将替换当前存档。恢复前会自动备份当前存档；备份校验失败时保留当前存档。",
+    "en": "This replaces current saves. They will be backed up first. If backup verification fails, current saves are kept."
+  },
+  {
+    "source": "尚无可备份的存档。",
+    "en": "There are no saves to back up yet."
+  },
+  {
+    "source": "尚无存档备份。",
+    "en": "No save backups yet."
+  },
+  {
+    "source": "尚无已准备的运行版本。",
+    "en": "No prepared runtime versions yet."
+  },
+  {
+    "source": "引擎标识：",
+    "en": "Engine ID: "
+  },
+  {
+    "source": "当前运行版本",
+    "en": "Current runtime version"
+  },
+  {
+    "source": "恢复前自动备份",
+    "en": "Automatic backup before restore"
+  },
+  {
+    "source": "恢复存档",
+    "en": "Restore saves"
+  },
+  {
+    "source": "恢复所选存档？",
+    "en": "Restore selected saves?"
+  },
+  {
+    "source": "恢复此备份…",
+    "en": "Restore this backup…"
+  },
+  {
+    "source": "恢复目录包含符号链接或特殊文件，操作已停止。",
+    "en": "A recovery directory contains symbolic links or special files. Operation stopped."
+  },
+  {
+    "source": "恢复目录包含符号链接，操作已停止。",
+    "en": "A recovery directory contains symbolic links. Operation stopped."
+  },
+  {
+    "source": "手动备份",
+    "en": "Manual backup"
+  },
+  {
+    "source": "托管源文件路径无效，未执行清理。",
+    "en": "Invalid managed source path. Cleanup was not performed."
+  },
+  {
+    "source": "校验待恢复存档",
+    "en": "Verify saves to restore"
+  },
+  {
+    "source": "校验运行版本",
+    "en": "Validate runtime version"
+  },
+  {
+    "source": "版本切换前自动备份",
+    "en": "Automatic backup before version switch"
+  },
+  {
+    "source": "磁盘不支持原子存档恢复，当前存档未改动。",
+    "en": "This disk does not support atomic save restoration. Current saves are unchanged."
+  },
+  {
+    "source": "立即备份",
+    "en": "Back up now"
+  },
+  {
+    "source": "请先结束游戏及准备任务，再管理存档和运行版本。",
+    "en": "End gameplay and preparation tasks before managing saves and runtime versions."
+  },
+  {
+    "source": "读取存档备份与运行版本",
+    "en": "Read save backups and runtime versions"
+  },
+  {
+    "source": "运行版本",
+    "en": "Runtime versions"
+  },
+  {
+    "source": "运行版本不可用，请刷新列表后重试。",
+    "en": "Runtime version unavailable. Refresh the list and try again."
+  },
+  {
+    "source": "运行版本已切换，存档未回退。",
+    "en": "Runtime version switched. Saves were not rolled back."
+  },
+  {
+    "source": "请切换回任务所属游戏库后重试。",
+    "en": "Switch back to the task’s game library before retrying."
+  },
+  {
+    "source": "已移除该游戏的内容登记；其他游戏仍在使用的共享文件已保留。",
+    "en": "This game’s content registrations were removed. Shared files used by other games were kept."
+  },
+  {
+    "source": "仅处理托管副本；原始文件、存档和上次成功的运行版本保留。其他游戏仍在引用的共享文件会保留。",
+    "en": "Only managed copies are affected. Original files, saves, and the last successful runtime version are kept. Shared files referenced by other games are kept."
   }
 ]

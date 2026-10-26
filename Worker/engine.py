@@ -1,7 +1,6 @@
-"""Adapter for a player-selected nxnative checkout. Never downloads an engine.
+"""Adapter for bundled nxnative, with external-source support in development.
 
-Only private snapshots are modified or compiled. No upstream source is shipped
-with the launcher; NspMetadata.cs is LumaDock's metadata protocol extension.
+Only private snapshots are modified or compiled. No engine downloads at runtime.
 """
 from __future__ import annotations
 import ast
@@ -15,9 +14,9 @@ import tempfile
 import uuid
 from core import Failure, atomic, digest, profiles, read
 
-HELP = '请自行获取并解压完整 nxnative 源码，然后选择包含 dm 和 scripts 的根目录。璃游不附带、不下载引擎，也不修改所选源码。'
+HELP = 'nxnative 随应用内置。组件缺失或校验失败时，请重新安装完整璃游；游戏构建使用私有副本。'
 SDK_HELP = '首次准备引擎读取工具需要 Microsoft .NET 10 SDK（macOS Arm64），只有运行时不够。安装官方 SDK 后重新检查；已有完整工具缓存时不再需要 SDK。安装方法见环境安装说明。'
-TOOLS_HELP = '选择有效的 nxnative 目录后，点击“准备引擎工具”。首次需要 .NET 10 SDK，并可能从 NuGet 恢复项目依赖。编译产物保存在应用私有缓存，原目录保持不变。'
+TOOLS_HELP = '点击“准备引擎工具”，将内置引擎与读取器复制到私有缓存。源码开发时首次编译读取器需要 .NET 10 SDK。'
 EXCLUDED = {'.git', 'bin', 'obj', 'gen', '__pycache__', 'cache', 'logs'}
 ROOTS = {'dm', 'scripts', 'LICENSE'}
 PRIVATE_SUFFIXES = {'.nsp', '.xci', '.nsz', '.keys', '.ipa', '.metallib', '.pyc'}
@@ -55,6 +54,11 @@ def inspect_source(c):
         raise Failure('尚未选择 nxnative 目录，请先在环境设置中指定。')
     if not c.engine.is_dir():
         raise Failure('nxnative 目录不可用，请连接磁盘或重新选择目录。')
+    bundled = hasattr(c, 'resource') and c.engine == c.resource/'Engine/nxnative'
+    if bundled:
+        from bundled_engine import verify_bundle
+        try: verify_bundle(c.engine)
+        except (OSError, ValueError, KeyError) as error: raise Failure(HELP) from error
     missing = [name for name in REQUIRED if not (c.engine/name).is_file()]
     if missing:
         raise Failure('nxnative 目录不完整，缺少：'+'、'.join(missing))
@@ -76,12 +80,12 @@ def inspect_source(c):
     except (OSError, ValueError, KeyError, SyntaxError) as error:
         raise Failure('所选 nxnative 的构建接口或配置不兼容，请查看环境说明并选择完整的兼容源码。') from error
     bridge = hashlib.sha256(Path(__file__).read_bytes()+(Path(__file__).parent/'NspMetadata.cs').read_bytes()+(Path(__file__).parent/'derived.py').read_bytes()).hexdigest()
-    fingerprint = 'external-'+hashlib.sha256((raw+bridge).encode()).hexdigest()
+    fingerprint = ('bundled-' if bundled else 'external-')+hashlib.sha256((raw+bridge).encode()).hexdigest()
     frontend = (c.engine/'dm/host/front_mac.m').read_text()
     header = c.engine/'dm/host/input_config_mac.h'
     inputs = 'DM_INPUT_CONFIG' in frontend or 'input_config_mac.h' in frontend and header.is_file() and 'DM_INPUT_CONFIG' in header.read_text()
     from derived import supported
-    return dict(fingerprint=fingerprint, sourceHash=raw, inputConfig=bool(inputs), derivedProfiles=supported(c.engine))
+    return dict(fingerprint=fingerprint, sourceHash=raw, inputConfig=bool(inputs), nativeControllers=(c.engine/'dm/host/controller_native.h').is_file(), derivedProfiles=supported(c.engine))
 
 def sdk_candidates():
     values = [os.environ.get('DOTNET_HOST_PATH'), shutil.which('dotnet')]
@@ -171,14 +175,18 @@ def adapt_snapshot(repo):
 
 def prepare(c):
     with c.toolchain_lock(exclusive=True):
-        c.begin('验证外部 nxnative', 1, 3)
+        c.begin('验证 nxnative', 1, 3)
         info = inspect_source(c)
         try:
             root = prepared_tools(c, info)
             return dict(info, path=str(root), reused=True)
         except Failure: pass
-        sdk, version = find_sdk(c)
-        if sdk is None: raise Failure(SDK_HELP)
+        shipped = c.resource/'Engine/reader'
+        shipped_record = read(shipped/'manifest.json', {})
+        use_shipped = info['fingerprint'].startswith('bundled-') and shipped_record.get('fingerprint') == info['fingerprint']
+        if shipped.exists() and not use_shipped: raise Failure('内置读取器与引擎版本不匹配，请重新安装完整璃游。')
+        sdk, version = (None, shipped_record.get('sdk', '')) if use_shipped else find_sdk(c)
+        if not use_shipped and sdk is None: raise Failure(SDK_HELP)
         engines = c.private/'engines'; engines.mkdir(exist_ok=True)
         stage = engines/('.partial-'+uuid.uuid4().hex)
         stage.mkdir()
@@ -193,13 +201,20 @@ def prepare(c):
             if source_hash(repo) != info['sourceHash']: raise Failure('复制期间引擎源码发生变化，请重新准备。')
             adapt_snapshot(repo)
             atomic(repo/'global.json', {'sdk':{'version':version,'rollForward':'latestPatch','allowPrerelease':False}})
-            c.begin('编译外部引擎读取工具', 3, 3)
+            c.begin('准备引擎读取工具', 3, 3)
             # An ASCII output path avoids an MSBuild apostrophe-path bug.
             with tempfile.TemporaryDirectory(prefix='lumadock-reader-') as directory:
                 output=Path(directory)/'publish'
                 config=Path(directory)/'NuGet.Config'
                 config.write_text('<configuration><packageSources><clear/><add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>')
-                c.run([sdk, 'publish', repo/'dm/tools/nx_extract/nx_extract.csproj', '-c', 'Release', '-r', 'osx-arm64', '--self-contained', 'false', '--disable-build-servers', '-p:UseSharedCompilation=false', '--configfile', config, '-o', output, '-v', 'quiet'], env=sdk_env(c,sdk), cwd=repo)
+                if use_shipped:
+                    files = shipped_record.get('files', {})
+                    actual = {p.name:digest(p) for p in shipped.iterdir() if p.is_file() and p.name != 'manifest.json'}
+                    if not files or files != actual or any(p.is_symlink() or p.is_dir() for p in shipped.iterdir()): raise Failure('内置读取器校验失败，请重新安装完整璃游。')
+                    output.mkdir()
+                    for name in files: shutil.copy2(shipped/name, output/name)
+                else:
+                    c.run([sdk, 'publish', repo/'dm/tools/nx_extract/nx_extract.csproj', '-c', 'Release', '-r', 'osx-arm64', '--self-contained', 'false', '--disable-build-servers', '-p:UseSharedCompilation=false', '--configfile', config, '-o', output, '-v', 'quiet'], env=sdk_env(c,sdk), cwd=repo)
                 for name in ('nx_extract','nx_extract.dll','LibHac.dll','nx_extract.runtimeconfig.json'):
                     if not (output/name).is_file(): raise Failure('引擎读取工具编译后缺少必需产物。')
                 shutil.copytree(output, stage/'tools/nx_extract')

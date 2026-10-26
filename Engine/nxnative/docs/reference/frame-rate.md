@@ -1,0 +1,154 @@
+# Frame rate
+
+Frame pacing: the host's frame step, engine frame limiters, present intervals and display rates. Each entry: symptom, cause, fix, the games it was found on. The [symptom index](../agents/symptoms.md) lists every symptom.
+
+## Frame step
+
+### sead's dynamic present interval, `ksys::VFR` and the host's frame step
+
+- **Symptom:** a 30 fps game to run at 60; after the floor was lowered, slow motion on a GPU-bound device (GitHub issue #9).
+- **Cause:** find where the present interval comes from and how the logic time step follows it before patching anything. BotW's `sead::GameFrameworkNx` main loop (`main+0x112660c`) runs a dynamic interval: from the last frame's time it computes how many vertical syncs were needed, clamps that to [2, 3] (the maximum from the interval controller built at `main+0x1126c04`), steps up after three overrunning frames and down one level every six frames, and sets the result through `setWaitVsyncInterval` (vtable +0x130, `main+0x11269b8` → `nvnWindowSetPresentInterval`). The game logic follows on its own: `ksys::VFR` is initialized with a constant base interval of 2 (`main+0x127e740`), and every frame `VFR::updateInterval` (`main+0x151d3d0`) takes the framework's current interval, giving a frame ratio of interval / 2, so the engine's variable frame rate scales its time step by the present interval and the speed is right as long as the interval matches the frames. Then check what the controller measures: BotW's measured only the main thread's CPU time (about 3 ms a frame), so a GPU-bound device stayed at interval 1 and played in slow motion.
+- **Fix:** now the host's frame step in whole vsyncs: a stub at the framework's `setWaitVsyncInterval` hands the game the host's step, and frames stay on screen exactly that long. The method before it, which `DM_FRAME_STEP=legacy` still runs, cuts the game's frame-interval logic: five rewriter cuts lower the floor from 2 to 1 (its `patches.py`, build `cd57b23f…`): the candidate floor (two places) and the hysteresis targets. Two more cuts make the controller always take its GPU-time path, and the host's timestamp reports had to carry real GPU times for that path to see anything (profile key `gpu_timestamps`, [GPU timestamps per submission segment](#gpu-timestamps-per-submission-segment)).
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (1.9.0; its note has the interval controller and the legacy cuts).
+- **Check:** probes confirmed the legacy result: the framework presents at interval 1, VFR reports interval 1 with ratio 0.5, and when a frame runs long the game steps back to 2 with ratio 1, so the game speed does not change.
+- **Note:** the zeldaret/botw decompilation (`VFR.cpp`) gave the semantics; 1.9.0's addresses were found by the constants (`60 / interval`, the `fmov s11, #2.0` floor).
+
+### A thermally serious iPhone holds 30 fps
+
+- **Symptom:** on an iPhone, a game with the frame step at 60 fps drops a frame in most windows after a few minutes, and its GPU time per frame roughly doubles to triples (17-26 ms for the same scenes).
+- **Cause:** at thermal state serious (`NSProcessInfo` `thermalState` 2) iOS caps the GPU clock to about a third: the median of the frame's tiny passes, a clock proxy from `DM_NVN_GPUPROF`, rose from about 6 to 22 µs. A frame with thousands of draws no longer fits 16.7 ms, and running the GPU flat out keeps the device hot.
+- **Fix:** `thermal_capped` in `hle_nvn.c`: while the device is serious or worse, `fps_step_cap` holds 30 fps; it goes back to the cap after the device has been fair or better for 30 s (`THERMAL_CALM_NS`), so it does not flap. The thermal state is read once a second (`dm_thermal_now`). The log says `thermal state 2: the frame step holds 30 fps …` and `frame step cap 60 → 30 fps … (thermal state serious)`. `DM_THERMAL_CAP=0` turns it off. The Mac reports no thermal state, so it never applies there.
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (iPhone 17 Pro Max, docked at 60 fps: serious after 226 s from a cold start, after 64 s from a warm one; at 30 fps the frames held with no drops).
+- **Resolved: movies interrupted thermal recovery, and acquire/present callers raced.** The cap getter short-circuited thermal sampling while a movie or a 30 fps target applied. A serious interval during a movie could leave an earlier calm timer intact and release the cap too soon; cooling during a movie instead added another 30 s hold after playback. Thermal sampling now runs independently of those caps, with a mutex protecting the sample, cached result and recovery timer across acquire/present threads.
+- **Check:** `make -C dm/gfx/tests GAME=01007EF00011E000 check_t_thermal thermal-tsan` drives the production cap getter with a controlled clock and thermal source: serious/critical, recovery interrupted by heat, cooling and heating during movies or a 30 fps target, one-second sampling, disabled/inactive caps, the Mac's absent thermal state, and concurrent readers under ThreadSanitizer. No new device gameplay run or on-device recovery observation is claimed.
+
+### GPU timestamps per submission segment
+
+- **Symptom:** slow motion when the GPU is the bottleneck: a game's interval controller that times the GPU never steps up (GitHub issue #9).
+- **Cause:** a game that times its GPU work as the difference of two timestamp reports in one submission (`TIMESTAMP_TOP` at the start of the frame's command buffer, `TIMESTAMP` at its end) read 0–6 ticks, because the host wrote all the reports of a submission with one time in its completion handler.
+- **Fix:** the profile key `gpu_timestamps segment` makes each report take the GPU start (`TIMESTAMP_TOP`) or end (other types) of the `sub_cut` segment ([Submissions handed to the GPU in segments](#submissions-handed-to-the-gpu-in-segments)) it was encoded in (`rep_ticks` in `nvn_mtl.m`: MTL4CommitFeedback times converted to the guest clock, written in the last segment's handler as before). `DM_NVN_GPU_TS=submission` gives the old timestamps.
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (legacy frame-step method): BotW's frame has 5 reports in one submission (`main+0xe94584`, `main+0xe94664`); with two more cuts the controller always takes the GPU path, and the GPU time now reads the frame's GPU span, gaps where the GPU waits for the host's translation included. Measured on the Mac with two BotW runs sharing the GPU under a heavy CPU load (load average about 75, a shader rebuild running): GPU time p50 16–23 ms; the fixed run stayed at interval 2 (3 while the GPU time passed 1.9 vsyncs, 1 for under 2% of the frames) at 0.93–0.98 of real time, while a run with `DM_NVN_GPU_TS=submission` spent 10–70% of its frames at interval 1 and ran at 0.78–0.95. The same GPU time drives the game's dynamic resolution.
+
+### Raw NVN timestamp units
+
+- **Symptom:** GPU time reads 32 times too small when a game converts raw NVN counter timestamps itself.
+- **Cause:** the host wrote reports in 19.2 MHz CPU ticks, while the raw NVN timestamp field uses 614.4 MHz ticks (384 ticks per 625 ns). Games calling `nvnDeviceGetTimestampInNanoseconds` saw correct time because its inverse conversion had the same wrong rate, but an inline conversion read a 16 ms span as 0.5 ms.
+- **Fix:** `nvn_timestamp.h` shares the 614.4 MHz conversions between all report writes (`gpu_ticks`, `rep_ticks`) and `nvnDeviceGetTimestampInNanoseconds`. Wide integer products preserve long uptimes. The guest clock epoch stays the same; CPU system counters stay at 19.2 MHz, and the API still returns nanoseconds.
+- **Found on:** [NieR:Automata The End of YoRHa Edition](../../dm/games/010056B015FE8000/README.md), whose dynamic-resolution controller subtracts two raw report timestamps and converts the difference inline.
+- **Check:** `t_timestamp` checks known vectors, long uptimes, round-trip precision and the game's exact inline arithmetic. `t_nvn` checks the API's known units and bounds a completed report between submit and fence wait.
+
+## Engine frame limiters
+
+### A render-thread limiter with a constant and a fixed time step
+
+- **Symptom:** the game presents at interval 1, yet every frame takes exactly 33.3 ms of "frame work"; after only the limiter was raised, everything ran twice as fast on the iPhone.
+- **Cause:** the cap is the render thread's own limiter, `main+0x707090(this, fps)`, which sleeps out 1000 / fps ms since its previous call, called once with the constant 30 (`main+0x706fa4`). Found from the render thread's backtrace in the thread dump (`HGCommandDispatcher`), not from the NVN calls. The frame update takes a fixed step, the float 1/30 at `main+0x167a6ec`, loaded at `main+0x667904` and passed to `main+0x6a337c`.
+- **Fix:** two cuts: the limiter's constant, and a second cut that loads the 1/60 at `main+0x167a834` (the community's 60 fps cheat for this build changes the same two words). Some 20 other loads of that 1/30 turn parameters counted in 30 fps frames into seconds or step single systems; they stay.
+- **Found on:** [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md) (30 on the Switch, 60 now).
+- **Check:** before changing the constant, check how the game steps time, and not by eye: a 0.8 s walk that looked the same at 30 and 60 fps on the Mac was taken for a time-based game, and on the iPhone everything ran twice as fast. Probing every site that loads such a constant (`DM_PROBE`, 16 per run) tells per-frame steps from one-off conversions, but which of them sets the game's speed only shows by timing the game.
+
+### A frame-end wait polled in 2 ms sleeps
+
+- **Symptom:** 55 fps with every frame 18.2 ms, the main thread asleep most of the time; every 11th frame stays on screen two vsyncs.
+- **Cause:** KTGL's frame end (`main+0x443e8c`) waits until 1/60 s has passed since the frame's start tick, polling `GetSystemTick` and sleeping 2 ms a round (`main+0x4c9f24`), so with about 2 ms of work the rounds end at 18.2 ms, never at 16.7. Found by sampling the host (`sample <pid>`: 90% of the main thread in `dm_guest_sleep_ns` under a guest return address of `main+0x443d74`) and a probe on the target's multiply (x20 = 1 frame, x0 = 19.2 MHz).
+- **Fix:** the game presents at interval 1, so a build cut makes the check jump to the end, and the host's present pacing (the acquire waits) holds 60 (its `patches.py`): frame time p50 16.66 / p95 16.85 ms, wakeups 2,050 → 320 a second.
+- **Found on:** [Taiko Risshiden V DX](../../dm/games/0100346017304000/README.md), in its menus and town; its movies, paced by their own player, ran at 60.
+
+## Present interval and display rate
+
+### Present thread rescues a silent display link
+
+- **Symptom:** the app is active and the game keeps running, but the picture freezes while display-link callbacks stop; the log repeatedly drops queued frames.
+- **Cause:** dropping frames releases the game's swapchain textures but never displays them. A display link may stop while the app is active, including an occluded Mac window.
+- **Fix:** after 500 ms of silence while active, `mtl_present_wait` requests rescue. `link_sync` invalidates the display link on its run loop before releasing the layer to the present thread, which takes its own drawables in mode 0. Retry delays are 3, 6, 12, 24, 48 and then at most 60 seconds. Rescue state changes take `g_pq_mu`; the requested `g_dm_present_link` stays unchanged, and a new runtime mode ends rescue immediately. A retry resets stall timing. Inactive and background time do not count towards the 500 ms threshold, including a focus timestamp newer than the watchdog's clock sample.
+- **Found on:** d2r-mobile commit `afad65c` (an iPhone picture froze for 80 seconds), carried through MacNativeGames `cf1e629` and [PR #198](https://github.com/seedds/nxnative/pull/198). That upstream title has no profile in this repository; no local game reproduction is claimed.
+- **Check:** `make -C dm/gfx/tests GAME=010015100B514000 t_present_rescue` and `dm/gfx/tests/t_present_rescue` exercise the production wait and retry paths with a controlled clock and a silent link double, without a GPU. They cover foreground grace, backoff saturation, runtime mode changes, and layer release only after run-loop invalidation. The test also runs in CPU graphics CI. `make -C dm/gfx/tests GAME=010015100B514000 check_t_present_rescue` adds a paused real Metal display link on an offscreen Mac layer: rescue invalidates it, then `nextDrawable` succeeds (47 checks, zero failures with Metal validation). `DM_TEST_LINK_STALL=<start seconds>,<duration seconds>` pauses a real window's display link for manual verification.
+- **Not checked:** gameplay during stalled-link recovery or the iPhone; the PR's gameplay runs were headless.
+
+### Frames of a dynamic present interval held on screen and at the acquire
+
+- **Symptom:** "sometimes the speed increases when jumping" (Mario 1.2.1 on the iPhone): in `display` mode interval-2 frames were shown for 16.7 ms and the game visibly jumped ahead. "When pressing B, Link's move pace is speeding up" (Breath of the Wild on the iPhone); `old frames dropped by merging`.
+- **Cause:** Mario times every frame (`main+0xcfd24`); after a frame that ran past one vertical sync it sets present interval 2 for the next frame *and* sets its own time step to the interval (a float at `main+0x36ceff0`), so that frame catches up 2/60 s. A user's 2-minute iPhone session switched 123 times, mostly for one frame. On the game side, the acquire waited for one display-link tick per frame whatever the interval, so the game kept producing frames every 16.7 ms while the screen held each interval-2 frame for 33 ms and dropped the one in between. BotW sprinting flaps between interval 1 and 2 for runs of 6 or more frames, and its VFR time step at interval 2 is a whole 30 fps tick, so those runs went at double speed.
+- **Fix:** both sides, fixed:
+  - the screen: in `game` mode (the default since 2026-10-15) the display-link callback keeps a frame whose period is over 25 ms on screen for its whole period before taking the next one (`g_link_hold_until` in `nvn_mtl.m`; the `display link up to tick` log line counts these ticks as `held for the present interval`), and the 30 fps target that drops the display link to 30 Hz (`nvn_game_fps` in `hle_nvn.c`) waits until interval 2 has held for a full second, so one-frame switches no longer flip the display-link mode;
+  - the game: `mtl_link_wait_tick` now waits for as many ticks as the game's present interval (times 2 on the 120 Hz link, half rounded up on the 30 Hz link), as the Switch blocks the next acquire for N vertical syncs.
+- **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md) (1.2.1, iPhone: the display-link hold); [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (iPhone: the acquire).
+- **Check:** `DM_TEST_PRESENT_LAG=90,30` (sleep 30 ms before every 90th present) makes Mario do this on the Mac; run it with `DM_WINDOW=1` to get the display link. `DM_NVN_TSV` writes each frame's interval as `@itv`.
+- **Note:** the windowless Mac host was never affected by the acquire: there the acquire sleeps until the interval's slot.
+
+### Present snapshots: the game's swapchain texture free at once
+
+- **Symptom:** frames miss the screen while the GPU stays at its lowest clock (444 MHz on an M2 Max); more work (a higher render scale) only makes the frames slower.
+- **Cause:** a game with two swapchain textures gets one back only when the display link has taken its previous present, so each frame's CPU work starts on a tick and the GPU idles from the end of one frame to the first work of the next. macOS reads that idle time as room and keeps the clock low.
+- **Fix:** present snapshots (`DM_PRESENT_SNAP=<n>`, a ring of n host textures, 2 to 4; off by default on iOS and Mac; `nvn_mtl.m` `snap_take`): each present is copied on the game's queue, right after the frame's work, into the next ring slot; the display link shows the copy, and the game's texture is free at once. The game runs up to a frame ahead of the screen, and a frame whose work runs long is absorbed instead of shown late. Acquire waits for ring capacity and counts it as pacing (`mtl_snap_acquire_wait`). Present never waits for a snapshot slot: if it is still busy (several textures acquired ahead of time, or a copy not finished), the original texture is queued with its usual acquire ticket. Waiting inside present held the game's locks while the screen was stalled.
+- **Setting:** the iOS launcher's **Frame buffering** toggle is offered for NVN builds and remembers the choice. Its default is the profile's `present_snap` (off unless a game was tested with it on: Breath of the Wild, a steady 60 fps on an iPhone 17 Pro Max where it fell to 30 without). `Documents/env.txt` overrides it (`DM_PRESENT_SNAP=1` on, `0` off); restart the app after editing the file. The Mac uses the same environment variable and the same profile default.
+- **Fix:** the frame step judges lateness by what the screen shows while snapshots are on: the on-screen interval of the frame 8 presents back, against its hold (`fstep_tick`, `nvn_fstep.screen`). Judged by its cost, a frame whose CPU time holds the game's waits on its own GPU work (which now runs a frame later) looked late at a GPU time of 0.75 vsyncs.
+- **Note:** the cost is up to a frame more latency.
+- **Note:** with Metal encoding on its own thread (`DM_NVN_ENC_THREAD`, the default on iOS) the copy is a block of the encode thread's own queue (`rec_own_push`), behind everything submitted before the present, so a present from another thread than the submitting one gets a snapshot too; the present waits only until that block is encoded (`snap_commit_wait`). The wait ledger `DM_NVN_WAITS=1` counts every CPU wait for the GPU or the encode thread (`[waits]` every 300 frames).
+- **Fix:** suspend drains snapshot commits and their GPU event even when their display tickets were discarded (`snap_drain` in `mtl_drain`). Submission fences and upload completion do not cover these copies; previously suspend could return while the encoder still held a copy to submit.
+- **Check:** `make -C dm/gfx/tests GAME=01007EF00011E000 check_t_present_snap` uses a gated encoder and GPU to check suspend, and a delayed present consumer to check nonblocking present, acquire pacing, fallback tickets and copied pixels after ring reuse. Runs with Metal validation on the Mac, with and without the encode thread; does not measure iPhone frame rate or latency.
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (Mac; on the iPhone 17 Pro Max with the encode thread a steady 60 fps at docked resolution, present to screen about 74 ms with a ring of 2 against about 46–60 ms without).
+
+### Vulkan acquire and vsync event follow the display link
+
+- **Symptom:** a steady game whose frame-rate counter wanders between 50 and 60 on the iPhone only; the `display link up to tick` lines show about as many empty ticks as frames dropped by merging: frames arrive two in one tick and none in the next.
+- **Cause:** the Vulkan layer's acquire and the `vi::GetDisplayVsyncEvent` thread each kept a 60 Hz clock of their own, and Galaxy runs the Wii's VI retrace on that event, so its frames drifted against the screen.
+- **Fix:** while the display link presents, both follow its ticks (`hle_vk.m` acquire → `mtl_link_wait_tick`, as NVN's; `hle_sdk16.c` vsync thread → `mtl_link_wait_vsync`), with the old clocks as the fallback.
+- **Found on:** [Super Mario Galaxy 2](../../dm/games/0100FD8022DAA000/README.md) (Vulkan).
+- **Note:** a Mac window measures nothing here unless it is on screen: macOS fires an occluded window's display link about once a second (`display link recovered: stalled 1017 ms`).
+
+### Virtual 60 Hz ticks on screens that are not a multiple of 60
+
+- **Symptom:** asked for 60 Hz, the system fires the display link on every third refresh of a 165 Hz screen, 55 Hz, so games paced by it ran at 55 fps (27.5 at 30).
+- **Fix:** on 144 or 165 Hz Mac displays `link_range` (`nvn_mtl.m`) runs the link at the screen's rate and counts as ticks only the refreshes nearest a steady 1/60 s clock: 60 a second on average, each frame shown 12.1 or 18.2 ms at 165 Hz. A tick lies up to half a refresh off its slot, so two ticks can be one refresh nearer each other than their slots: the hold of frames over 25 ms ([Frames of a dynamic present interval held on screen and at the acquire](#frames-of-a-dynamic-present-interval-held-on-screen-and-at-the-acquire)) tolerates one refresh more (in a simulation of the callback without it, 30 fps frames held a third tick: 22.5 fps at 165 Hz, 24 at 144), and the frame step lets a frame on time show one refresh longer than its hold (`shown_slack`, `nvn_fstep.h`; a cheap 50 ms frame shows 54.5 ms at 165 Hz, and counted as late it kept Breath of the Wild at 20 fps for good). `DM_LINK_VTICK=0` keeps the system's choice.
+- **Note:** iOS screens run at multiples of 60 and are not affected.
+- **Found on:** PR #27 (its author measured at 165 Hz); [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) (the 20 fps without `shown_slack`).
+- **Not checked:** not yet run on such a screen here.
+
+### Fullscreen switches the screen to a rate the frame rate divides
+
+- **Symptom:** virtual ticks keep the average, but a frame still stays up two or three refreshes in turn (13.9 / 20.8 ms at 144 Hz), and Apple's HUD showed the frame interval jumping between them.
+- **Fix:** `front_mac.m` `front_screen_match`, called from `link_sync` with the link's rate (60, 30, or 120 with `DM_PRESENT_LINK=2`): when the window is fullscreen on a screen whose mode is not a multiple of the link's rate, the host switches that screen to the mode of the same size with the highest rate that is (an XB273U at 2560x1440: 144 → 120 Hz for 60 fps), with `kCGConfigureForAppOnly`, so macOS switches it back when the host quits, crashes included (the PR's author checked: 144 Hz again after quitting); leaving fullscreen, or the screen, switches it back at once. A window keeps the screen's rate and the virtual ticks: the switch changes the whole screen for every app, and most external screens go black for a second or more. The link sets its range again whenever the screen's rate changes (`link_sync`; before, a move to another screen kept the first screen's range), with no virtual ticks after a switch. A screen with no such mode keeps the virtual ticks; `DM_SCREEN_MATCH=0` keeps the screen's rate.
+- **Found on:** PR #79: the PR's author ran [Hades](../../dm/games/0100535012974000/README.md) at 144 Hz (switched in a window then): the HUD's frame interval line steady at 16.7 ms, where it jumped before.
+- **Check:** here (a built-in 120 Hz screen, a multiple of every link rate) a harness drove `front_mac.m` asked for 50 fps: no switch in the window, 120 → 50 Hz in fullscreen, 120 Hz again on leaving it, and 120 Hz after quitting in fullscreen; at 60 fps and with `DM_SCREEN_MATCH=0` nothing switched.
+- **Not checked:** the link's new range after a switch has not run here (Hades windowed and fullscreen paced at 60 as before).
+
+## CPU cost and pacing
+
+### Arena buffer ownership on allocation
+
+- **Symptom:** autorelease work takes a measurable share of replay time, with temporary arena-buffer ownership traffic a few times per draw.
+- **Cause:** under ARC an unqualified `id<MTLBuffer> *` out-parameter is `__autoreleasing`, so assigning the arena buffer in `arena_alloc` autoreleases it. Reading `buf.length` also sends an Objective-C message on each allocation and while selecting or trimming arenas.
+- **Fix:** both declarations of `arena_alloc` use a `__strong` buffer out-parameter, matching every caller's strong local. `NvArena` caches its buffer length when created; allocation, reuse selection and idle trimming use that value. Buffer ownership and fence-based reuse remain the same.
+- **Found on:** MacNativeGames commit `0531f28`, ported in [PR #195](https://github.com/seedds/nxnative/pull/195), reports autorelease work falling from 2.63% to 1.73% of replay time; the PR does not identify the game for that measurement. It has not been repeated here.
+- **Check:** `t_ub`, `t_vbuf` and `t_geometry` exercise arena-backed uniform shadows, vertex conversion and geometry scratch on the Mac with Metal validation.
+
+### Registry lock priority inheritance
+
+- **Symptom:** the submit thread waits on the texture / sampler registry lock while a lower-priority registration thread is preempted holding it.
+- **Cause:** game threads register textures and samplers under `g_rmu`, which the submit thread also takes for argument encoding. The previous mutex allowed those owners to delay the higher-priority submitter.
+- **Fix:** `g_rmu` is an `os_unfair_lock`, lending a waiter's priority to its owner. All registration, lookup, cache, diagnostic and test callers use its lock API; the critical sections and lock order stay the same.
+- **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md), measured upstream in MacNativeGames commit `5f5de5e` and ported in [PR #195](https://github.com/seedds/nxnative/pull/195): in a shrine, game threads at priority 46 delayed the submit thread at priority 97 by about 1.8 ms a frame. Waiting fell from 155 to about 0 ms/s there, with unchanged frame time. Those game measurements have not been repeated here.
+- **Check:** `t_stencil_view`, `t_view_levels` and `t_view_swizzle` exercise production registry lookups and cached views with the new lock on the Mac.
+
+### Submissions handed to the GPU in segments
+
+- **Symptom:** the GPU sits idle each frame while the host translates the submission (a game that does not submit frame N+1 until frame N's GPU work is done).
+- **Cause:** on the Switch the submit costs nothing; here it is the host's translation, and the GPU got nothing until the whole submission was encoded.
+- **Fix:** the replay commits the command buffer encoded so far every 64 draws, between two passes (`sub_cut` in `nvn_mtl.m`, called after `rp_flush` in `OP_SET_RT`; `DM_NVN_CUT=<draws>`, 0 = off). It cuts only with no open encoder and nothing deferred, merged or hoisted, commits the pending upload batch first, and continues on the same command allocator. The fence signal, the completion work (`post` ops, `g_done`) and the allocator's fence stay on the last segment: the queue runs command buffers in commit order, and every encoder starts with a queue barrier.
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md): a stack sample in the shrine had the main thread in `nvnSyncWait` (the fence of the frame just submitted) for 59% of the time and the render thread in `nvnQueueSubmitCommands` for 40%; the translation was about 3,600 draws and 347 passes, 7 ms, so per frame the GPU ran 13–14 ms and then sat idle 7.7 ms (`DM_NVN_TSV` rows `@gpu_beg_ms` / `@gpu_end_ms` against `@call_ms`). GPU idle per frame went from 7.7 to 3.8 ms; most of the rest is the game's own work between its fence wait and the next submit (about 2.5 ms). The other five games' frame times were unchanged; Metroid Dread's p95 dropped from 19.6 to 16.9 ms.
+- **Note:** after this, BotW's docked frame p50 was 16.7 ms (was 20.8 ms before segmenting). Host translation is 8 ms per frame (22,000 instructions per draw), spread over Metal's encoder creation and draw calls, argument encoding, Objective-C retain / release and pool lookups. The per-pass GPU timer (`DM_NVN_PASSGPU`) is switched off under Metal 4 (`pg_render` returns at once), so GPU time cannot yet be attributed to passes. Render-target traffic per frame is in `DM_NVN_TSV`'s `@rt_load_mb` / `@rt_store_mb`.
+
+### Address to memory pool lookups by binary search
+
+- **Symptom:** the submit thread's CPU samples dominated by `mtl_addr` / `mtl_gpu_addr` (vertex buffers in `draw`, uniform buffers in `encode_args`).
+- **Cause:** with many memory pools alive, the lookups scanned them all for every buffer binding of every draw.
+- **Fix:** they try the last hit, then a binary search over pools sorted by start address (`pool_find`, rebuilt when pools are added or removed).
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md): about 1,760 memory pools alive; a CPU sample of the submit thread had about 1,000 of its samples under those scans. Host submit time in the shrine went from 21 ms to 7 ms per frame (p50), the median frame from 38 ms to 21 ms.
+
+### Time-constraint computation declared below the thread's peaks
+
+- **Symptom:** stalls of 30–60 ms about once a second, at 30 fps and at 60 (99th percentile 63–127 ms); the main thread waits 20–34 ms for the render thread once a second.
+- **Cause:** the thread that acquires the window (here the render thread) runs under a time-constraint policy whose computation the host re-declares every 120 frames; it was 1.25 × the 90th percentile of that thread's CPU time per frame. This render thread needs 1.9–2.0 ms a frame with one or two frames in 120 near 4.4 ms, against 2.5 ms declared, and each frame past the declaration stalled the thread. Probes on both threads' waits showed the main thread's waits; adding probes slowed the render thread and the stalls vanished, and `DM_RT=0` or a fixed `DM_RT_COMP=5` / `10` removed them too (99th percentile 18–21 ms) at the same CPU energy.
+- **Fix:** the declaration also covers 1.1 × the window's peak (`rt_comp_tick` in `hle_nvn.c`): 5.6 ms here, 60.0 fps, 99th percentile 21 ms.
+- **Found on:** [DARK SOULS: REMASTERED](../../dm/games/01004AB00A260000/README.md), in the Asylum cell.

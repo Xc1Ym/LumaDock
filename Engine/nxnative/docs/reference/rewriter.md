@@ -1,0 +1,244 @@
+# Rewriter
+
+The NSO rewriter (`dm/tools/patch_nso.py`) and its per-build tables (`dm/tools/sdk_patches.py`, a profile's `patches.py`). Each entry: symptom, cause, fix, the games it was found on. The [symptom index](../agents/symptoms.md) lists every symptom.
+
+## Patches across updates
+
+### Function-matched cuts for unregistered builds
+
+- **Symptom:** an updated game loses a needed cut because its NSO build ID changed, although the relevant code still matches a verified version; the rewriter reports `[RED] function patch ... skipped` when that match cannot be established.
+- **Cause:** fixed-address `CUTS` correctly apply only to their registered builds. Copying an old address, or matching a short instruction sequence, does not identify the updated function.
+- **Fix:** a profile can opt individual cuts into `MATCH_CUTS` in its `patches.py`. The shared matcher, `dm/tools/nso_match.py`, selects a unique complete unwind function by length and SHA-256 fingerprint. It retains constants, registers and internal branch destinations; normalizes relocation addresses; and checks the normalized bodies of direct callees or their imported symbol names. Original bytes are checked again before a cut is applied. Missing boundaries, unknown callees, changed code and ambiguous matches produce a red diagnostic and no cut. Overlapping rules stop the rewrite. Every accepted cut is recorded in `<module>.cuts.tsv` with `[function match]` in its reason.
+- **Scope:** the repository profile selected by `DM_GAME`, keyed by module name. A derived profile still uses that repository profile's rules. Other games' rules never participate. A build with registered `CUTS` uses those instead, including an explicitly empty list. SDK patches, observation gates, frame-step stubs and fixed host addresses retain their existing build-ID gates. The rewrite cache includes the selected profile's patch file even for unknown builds, the selected game ID and the matching tool.
+- **Limits:** this is an opt-in code-identity check, not automatic compatibility for every game update. Direct callee bodies are checked one level deep; their callees, indirect-call targets and external data layouts are not proven unchanged. Enroll only a cut whose assumptions remain valid under those changes. Prefer fixing the general host behavior when possible. A replacement must contain no PC-relative instruction; relocated branch replacements need a different mechanism. Failure leaves the game potentially without its workaround, and stays visible in the rewrite log.
+- **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md#memory), whose former resource-heap allowance was missing on 1.0.1. The shared matcher remains, but Wonder's allowance and matching rule were later removed after the general command-record fix described in its game note.
+
+To enroll a cut for any game's own module:
+
+1. Start from a verified fixed cut and its original NSO. Run `python3 dm/tools/nso_match.py <module.nso> <offset> <old hex> <new hex> <reason>` with the tools' Python environment. It emits a rule containing `name`, `size`, `fingerprints` and function-relative `cuts`, and rejects an ambiguous reference. Keep game files and scratch outputs in the game's NSP work folder.
+2. Check the function and callees in another known build using `nso_fnmap.py` and disassembly. Check that the cut still has the same effect. `Image.match(rule)` must resolve the reviewed location. If a reviewed implementation differs, generate its fingerprint separately; combine fingerprints only when function size and relative cuts agree. Retain exact `CUTS` for known builds.
+3. Add the rule under `MATCH_CUTS = {'main': [rule]}` (or the appropriate non-SDK module) in that game's `patches.py`. Record the evidence and remaining runtime validation in the game's note. Do not transplant a workaround into unrelated games.
+4. Verify an unregistered build-ID copy through the rewriter, comparing its output with the known fixed cut, and run `test_nso_match.py`, `test_patches.py` and `test_nro_pack.py`. The matching tests use synthetic modules from two profiles to check relocation, rejection and isolation without game files.
+
+## Jump tables
+
+### Offset jump tables through x18 read at rewrite time
+
+- **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a Unity / IL2CPP `main`.
+- **Cause:** the compiler used `x18` for jump-table shapes other than the ones the rewriter knew. One of them is an offset table: `ldrsw x18, [xB, x18, lsl #2]; add x18, x18, xB; br x18`. (The same `main` also uses `x18` for an indirect call and an `alloca`: see [Indirect calls through x18](#indirect-calls-through-x18) and [Stack pointer writes through x18](#stack-pointer-writes-through-x18).)
+- **Fix:** the rewriter reads the offset table's targets at rewrite time (`site_br_tab` in `patch_nso.py`).
+- **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) `main`: 7 jump tables (beside 1 call and 1 `sp` write).
+- **Check:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s output stays byte-identical.
+
+### Offset jump tables with the bounds check on another register
+
+- **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a `subsdk`.
+- **Cause:** the offset-table form `ldrsw x18, [xB, xI, lsl #2]; add x18, x18, xB; br x18` with the bounds check on another register: the index in `w0` (`sub w0, w18, #0xd1; cmp w0, #0x31`), a copy (`cmp w21, #7; …; mov w18, w21`) or a masked copy (`and w16, w18, #0x3f; cmp w16, #0xe; …; and x18, x18, #0x3f`). The entry may also be loaded into another register, with only the `add` writing `x18` (Cuphead, Unity 2017.4: `cmp w17, #7; ldrsw x17, [x15, x17, lsl #2]; add x18, x17, x15`).
+- **Fix:** `jump_offsets` follows `mov` copies back to the `cmp` and accepts a check on the same `and` of the same, unchanged source.
+- **Found on:** [The Legend of Zelda: Link's Awakening](../../dm/games/01006BB00C6F0000/README.md) (GLSLC and movie modules); [Cuphead](../../dm/games/0100A5C00D162000/README.md) (the entry loaded into another register).
+- **Check:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md)'s output stayed byte-identical.
+
+### Index copied before the bounds check
+
+- **Symptom:** `jump table <addr>` assertion where the index is a copy made before the check (`mov w0,w18`, then 41 instructions holding two other jump tables on `x0`, then `cmp w18,#4; b.hi; ldrsw x18,[x11,x0,lsl #2]; add x18,x18,x11; br x18`).
+- **Cause:** every other form follows copies made after the bounds check.
+- **Fix:** `check_before_copy` accepts the `cmp` and `b.hi` right before the load when a `mov wI, wS` up to 64 instructions back is the last writer of both registers; capstone lists a `cmp`'s first operand as written, which the search skips. It runs only when every other form has failed, so modules that rewrote before come out the same.
+- **Found on:** [DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition](../../dm/games/01006C300E9F0000/README.md) `main+0x2dd8cd0`.
+- **Note:** before fixing one site, a census of all of them saves a run per site: a copy of `patch_nso.py` whose assert prints and continues found this one alone among the 25,508 `x18` sites. That `main` has no unwind entries for its first 70 MB, so the rewriter disassembles them as one function and takes 6 minutes (see [Long functions analysed in pieces](#long-functions-analysed-in-pieces)).
+
+### Offset table base set far back in the function
+
+- **Symptom:** `jump table <addr>` assertion on an offset table whose base was set far back (`cmp w18,#5; b.hi; ldrsw x18,[x24,x18,lsl #2]; add x18,x18,x24; br x18`).
+- **Cause:** the function's first block loads six table bases with `adrp` + `add` into registers that its loop keeps (`x24` 441 instructions before this load), and a later block one more (`x3`, 549 before the load at `+0x6db70c`); `jump_offsets` follows the base's writer chain 256 instructions back. The function-wide search that `jump_adr_offsets` uses for a hoisted base (the one `adrp` + `add` pair that fits) found two for `x3`, the other a local table of a `br x17` further on.
+- **Fix:** where nothing writes the base in those 256, its last attempt (`far_base`) follows the chain to the function's start (`table_base` `far`), through no call when the base is caller-saved, and accepts the table only when every target is an instruction of the function. It runs only where every other form has failed.
+- **Found on:** ASTRAL CHAIN 1.0.1 (SDK 6) `main+0x6db4a0`: three of that `main`'s five `br x18` sites need it.
+- **Check:** modules that rewrote before come out the same (Tears of the Kingdom, Age of Calamity, Cuphead, DARK SOULS: REMASTERED, Luigi's Mansion 3 and Metroid Dread `main`s: byte-identical).
+
+### Far table base passed through other registers
+
+- **Symptom:** `jump table <addr>` assertion on an offset table whose base was set far back and moved through other registers (`ldrb w18,[x14]; sub w18,w18,#1; cmp w18,#6; b.hi; ldrsw x18,[x7,x18,lsl #2]; add x18,x18,x7; br x18`).
+- **Cause:** `x7` is built by `adrp` + `add` 688 instructions before, then parked in `x30` around a loop (`mov x30,x7` … `mov x7,x30`), so the far chain meets a `mov` and stops; the function-wide search finds a second `adrp x7` + `add` pair (another table further on) whose seven targets also lie in the function.
+- **Fix:** the last attempt now follows register copies back to the `adrp` + `add` (`copied_base`, through no call while the register followed is caller-saved; the same target check). It runs only where the rewriter asserted before.
+- **Found on:** [Super Smash Bros. Ultimate](../../dm/games/01006A800016E000/README.md) 13.0.5 (SDK 8.2.1) `main+0x2b74458`: that `main`'s only unhandled site.
+- **Check:** [Mario Kart 8 Deluxe](../../dm/games/0100152000022000/README.md)'s three modules and Smash's `sdk` and movie module come out byte-identical.
+
+### Offset tables relative to an adr
+
+- **Symptom:** `jump table <addr>` assertion, entries relative to an `adr`.
+- **Cause:** `cmp wI, #N; b.hi; …; adr x18, #L; ldrsw xE, [xT, xI, lsl #2]; add x18, x18, xE; br x18`: target = L + entry, not table + entry.
+- **Fix:** `jump_adr_offsets`, tried only where the table-relative form is not found. The bounds check can be on a register copied into the index (`mov w16, w15`), and the table base can be built far from the dispatch; then every `adrp` + `add` pair in the function that builds that register is tried, and a table is accepted only if exactly one makes every target an instruction of the function.
+- **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) `main+0x393bb0` and others.
+
+### Byte tables indexed by x30 (capstone register names)
+
+- **Symptom:** `jump table <addr>` assertion on a byte table indexed by x30 (`adr x18, #L; ldrb w30, [x14, x12]; add x18, x18, x30, lsl #2; br x18`).
+- **Cause:** capstone names x30 `lr` (and x29 `fp`), so the index register looked like no register and the `ldrb` never matched.
+- **Fix:** the byte / halfword table check maps those names back to 30 / 29.
+- **Found on:** [Hyrule Warriors: Age of Calamity](../../dm/games/01002B00111A2000/README.md) `main+0x138216c`.
+
+### Byte tables whose add is far from the br
+
+- **Symptom:** `jump table <addr>` assertion on a byte table whose `add` is far from the `br` (`adr x18,#L; ldrb w0,[x17,x15]; add x18,x18,x0,lsl #2`, then 17 register moves before `br x18`).
+- **Cause:** the byte / halfword search looked 16 instructions back.
+- **Fix:** `jump_bytes_far` looks 32 back, requires that nothing writes x18 between the `add` and the `br`, and runs only when every other form has failed, so sites that rewrote before come out the same.
+- **Found on:** [Octopath Traveler 0](../../dm/games/01005270232F2000/README.md) `main+0x37f9bc8`: one of the 12 `br x18` sites in this `main`.
+- **Note:** a census of all the `br x18` sites first (each shape within 16 / 32 / 48 instructions) saves a 12-minute rewrite per site.
+
+### Indirect calls through x18
+
+- **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a Unity / IL2CPP `main`, at a `blr x18`.
+- **Cause:** the compiler made an indirect call through `x18` (`blr x18`).
+- **Fix:** the rewriter calls through `x16` with the original return address, so C++ unwinding still finds its frames (`site_blr`).
+- **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) `main`: 1 call (beside 7 jump tables and 1 `sp` write).
+- **Check:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s output stays byte-identical.
+
+### Indirect tail calls through x18 in IL2CPP thunks
+
+- **Symptom:** `jump table <addr>` assertion on a `br x18` with no table in front of it.
+- **Cause:** not a jump table but an indirect tail call: an IL2CPP thunk loads the method pointer with `ldr x18, [x0, #0x18]`, moves its stack arguments with every other scratch register (`ldr x16, [sp]`, `ldp x17, x15, [sp, #8]`, …) and ends with `br x18`.
+- **Fix:** when neither table form is found, the last write of `x18` is a plain load and the `br` ends the function, it becomes `x16 = guest x18; br x16` (`tail_call` / `site_br_call`; at a call `x16` / `x17` are free, as for `blr x18`). It is tried only where the rewriter used to stop.
+- **Found on:** [Ace Attorney Investigations Collection](../../dm/games/010005501E68C000/README.md) (Unity 2022.3 IL2CPP): `main+0x1d271bc` and `+0x204ebec`.
+- **Check:** every module the rewriter accepted before comes out byte-identical.
+
+## Exclusive windows
+
+### Exit stub order in exclusive windows
+
+- **Symptom:** job system hangs; a queue claims thousands of tasks but every slot is empty.
+- **Cause:** in an `ldxr … cmp … b.ne out … stxr … cbnz` window, the rewritten stub emitted its exits in the wrong order, so successful stores took the failure path.
+- **Fix:** emit the fall-through exit first (`patch_nso.py` `site_window`).
+- **Found on:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md): 82 such windows. D2R had no such windows.
+
+### Out-of-line retry blocks of atomic updates
+
+- **Symptom:** `branch into window <addr>` assertion.
+- **Cause:** the compiler moved an atomic update's retry path out of line: the failed `stxr` branches to a block `ldxr; cmp; b.eq <the stxr>` that re-enters the window at its store. That block cannot jump into the window's patch copy (the `x18` stand-in would be loaded between its exclusive load and the store).
+- **Fix:** the retry block gets a copy of its own: the retry block and the window's tail from the store on, under one prologue (`retry_block` / `site_retry_window`).
+- **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) 1.4.3 `main`, 8 sites.
+
+### A window never spans a second exclusive load
+
+- **Symptom:** branches to an `ldxr … stxr` loop's head landed mid-window.
+- **Cause:** before this rule, a retry block's `ldxr` opened a window that ran on into the next, unrelated `ldxr … stxr` loop (`main+0x5a4674`).
+- **Fix:** a window never spans a second exclusive load.
+- **Found on:** [The Legend of Zelda: Tears of the Kingdom](../../dm/games/0100F2C0115B6000/README.md) 1.4.3 `main` (with [Out-of-line retry blocks of atomic updates](#out-of-line-retry-blocks-of-atomic-updates)).
+
+### adrp inside an exclusive window
+
+- **Symptom:** `AssertionError: 0x…` in `site_window` on an `adrp` inside an exclusive window (`ldaxr x9,[x9]; cmp x9,x25; b.ne out; adrp x10 + add x10` (the same address again, for the store); `mov x18,x26; stlxr w9,x8,[x10]`, then loads and `cbnz w9` back).
+- **Cause:** a window that uses x18 is copied into the patch area, and an `adrp` there would build another page.
+- **Fix:** it is re-encoded for the copy's address with the same target page (x18 as its stand-in), in both window copiers (`window_adrp`).
+- **Found on:** [Pikmin 4](../../dm/games/0100B7C00933A000/README.md) 1.1.1 (Unreal Engine 4.26.2) `main+0x43da14c`.
+- **Check:** only windows that stopped the rewrite change, so every other module rewrites byte for byte as before.
+
+## Patch area reach
+
+### Halfword jump table landing pads sized to the largest entry
+
+- **Symptom:** `B()` assertion at a spin wait: a branch into the patch area beyond the ±128 MB a `b` reaches.
+- **Cause:** each halfword jump table (`ldrh wE, [xT, xI, lsl #1]; …; adr x18, #L; add x18, x18, xE, lsl #2; br x18`) got a landing pad for every one of the 65,536 values an entry can hold (768 KB a table), whatever the switch's size: that `main` has 51 of them, 40 MB, and the spin-wait stubs placed after them were out of reach.
+- **Fix:** `half_count` reads the table as `jump_adr_offsets` does (the index's bounds check, following register copies, then the base from `adrp` + `add`, or the one candidate in the function whose every target is an instruction of it) and pads only up to its largest entry; a table it cannot read keeps all 65,536 (7 of the 51). The patch area went from 42 MB to 7.9 MB.
+- **Found on:** [Animal Crossing: New Horizons](../../dm/games/01006F8002326000/README.md) 3.0.3 `main`, 63 MB of text.
+- **Check:** in the other titles' modules only such tables changed: one in the `sdk` of several SDK 11–20 builds (936 to 1,320 pads), 1 to 6 in some `main`s (Tears of the Kingdom, Breath of the Wild, Silksong, Monster Hunter Rise, Absolum, STEINS;GATE RE:BOOT) and one in some movie and middleware `subsdk`s.
+
+### Patch area before the module base for a large bss
+
+- **Symptom:** `B()` range assertion in `patch_nso.py` (`site_plain`), only for one module.
+- **Cause:** its bss is 1.8 GB, the engine's static heap, so a patch area appended after the image starts 1.9 GB from the code and no `B` (±128 MB) reaches it.
+- **Fix:** when an appended patch area would start beyond 112 MB, the rewriter puts it 32 MB *before* the module base (negative `PATCH_OFF`). `patched.bin` then holds only text + ro + data (`FILE_IMAGE_LEN`) followed by the patch bytes, and the loader maps the bss and the key page as zero pages (`IMAGE_SIZE`). The Mac loader, the iOS embedding (`gen_embed.py`: no bss in the executable) and `QueryMemory` handle both layouts.
+- **Found on:** [Metroid Dread](../../dm/games/010093801237C000/README.md) `main`.
+- **Check:** Mario's and Engage's output is byte-identical to before.
+
+### Frame-step state with a front patch area
+
+- **Symptom:** `frame step state page` assertion when a `FRAME_STEP` profile is added to a module with a large BSS.
+- **Cause:** frame-state allocation required a patch area after the image, although the stubs can address the state page through ADRP with either layout.
+- **Fix:** for a front patch area, reserve a zero-filled 16 KB state page immediately after the key page by extending `IMAGE_SIZE`. The existing Mac and iOS loaders map it with the BSS; no padding is added to the game binary. Ordinary modules retain their existing layout.
+- **Found on:** [ASTRAL CHAIN](../../dm/games/01007300020FA000/README.md#frame-rate).
+
+### Patch area right before the base for a long text
+
+- **Symptom:** `B()` range assertion, then `patch area of … bytes does not fit in the … before the base`.
+- **Cause:** with the patch area 32 MB before the base, sites near the end of the text are more than 128 MB away.
+- **Fix:** when the text ends within 32 MB of the reach (`BIG_TEXT`), the patch area goes right before the base: the stubs follow the sites in address order, so each site's stub is about as far from it as the text is long. The first pass tries the gap that keeps every site in reach (2.6 MB here); when the patch area is larger (3.6 MB, 34,322 sites), the rewriter runs itself again with exactly that size (`DM_PATCH_FRONT`, set only by the rerun) and `B()` checks every branch.
+- **Found on:** [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md) `main`: 125.3 MB of text.
+
+## Cuts and observation gates
+
+### Observation gates where x9–x17 are dead
+
+- **Symptom:** `observation gate neither at a function entry nor after a bl`; `observation gate neither at a function entry, after a bl nor before a call` on an epilogue.
+- **Cause:** the host may change x9–x17 in a gate, so a gate sat only where they carry nothing (a function entry, after a `bl`).
+- **Fix:** a site is also accepted when the straight-line code from it to the next `bl` reads none of x9–x17 before writing it (`scratch_dead`); it is tried only after the other two rules fail. `ret` ends the code ahead as a `bl` does: under AAPCS64 none of x9–x17 carries a result, so the straight-line scan (`scratch_dead`) accepts a `ret` too.
+- **Found on:** [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md): the gate on `mov x0, x19` at `main+0x32758e4`, after a cut `bl` and an `adrp`. [Pikmin 4](../../dm/games/0100B7C00933A000/README.md): the gate on `ldp x29, x30, [sp, #0x10]` right after the cut allocator constructor call, `main+0x353f78c`; the rule checks the image after the cuts, so the `bl` before it is a `nop` by then (the `ret` case).
+- **Note:** the gate table takes the original instruction as a word value (`aa1303e0`), the cut table as bytes (`e00313aa`).
+
+## Functions, unwind entries and data in text
+
+### Code before the first unwind entry is one function
+
+- **Symptom:** `jump table <addr>` assertion on an ordinary byte table near the start of the text (`adr x18; ldrb w0,[x17,x16]; add x18,x18,x0,lsl #2; br x18`).
+- **Cause:** the module has no unwind entry before `main+0x6a75d4`, and `func_of` made every site before the first FDE a function of one instruction, so no form saw the `adr` in front of the `br`.
+- **Fix:** the text before the first FDE is now one function, from the end of the data block before it (or the text's start), as a gap between two FDEs already was (`func_of`).
+- **Found on:** [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md) 1.0.1 `main` (Unreal Engine 5.6.1): `main+0x219234`.
+- **Check:** of the 120 modules of 33 games on hand, only DRAGON QUEST VII Reimagined's `main` has other `x18` sites there (110 before `+0xb310`, none in a window or a `br x18`), and its rewrite is byte-identical.
+
+### Long functions analysed in pieces
+
+- **Symptom:** the rewrite never finishes, the Mac swaps, the rewriter's footprint reaches 100 GB.
+- **Cause:** a stretch without FDEs is one function to `func_of`, and its detailed disassembly costs about 880 bytes an instruction once built (2.6 KB while capstone builds it): 21.6 million instructions. In FINAL FANTASY RESONANCE's `main`, 82 MB at `main+0x6c4f88`–`+0x59220c0` and the 6.65 MB before the first FDE have no unwind entries. Octopath Traveler 0 (71 MB), DRAGON QUEST XI S (68 MB) and DRAGON QUEST VII Reimagined (two of 23 MB) have such stretches too; they got through on a quieter Mac with the compressor and swap.
+- **Fix:** a function longer than 256 KB is now analysed in pieces (`pieces` in `patch_nso.py`), cut only right after a `ret` / `br` / `b` where no conditional branch and no `b` within 64 KB crosses, so a window, a jump table's bounds check and table base, and a retry block stay in one piece. After all pieces, every farther `b` / `bl` and every jump table target is checked against the windows and retry blocks of all pieces. Counting `b` up to 1 MB left only 21,385 cut points in the 82 MB (tail calls between neighbours) and pieces of up to 6.5 MB; with 64 KB there are 185,228, and no piece is over 256 KB (the two stretches: 28 and 344 pieces). The rewrite then takes 13 minutes at about 2.7 GB resident on a loaded Mac.
+- **Found on:** [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md) 1.0.1 `main`; also [Octopath Traveler 0](../../dm/games/01005270232F2000/README.md), [DRAGON QUEST XI S: Echoes of an Elusive Age – Definitive Edition](../../dm/games/01006C300E9F0000/README.md), [DRAGON QUEST VII Reimagined](../../dm/games/0100A9D01C446000/README.md).
+- **Check:** DRAGON QUEST VII Reimagined's `main` came out byte-identical to its rewrite by the previous `patch_nso.py`. FINAL FANTASY RESONANCE's came out the same as with `b` counted up to 1 MB (3 and 136 pieces), and DRAGON QUEST XI S's (292 pieces) and Octopath Traveler 0's the same as with 1 MB pieces and `b` within 256 KB (75 pieces for DQ XI S), so the analysis does not depend on where the cuts fall.
+
+### Disassembly goes on after undecodable words
+
+- **Symptom:** `KeyError` at `site_br` for a `br x18` that is an ordinary byte jump table.
+- **Cause:** capstone stops at the first word it cannot decode, and the function held a trap word (`0xe7ffdefe`, `main+0x6b34540`) before the jump table, so the table was never analysed.
+- **Fix:** function disassembly now goes on after undecodable words (`disasm_fn`).
+- **Found on:** [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md) `main+0x6b346d0`.
+
+### Data blocks at the start of the text
+
+- **Symptom:** `RuntimeError: 788 ldr x18, #0xd1eb0` in `patch_nso.py`, or any rewrite site in data.
+- **Cause:** the text segment starts with 1.7 MB of data (`main+0x0`–`+0x1b5000`, high-entropy, no FDE covers it, and no `adrp` or relocation points into it): 62% of its words do not decode, and 6,858 of the rest read as instructions that use `x18`, plus three "`svc`" words with numbers such as `#0x91e7`. The linear sweep rewrote them all.
+- **Fix:** `dm/tools/nso_code.py` finds such data blocks: a stretch of at least 4 KB between the `.eh_frame` FDE ranges in which more than a quarter of the words do not decode. The sweep skips them (`DATA_BLOCKS`, logged as `data blocks left alone`), and so does `insn_census.py`, whose counts then match the rewriter's again (11,744 `x18` sites in Absolum's `main`). Code without unwind information is still swept: it decodes (Absolum's zlib at `main+0x75261c`, libunwind's register restore at `main+0x28dbd4`).
+- **Found on:** [Absolum](../../dm/games/0100A83022A22000/README.md) `main` (.NET NativeAOT).
+- **Check:** no module of the 19 other games on hand has a data block, and their rewrites are byte-identical.
+
+## Stack and system registers
+
+### Stack pointer writes through x18
+
+- **Symptom:** `jump table <addr>` assertion in `patch_nso.py`, in a Unity / IL2CPP `main`, at an `alloca` (`mov sp, x18`).
+- **Cause:** the compiler wrote `sp` from `x18` for an `alloca` (`mov sp, x18`).
+- **Fix:** the rewriter restores its scratch registers relative to the old `sp` (`site_sp`).
+- **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) `main`: 1 `sp` write (beside 7 jump tables and 1 call).
+- **Check:** [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md)'s output stays byte-identical.
+
+### Stack arguments reserved with sub sp, sp, xN
+
+- **Symptom:** `CRASH sig=10 addr=0` on an `stp` relative to `sp`, with `sp` not a multiple of 16 (`main+0x2bbba4`, `sub sp, sp, #0xc0` then `stp d15, d14, [sp, #0x60]` with sp ending in `…9dc`).
+- **Cause:** Horizon leaves stack alignment checking off for user code; Apple's kernel faults on an sp-based access while sp is misaligned. The game's script engine calls native functions through six hand-written bridges (`main+0x17c140` and five more beside it): each reserves the callee's stack arguments with `sub sp, sp, x19`, x19 being their sizes added up (4 for one int, `[x0 + 0x238]`), and gives them back with `add sp, sp, x19` after the call, so the callee ran with sp 4 bytes off.
+- **Fix:** the rewriter now sends every `sub sp, sp, xN` (extended-register form, no shift) through a stub that rounds xN up to 16 first (`site_sp_align`); the `add` then gives back the same amount. Compiled code keeps such sizes 16-aligned, so there it changes nothing. `insn_census.py` counts the sites as `sub sp, sp, xN`.
+- **Found on:** [Paper Mario: The Thousand-Year Door](../../dm/games/0100ECD018EBE000/README.md) `main` (its AngelScript call bridges).
+- **Check:** of the 22 games' modules on hand only this `main` has the form (6 sites), so every other rewrite is byte-identical.
+
+### System register reads that macOS traps
+
+- **Symptom:** SIGILL / trap on a system register read.
+- **Cause:** a newer SDK reads a register macOS traps (`CTR_EL0` in SDK 16's `FlushDataCache`).
+- **Fix:** rewrite to a constant (`patch_nso.py`, the `ctr` site kind).
+
+## Relocations and module layout
+
+### Packed relative relocations (DT_RELR)
+
+- **Symptom:** every pointer in `.data` / the GOT is a module offset, crashes everywhere.
+- **Cause:** SDK 20 modules pack their relative relocations as `DT_RELR` (tag 36, size tag 35): `main` has 223,994 of them and its `DT_RELA` only symbol relocations. Each 8-byte entry is either an even offset (relocate it, move to the next slot) or an odd bitmap whose bits 1–63 stand for the following 63 slots; the addend is the slot's own value.
+- **Fix:** `relr_apply` in `loader.c`; `DM_LOADHASH` and `nvn_slots_got.py` read it too. The loader's log line counts them as `relr=`.
+- **Found on:** [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) 1.9.0 (SDK 20).
+
+## Checking a rewriter change
+
+Rewrite every extracted module of every title with the old and the new `patch_nso.py` and compare all outputs; only `build_src.sha256` (the rewriter's own hash) may differ for titles the change is not meant for.

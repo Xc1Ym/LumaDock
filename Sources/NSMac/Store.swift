@@ -231,9 +231,9 @@ final class WorkerOutput: @unchecked Sendable {
         refresh();checkEnvironment()
     }
     func prepareEngine() {
-        guard canManageToolchain,!(preferences.engineDir ?? "").isEmpty else {return}
+        guard canManageToolchain else {return}
         savePreferences()
-        executionTask=worker("prepareEngine") { _ in self.notice="外部引擎工具已就绪。" }
+        executionTask=worker("prepareEngine") { _ in self.notice="引擎工具已就绪。" }
     }
     func openDocumentation(_ guide:AppGuide) {
         if documentationWindow == nil {

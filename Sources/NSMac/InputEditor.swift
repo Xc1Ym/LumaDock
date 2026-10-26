@@ -12,12 +12,14 @@ import GameController
     }
     func refresh() {
         for c in GCController.controllers() {c.extendedGamepad?.valueChangedHandler=nil}
-        guard let c = GCController.controllers().first,let pad=c.extendedGamepad else {name=L("未连接手柄");value=L("所有输入已清空");return}
+        guard let c = GCController.controllers().first(where:{$0.extendedGamepad != nil}),let pad=c.extendedGamepad else {name=L("未连接手柄");value=L("所有输入已清空");return}
         name=c.vendorName ?? L("已连接手柄")
         pad.valueChangedHandler = { [weak self] p,_ in DispatchQueue.main.async {
             guard let self else {return}
             self.value=String(format:L("左摇杆 %.2f, %.2f · 右摇杆 %.2f, %.2f · L2 %.2f · R2 %.2f"),p.leftThumbstick.xAxis.value,p.leftThumbstick.yAxis.value,p.rightThumbstick.xAxis.value,p.rightThumbstick.yAxis.value,p.leftTrigger.value,p.rightTrigger.value)
-            if p.buttonA.isPressed {self.value += " · south"};if p.buttonB.isPressed{self.value += " · east"};if p.buttonX.isPressed{self.value += " · west"};if p.buttonY.isPressed{self.value += " · north"}
+            let identity="\(p.controller?.productCategory ?? "") \(p.controller?.vendorName ?? "")"
+            let nintendo=["Nintendo","Switch","Joy-Con","Pro Controller"].contains {identity.localizedCaseInsensitiveContains($0)}
+            for (pressed,label) in [(p.buttonA.isPressed,nintendo ? "B":"A"),(p.buttonB.isPressed,nintendo ? "A":"B"),(p.buttonX.isPressed,nintendo ? "Y":"X"),(p.buttonY.isPressed,nintendo ? "X":"Y")] {if pressed {self.value += " · "+label}}
         } }
     }
     deinit {for o in observers {NotificationCenter.default.removeObserver(o)}}
@@ -35,8 +37,9 @@ struct InputEditor: View {
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
             HStack {VStack(alignment:.leading) {Text(game == nil ? L("全局输入映射") : L("\(game!.name) · 输入映射")).font(.title2.bold());Text(L("保存后在下次启动游戏时生效，无需重新编译。")).foregroundStyle(.secondary)};Spacer();Button(L("关闭")){store.editingInput=false}}
+            Text(L("原生手柄：Switch Pro A / Xbox A / PS 叉键 → 游戏 A，无需配置。")).font(.callout).foregroundStyle(.teal)
             if !(game?.inputConfig ?? store.engineSupportsInput) {
-                Text(L("当前引擎未声明 DM_INPUT_CONFIG 支持。映射可保存，但游戏将使用引擎自己的默认操作；选择支持该接口的引擎并重新准备后才会应用。")).font(.caption).foregroundStyle(.orange)
+                Text(L("当前引擎未声明 DM_INPUT_CONFIG 支持。自定义映射仅保存，键鼠使用引擎默认操作；原生手柄自动识别不受影响。")).font(.caption).foregroundStyle(.orange)
             }
             Picker(L("配置"),selection:$tab) {Text(L("按键映射")).tag("bindings");Text(L("鼠标与摇杆")).tag("options");Text(L("输入测试")).tag("test")}.pickerStyle(.segmented)
             if tab=="bindings" { bindings }

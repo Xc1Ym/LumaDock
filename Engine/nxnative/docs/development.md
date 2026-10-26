@@ -1,0 +1,392 @@
+# Development
+
+The README covers packing and playing. This page is for working on nxnative itself: how it is built, the script's options, running games on the Mac, and adding a game (per-game notes are in [dm/games](../dm/games/README.md#games)). Agent-oriented details (bring-up failure catalogue, graphics specifics, debugging recipes) are in [docs/agents](agents/README.md).
+
+## How it works
+
+| Part | State |
+|---|---|
+| Rewriter (`dm/tools/patch_nso.py`) | Runs unchanged on every module of every supported game. Per-build cuts are keyed by the module's build ID, in the profile's `patches.py` (a game's own modules) or `dm/tools/sdk_patches.py` (Nintendo's `sdk` modules). Profiles can opt verified cuts into [function matching](reference/rewriter.md#function-matched-cuts-for-unregistered-builds) across updates |
+| Host (`dm/host`) | Stands in for the Horizon kernel and the system services the games call: threads and synchronization, memory, file system with transactional saves, HID, audio, movies (VP9 through libvpx, Vorbis sound through stb_vorbis), software keyboard, focus and lifecycle |
+| Graphics (`dm/gfx`) | NVN on Metal. Shaders are extracted by `shader_split.py` from Nintendo's containers and from Unity's `Shader` objects, then translated offline. Mario: 16,266 of 16,268 shaders compile. Engage: 9,268 of 9,269. Games that render with Vulkan (Hades) or OpenGL (Digimon Story Cyber Sleuth) go through layers of their own on Metal (`dm/gfx/vk`, `dm/gfx/gl`) |
+| Audio | Games that carry the SDK's audio renderer (Mario) run it in-process; games that use AudioOut directly (Engage: Wwise) feed it straight. Output goes through Core Audio (default on iOS, `DM_AUDIO=1` on the Mac) |
+| Input | iOS: the touch gamepad and physical controllers, all as player 1; shaking the phone shakes the controller (its six-axis sensor, `hle_hid.c`; the accelerometer in `DmGamepad.m`, threshold `DM_SHAKE_G`, 1.5 G by default). Mac: scripted input (`DM_KEYS=<seconds>:<button>,…`, `Shake` for a shake, with `DM_KBD=<text>` answering the system keyboard) or `DM_WINDOW=1` for a window with keyboard input (Space shakes) and physical controllers (buttons by position, as on the iPhone). On the Mac each controller is a player of its own, for local co-op: the first one connected is player 1, together with the keyboard, the next player 2, and so on up to 8 (`pad_slots.h`); a controller that is removed frees its player and gets it back when it reconnects, and the log names each one's player and npad (`controller 'Xbox Wireless Controller' connected: player 2 (npad 1)`). Player 1 is the Handheld npad in handheld mode and No1 docked, player n is No n; the game's supported npad ids decide how many play (`hle_hid.c`): a one-player game gets every controller as player 1, and a controller past a game's last player is not used. `DM_PAD_MERGE=1` makes every controller player 1, as before; `DM_KBD_PLAYER=own` makes the keyboard player 1 on its own, with the controllers from player 2 on. The window goes fullscreen from its green button or ⌃⌘F; `DM_FULLSCREEN=1` starts it that way. In fullscreen, a screen whose refresh rate is not a multiple of the game's (144 or 165 Hz) runs at one that is (120 Hz) until the window leaves fullscreen; `DM_SCREEN_MATCH=0` keeps its rate. The drawable follows the window in pixels (fullscreen at the screen's resolution); `DM_METAL_HUD=1` shows Apple's performance HUD (on the iPhone too, from `Documents/env.txt`). The left mouse button is the touchscreen, on the 16:9 picture. In handheld mode the touches also drive `hid::GetGestureStates` (taps, presses, pans, swipes, pinches and rotations recognized by the host, `hle_touch.c`) |
+| iOS app | One unsigned IPA for iPhone and iPad. The rewritten code is embedded in the executable; the shader libraries, the RomFS and the game icon are inside the app. A settings screen comes before the game (`Launcher.swift`, drawn from `dm/launcher.json`, which `dm/games/settings.py` writes from `dm/games/settings.tsv`); the host's loading starts at app launch meanwhile, and the frame rate and render scale go into the frame step state when the game starts (`loader.c` `dm_fps_state_apply`) |
+| Known gaps | Conditional render is always drawn; `MultiDraw*IndirectCount` waits on the CPU for the GPU-written count; geometry shaders do not translate. TBDR optimizations are off by default (they don't understand bindless textures yet). No amiibo. The bundled prewarm lists are empty. On the Mac, Mario's menu and dialogue text render blank (fine on the iPhone) |
+
+## Guest memory SVCs
+
+`dm/host/hle_svc.c` serializes heap resizing, physical map/unmap, stack
+map/unmap and memory queries with one memory-state lock. The alias bitmap is
+the source of committed/free runs for `QueryMemory` and of committed-byte
+accounting. With `mem_map_limit`, heap growth and physical maps check the same
+application-pool budget; overlapping maps charge only newly committed pages.
+Unexpected host protection failures abort before publishing state, including
+the `SetHeapSize` fail-fast check from PR #127.
+
+`MapMemory` borrows opened heap memory, committed alias memory or writable
+static-module data until an exact unmap copies it back. Another borrow,
+decommit, heap shrink or permission/attribute request cannot invalidate that
+source. Queries report its original state with borrowed attribute bit 0 and
+no user permissions. The implementation still copies bytes: source permissions
+are logical, and native host pages cannot isolate adjacent 4 KiB slices.
+Dynamic NRO backing is rejected because reload can restore it outside this
+ownership lifetime. Host-created guest threads allocate their stack backing
+through SDK malloc and free it after SDK thread destruction/copyback. Physical
+recommit may overlap a borrowed source: SDK allocators extend committed windows
+this way, and existing committed bytes are preserved.
+
+A host-page exposure bitmap preserves lazy zero-fill on first commitment.
+Later commits clear only newly committed logical slices, preserving live
+neighbors on a 16 KiB host page. GPU dirty tracking is notified when a mapping
+opens a host page and before stack copyback. The SDK retains address-region
+reservation ownership and its existing build patches.
+
+`make -C dm/host/tests GAME=<id> run` includes the production-dispatcher memory
+tests, real GPU dirty-tracker integration and heap-probe log compatibility.
+The focused targets are `heap_size`, `memory`, `memory-dirty`, `memory-profile`
+and `memory-tsan`; `memory` includes undefined-behavior and address sanitizers.
+The heap-probe check imports the production profile reader and needs only the
+Python standard library; LZ4 is loaded when decoding NSO files.
+
+## Continuous integration
+
+`.github/workflows/tests.yml` runs host and CPU graphics tests, Python tool
+tests, Mac builds for NVN/Vulkan/OpenGL profiles, and iOS source compilation.
+It also runs the CPU texture layout/deswizzle test (`dm/gfx/tex/tests/t_tex`)
+and the host's `tsan` and `memory-tsan` targets for audio and memory races.
+The texture format test (`t_fmt_mtl`) creates Metal textures and stays local.
+
+A separate iOS job uses XcodeGen and the production project template to compile
+`Launcher.swift`, link the complete app and stage synthetic resources. It uses
+tiny zero-filled embedded modules, needs no game files or keys, and neither
+signs nor installs the app. This checks build integration, not game execution.
+To reproduce it with Xcode and XcodeGen installed, choose a new scratch folder:
+
+```sh
+GAME=010015100B514000 python3 dm/ios/tools/build_smoke.py --output /path/to/scratch/ios-smoke
+```
+
+Generated projects and Xcode build products stay in that folder; the host profile
+header is generated under `dm/host/gen/` as usual. CI uploads failure logs.
+GPU regression tests still run locally with `make -C dm/gfx/tests GAME=<id> run`.
+
+## The packing script in detail
+
+`scripts/build_ipa_from_nsp.py` (`-h` lists every option):
+
+```
+# written to the Desktop with your own home-screen name
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys -o ~/Desktop/Mario.ipa --app-name "Mario Wonder"
+
+# pack Mario 1.0.0 instead of 1.2.1 (the folder still needs both NSPs: the shader tables cover both versions)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys -p v0
+
+# delete the extracted game files after the IPA is built (they are kept by default, to skip extraction next time and to run the game on the Mac)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys --no-keep-extracted
+
+# play the game in Japanese (a code or a name: ja, fr, de, es, zh-Hans, zh-Hant, ko, en-GB, ..., Japanese; English by default)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys -l ja
+
+# show the game's frame rate on the iPhone (frames on screen per second, top left)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys --show-fps
+
+# a diagnostic build with environment switches baked in (one KEY=VALUE per line)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys --env-file diag_env.txt
+
+# a damaged NSP (files failing the NCA's hash check) stops the build after listing them; this packs those files as read
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioGalaxy -k ~/keys/prod.keys --allow-damaged
+
+# a game without a profile: survey, provisional profile (a heap check on the Mac when the game needs one), best-effort IPA
+python3 scripts/build_ipa_from_nsp.py ~/Games/NewGame -k ~/keys/prod.keys
+
+# test the guesses on a game that has a profile: build from a provisional one (the IPA is named <ipa>-provisional.ipa)
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioGalaxy -k ~/keys/prod.keys --provisional --allow-damaged
+
+# development: build only what running the game on this Mac needs (no iOS shaders, Xcode project or IPA) and print the command that runs it
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys --platform mac
+
+# the same, then a double-clickable Mac app of the game in the NSP folder (<game name>.app), signed with your Developer ID instead of ad-hoc
+python3 scripts/build_ipa_from_nsp.py ~/Games/MarioWonder -k ~/keys/prod.keys --platform mac-app --mac-sign "Developer ID Application: <name> (<team ID>)"
+```
+
+`--platform` takes `ios` (the default: the IPA, or the Xcode project with `--prepare-xcode`), `mac` ([A Mac-only build for development](#a-mac-only-build-for-development)) and `mac-app` ([A Mac app](#a-mac-app)).
+
+In Spyder, open the script, fill in the settings at the top (`NSP_DIR`, `PROD_KEYS`, and optionally `PACKAGE`, `OUT_IPA`, `APP_NAME`, `BUNDLE_ID`, `LANGUAGE`, `KEEP_EXTRACTED`, `SHOW_FPS`, `PLATFORM`; for a game without a profile `HEAP_CHECK`, `HEAP_CHECK_SECS`, `PROVISIONAL`), and press F5. Empty paths are asked for at run time.
+
+What the script does:
+1. It finds the game profile from the title ID (the `[title ID]` in the file names, or the NSP's ticket; the update by its `[vN]` tag). The update is optional: it packs the newest version in the folder (`-p` / `PACKAGE` picks another).
+2. It extracts the NSPs.
+3. It rewrites the code modules, checking each build ID against the profile. A version the profile does not register (the base game alone when the profile was brought up on an update, another update, or files whose build IDs differ), or one whose shader tables need a version that is not in the folder, is built from a profile derived from it in `<id>_build/profile/<id>/`: the profile's keys, that version's build row, and shader tables, chain header, `c1_full.tsv` and `cb_extent.tsv` made from that version's own files (as for a provisional profile, without the heap check). The rewriter's cuts and the host's fixes for a registered build do not reach a module of another build; the script says which modules those are. A title ID no profile has is first looked up by build: when its `main` (of the base game with its newest update, else of the base game alone, read from a code-only extraction) is a build a profile registers, a regional release of the same build (Advance Wars 1+2: Re-Boot Camp under `0100300012FFF000`, issue #114), it packs from a profile derived from that one, with the folder's title ID and `main.npdm`'s program ID (`same_build`, `game.py` `by_build`); only otherwise is it surveyed. A provisional profile (a game without one in `dm/games`) then gets `mem_used` from the rewritten modules, and, when the game has virtual address memory and sets a heap, a heap check: the Mac host is built into `<id>_build/tools/dmhost` and the game boots in it until its first heap request (a few seconds, log `<id>_build/logs/heap_check.log`), which sizes the heap region (see [dm/games/README.md](../dm/games/README.md), Adding a game).
+4. For a game whose `main` holds GLSL sources and calls `glslcCompile` (Three Houses), it captures the shaders the game compiles at run time, which no game file holds. It builds the Mac host into `<id>_build/tools/dmhost` and boots the game in it, headless and silent, with `DM_GLSLC_CAPTURE` pointing at `<id>_build/extract/<version>/glslc_capture`. The save, temporary storage and log all stay in `<id>_build/`. It stops the game as soon as every capture file named in the profile's shader map is there (Three Houses: 9, about a second after launch), and gives up after 30 s. A folder that already holds them all is reused.
+   A Vulkan game without SPIR-V files in its RomFS (Super Mario Galaxy) gets the same kind of run: the game boots in the Mac host with `DM_VK_CAPTURE` pointing at `<id>_build/extract/<version>/vk_capture` until every SPIR-V key in the profile's `vk_capture.tsv` is there (Galaxy: 3,089, about 7 s after launch), and gives up after 120 s.
+   So does an OpenGL game with no GLSL source in its RomFS or `main` (Balatro: LÖVE puts its shaders together at run time, in Lua): `DM_GL_CAPTURE` at `<id>_build/extract/<version>/gl_capture` until every file in the profile's `gl_capture.tsv` is there (Balatro: 35, made before its first frame). Without the profile's tables (a provisional profile) a capture stops once nothing has been added for 20 s.
+   The Vulkan and GL captures also run on a Mac whose GPU has no Metal 4, such as a virtual Mac (GitHub's `macos-26` runner). Those two layers draw on classic Metal queues of their own, so there the NVN layer starts only its classic part and drops every present, which a headless capture does not need (`nvn_mtl.m` `mtl_device_classic`; `DM_TEST_NO_METAL4=1` does the same on any Mac). The GLSLC capture boots an NVN game, which needs Metal 4.
+5. It splits out the shaders and checks them against the profile's tables (a Vulkan profile: it translates the RomFS's SPIR-V and the capture with `vk_shaders.py` instead; an OpenGL one: the GLSL sources and the capture with `gl_shaders.py`).
+6. It builds the iOS shader libraries, with the Mac's own Metal compiler and spirv-cross when they differ from those in `dmsh_chain.lock` (`dm/gfx/tools/own_compilers.py`; one line in the output names them). If a registered profile's `dmsh_chain.h` does not hold the version the source tree gives (a chain change left it behind), the script writes it again before any host is built, so it shows as changed in the checkout (`dmsh_build.py` would stop otherwise). Then the script makes the profile's `c1_full.tsv` and `cb_extent.tsv` from this build's Mac outputs when they are missing or name another chain. These two tables are not committed and git ignores them; `build_ipa.sh` stops without a current `c1_full.tsv`. Each line in the output names the file.
+7. It calls `build_ipa.sh`. Xcode builds the app in the game's own build folder (`<id>_build/ipa/build/ios/pkg/dd`: `build_ipa.sh` sets `SYMROOT` and `OBJROOT`, which a custom build location in Xcode's settings does not override), so a repeat build compiles only what changed and two games built at once never write the same app. Then `dm/ios/tools/pack_ipa.py` packs it with the shader libraries, the add-on content and the RomFS straight from where they are. It reads and deflates files on all cores and writes at about the T7's write speed (300 MB/s): Breath of the Wild's 16 GB IPA takes 57 s, Info-ZIP's copy and zip took 2 min 50 s.
+
+A repeat build skips work whose inputs have not changed. The extraction is kept (`extract/`). The DLC, the rewrite, the shader split and the iOS (or Vulkan) shaders each write a key beside their output: a sha256 of their inputs (the game files, the tools, the profile, Xcode's and spirv-cross's versions; for the DLC, the DLC NSPs' names, sizes and times and nx_extract's sources). When the key matches, the stage line says `reused (inputs unchanged)` and the step does not run. Any change to a tool or the profile runs the step again; deleting the `.key` file forces it. The iOS shaders' inputs are the shader package's content and only the tools `dmsh_build.py` loads (the modules it imports, at any depth): a split that runs again because a reader for another engine changed (a pull that touches `shader_split.py` or `unityfs.py`) writes the same package, and the iOS shaders stay reused.
+
+The rewrite also collects NRO modules registered by the game's NRR files, including modules inside supported archives (`nro_collect.py`). The host maps the rewritten modules at startup and activates them on `nn::ro::LoadModule`, with symbol precedence following activation order; unloading and reloading restores their initial data and bss. `DM_NRO=0` disables this loading. Epic Online Services modules are identified by their exports and refused, preserving offline play. Collection reuse includes the archive reader and symbol parser; the rewrite key includes `nro.tsv`, even when it lists only refused modules. On iOS the rewritten NROs are packed into three sections of the executable (`dm/ios/tools/gen_embed.py`: a Mach-O file has at most 255 sections, and Super Smash Bros. Ultimate's 98 NROs would take three each) with a table of their pieces, from which the host maps them at start (`loader.c` `nro_pieces`). The synthetic loader test (`make -C dm/host/tests GAME=<id> nro`) covers load order, rebinding, weak symbols, init/fini, data reset and refusal without game files.
+
+While it runs, the console shows one line per stage: building nx_extract, extracting each version, the DLC, the rewrite, the run-time shader capture (only for such profiles), the shader split, the iOS shaders, the app build and packing the IPA. Each line shows `[k/n]`, the stage and its current step. Where the work can be counted, it adds a bar with done/total, percent, elapsed time and ETA. Counted work is bytes extracted, modules rewritten, shaders (cache check, translation, compile), files compiled by Xcode, and bytes packed into the IPA. Elsewhere a spinner shows the elapsed time. A total marked `~` is an estimate. A version's first extraction is estimated from the NSPs' size, and later extractions use the previous run's exact size. The IPA is estimated from the previous IPA, or from the files' size before compression. In a terminal or in Spyder the line is redrawn in place. When the stage ends, it becomes a `✓` line with the elapsed time and a summary:
+
+```
+[15:24:28] ✓ [2/7] extract v327680 (0:20): 9,779 files, 5.0 GB
+⠸ [7/7] IPA pack · packing  ████████▍░░░░░░░░░░░  42%  1.9/~4.5 GB · 13,597 entries  0:05 · ETA 0:07
+```
+
+When the output goes to a file or a pipe, the script prints a plain line instead, every `BEAT` seconds (30). `--progress bar|lines|off` (`PROGRESS` in Spyder) overrides that choice; `off` prints only each stage's start and end. The tools' own output goes only to the logs in `<id>_build/logs/`, one per step. When a step fails, the script prints the last 40 lines of that step's log and the log's path.
+
+`--progress json` is for a program that shows the build (a GUI): stdout carries one JSON object per line, each with `ev` and the time `t`. The events are `stage` (`k`, `n`, `name`, `step`), `step`, `progress` (`done`, `total`, `unit`, `est`, `note`, `frac`, `eta`, `elapsed`; `null` while unknown), `stage_end` (`ok`, `summary`, `elapsed`) and `say` (`msg`: every message, errors and a failed step's log tail included). A count change goes out at most every 0.5 s, any other change at once. This mode never asks for the NSP folder or the keys; argument errors and an unexpected error's traceback still go to stderr. `dm/tools/tests/test_nsp_progress.py` tests it without game files, keys or Xcode (`python3 -m unittest discover -s dm/tools/tests`).
+
+Everything it writes stays in the NSP folder: intermediate files and logs in `<id>_build/`, the IPA next to the NSPs. NSZ and XCZ files are converted with `nsz -D` (from the `nsz` package in the Python running the script) into `<title ID>_build/nsp/`, through a temporary folder so that only a conversion nsz finished is used, and reused while the source keeps its name, size and modification time; `nsz -D` reports an NCA hash mismatch but goes on, so a damaged file is caught by nx_extract's own hash check (`--allow-damaged`). The extracted game files stay in `<id>_build/extract/` for the next build; `--no-keep-extracted` (`KEEP_EXTRACTED = False` in Spyder) deletes them at the end. It exits with 0 when done and 1 on an error. The app's bundle ID is `org.nxnative.<base game title ID>` (for example `org.nxnative.0100a6301214e000`), and its version is the game's display version: the update's when an update is packed, else the base game's (Engage 2.0.0); `--app-name` / `--bundle-id` (or `APP_NAME` / `BUNDLE_ID` in Spyder) override the name and ID.
+The game language (`--language`, `LANGUAGE`; English by default) is what `nn::oe::GetDesiredLanguage` returns. As on the console, it must be one the game's control data lists (`SupportedLanguageFlag`, `nacp.py --languages`); the packed version's control data counts, since an update may add languages. The same language for another region stands in (`en-GB` for `en-US`, `es` for `es-419`, `fr` for `fr-CA`, `pt` for `pt-BR`, and back). A language the game lacks stops the build with the game's list; English, the default, falls back to the game's first language.
+
+On the device, environment switches go in `Documents/env.txt` (one `KEY=VALUE` per line), and game files are also accepted at `Documents/romfs`.
+
+Game rumble is enabled by default (`DM_RUMBLE=0` disables it); `DM_RUMBLE_GAIN=0..3` scales its strength (default 1, zero is silent). Both are launcher settings, independent of `DM_TOUCH_HAPTICS`. `DM_RUMBLE_LOG=1` logs the game's vibration handle requests and, once a second, the values it sent, how many had no routed output and the peak amplitude. `hle_hid.c` decodes SDK vibration handles (style index / npad / motor bytes, as in libnx's `_hidGetVibrationDeviceHandles`) and routes them through the same player assignments as input. `hle_haptics.c` retains each motor's two amplitude/frequency bands, commits batches atomically and invalidates queued output on lifecycle or route changes. `haptics_apple.m` provides shared Core Haptics output for Mac controllers and iOS: left/right handle localities when available, otherwise one combined output; on iPhone, the phone is used while no controller is selected. A connected controller without haptics produces no game rumble. Continuous effects keep running until the game stops them; short effects are not extended. Engine resets, focus loss and interruptions clear the old values and require a fresh game signal. The frequency-to-sharpness mapping is approximate and physical feel / controller compatibility require device testing. The headless Mac host has no output. `make -C dm/host/tests GAME=<id> run` covers state and HID routing without hardware.
+
+Haptic engines are created on demand, after the game has activated its audio session. Stop/reset handlers are installed before starting an engine. Idle release, focus loss and engine resets stop an engine but keep it, so the next effect restarts the same one. An engine or player failure releases that connection; fresh game signals retry with a new engine after a 1–8 second backoff, without replaying effects from before the failure. If a controller advertises separate handle localities but those engines cannot be created or started, the route falls back to the controller's default locality until it is reconnected. The log names the controller, localities and output channels, and errors name the failed stage with the error domain/code and underlying service error. The Apple adapter test covers failed creation/start, player and parameter failures, default-locality fallback and stale callbacks using fake controllers and engines; an iOS Settings Identify response alone does not verify the app's own haptics connection.
+
+### A Mac-only build for development
+
+The Mac is the development host. To test or debug a game on the Mac, `--platform mac` (`PLATFORM = 'mac'` in Spyder) builds only what running it in the Mac host needs, from the same NSP folder:
+- the same steps up to the shaders: extraction, rewrite, run-time shader captures and decodes, a provisional profile's heap check and the shader split;
+- the Mac shader libraries only: `dmsh_build.py` without `IOSOUT` into `<id>_build/shader/cache/b-<chain>/`, which a full build stamps with the profile's inputs (`inputs.tsv`) and from which it makes the profile's `c1_full.tsv` and `cb_extent.tsv`, or a Vulkan or GL game's library without `--ios` into `<id>_build/shader/vk/` or `gl/`;
+- the Mac host for the profile into `<id>_build/tools/dmhost`: the compile line of `make -C dm/host GAME=<id> dmhost`, with a provisional or derived profile through `DM_GAMES_DIR` / `DM_GAMES_FIRST` as for the script's other host builds. It is reused while its sources (the chain header `dm/gfx/nvn/dmsh_chain.h` among them), the generated profile header, libvpx and the compiler are unchanged;
+- the button-icon font (`make_ext_font.py`) into `<id>_build/font/`.
+
+It skips the iOS shaders, the Xcode project and the IPA. For Mario Kart 8 Deluxe that saves about 30,000 iOS shader compiles and the 12 GB IPA. It keeps the extracted files even with `--no-keep-extracted`, because the game runs from them. It needs a Mac with Apple silicon, and it cannot be combined with `--prepare-xcode`. The last line it prints is the command that runs the game, built from the run's own paths (step 5 of [Build by hand (Mac)](#build-by-hand-mac)), for example:
+
+```
+cd "<NSP folder>/<id>_build/run" && DM_ROOT="<NSP folder>/<id>_build" DM_ROMFS="<NSP folder>/<id>_build/extract/<version>/RomFS" DM_SAVE="<NSP folder>/<id>_build/run/save" DM_TEMP="<NSP folder>/<id>_build/run/temp" DM_MSL_DIR="<NSP folder>/<id>_build/shader/cache" DM_FONT_DIR="<NSP folder>/<id>_build/font" DM_NVN_SHMAP="<repository>/dm/games/<id>/shader_map.tsv" DM_LANG=en-US DM_WINDOW=1 DM_AUDIO=1 "<NSP folder>/<id>_build/tools/dmhost" "<NSP folder>/<id>_build/patched_<version>"
+```
+
+The save is in `<id>_build/run/save` and stays there from run to run. `DM_AOC_DIR` is added when the folder has DLC. `DM_NVN_SHMAP` is added for an NVN game; it names the profile's shader map, or the derived or provisional profile's. A Vulkan or GL game's `DM_MSL_DIR` is `<id>_build/shader`. The switches of `--env-file` are added to the command.
+
+Reuse works as for the IPA. Each shader output has its own key, named after the one chain version: `shader/ios/b-<chain>.key` for the iOS libraries and `shader/mac-b-<chain>.key` for the Mac's (`shader/ios/vk.key` and `shader/vk.key` for a Vulkan game, the same with `gl` for a GL game). An iOS build writes both keys, since it builds the Mac's libraries too, so a Mac-only build of a folder already packed as an IPA reuses its shaders. Either key is taken only while the Mac libraries carry a full build's stamp; `c1_full.tsv` or `cb_extent.tsv` that does not name it is made again from them, as for the IPA. An iOS build after a Mac-only build still has the iPhone's libraries to make. It translates the shaders again, because `dmsh_build.py`'s per-shader cache keys include the iOS compile convention. It then takes the Mac libraries from the Metal compile cache (`shader/cache/cas/metallib`) and compiles only the iPhone's.
+
+### A Mac app
+
+`--platform mac-app` (`PLATFORM = 'mac-app'` in Spyder) builds everything `--platform mac` builds, then packs a Mac app of the game with `dm/mac/pack_app.py`. The app is `<NSP folder>/<game name>.app` (a `:` or `/` in the name becomes ` - `); `-o` names another path ending in `.app`. Open it from Finder, from any folder: it does not need the build folder or the drive it is on. Like the Mac host, it needs a Mac with Apple silicon. Its name, version and bundle ID are the IPA's: the game name and display version from the control data, and `org.nxnative.<title ID>`. Its icon is the game's icon as `AppIcon.icns` (`sips`, `iconutil`).
+
+The bundle holds what the IPA holds, with the Mac's shader libraries:
+
+```
+<game name>.app/Contents/
+  Info.plist                 name, version, bundle ID, the profile's app_category; DMTitleID, DMRomfsMarker, DMLanguage and DMModuleFiles for the launcher
+  MacOS/nxnative             the launcher (dm/mac/launcher.c, compiled by pack_app.py)
+  MacOS/dmhost               the Mac host built for the profile
+  Resources/romfs/           the packed version's RomFS
+  Resources/msl/b-<chain>/   the Mac shader libraries (vk/ or gl/ for a Vulkan or GL game), without the compile cache cas/, which the host never reads
+  Resources/aoc/<index>/     the DLC, when the folder has some
+  Resources/dm/              the rewritten modules and their rewriter tables, nro.tsv, the profile's shader_map.tsv, pso_manifest.tsv, c1_full.tsv and cb_extent.tsv, font/, env.txt (--env-file)
+  Resources/AppIcon.icns
+```
+
+The RomFS, the shader libraries and the DLC are APFS clones (`cp -c`) of the build's files when the app is on the same APFS volume, so they take no space of their own; on another volume they are copied, after a check for free space. The app is written as `<app>.partial` and replaces the old one only when it is complete.
+
+The packer records the rewritten module files and their tables in `DMModuleFiles`, and rejects a module without its fixups table. Before starting the host, the launcher checks that every recorded file is readable and is a regular file, so losing a binary and its table together still produces the missing-data alert. The alert passes the game name and message as AppleScript arguments, preserving quotes and backslashes in game names.
+
+The launcher sets the host's environment from the bundle, as the iOS app's `main.m` does, and runs the host as a child process. The save, `pso_user.tsv` and temporary files go to `~/Library/Application Support/nxnative/<title ID>/` (`save/`, `temp/`; that folder is also `DM_ROOT` and the working folder). The host's output goes to `~/Library/Logs/nxnative/<title ID>.log`, and the previous run's is kept as `<title ID>.prev.log`. Environment switches go in `env.txt` in the Application Support folder, then in the bundle's `dm/env.txt` (one `KEY=VALUE` per line). Neither replaces a variable that is already set. The launcher passes SIGTERM, SIGINT and SIGHUP on to the host and returns the host's exit code. When the bundle's game data is missing, it shows an alert.
+
+Why the host is a child process: macOS privacy checks (TCC) cover files on removable volumes. A launcher that hands its process over to the host, such as a shell script that `exec`s `dmhost`, got EPERM on every open on the external drive, with no prompt. That happened with ad-hoc and Developer ID signatures alike, and after `tccutil reset`. A compiled launcher as `CFBundleExecutable` that `posix_spawn`s `dmhost`, which sits beside it in `Contents/MacOS`, can read those files. An app that sits on the game drive needs this, and so does an env file that points at files there.
+
+Signing: `pack_app.py` signs the inner host first, then the bundle (`codesign --force --sign <identity>`). It signs ad-hoc by default; `--mac-sign "<identity>"` (`MAC_SIGN` in Spyder) names a Developer ID or another identity. It never uses the hardened runtime: `--options runtime` refuses the executable memory the host maps for the game's code. Notarization needs the hardened runtime, so the app is not notarized. Gatekeeper blocks it on a Mac it was downloaded to until it is allowed in System Settings › Privacy & Security. `dm/tools/tests/test_nsp_mac_app.py` tests the packer and the launcher with a stand-in host, without game files.
+
+## Build and run on a device with Xcode
+
+With an Apple developer account, Xcode can sign and install the app itself:
+
+```
+python3 scripts/build_ipa_from_nsp.py "<NSP folder>" -k "<prod.keys>" --prepare-xcode
+open "<NSP parent folder>/NxNative.xcworkspace"
+```
+
+`--prepare-xcode` (`PREPARE_XCODE = True` in Spyder) runs the same extraction, rewrite and shader preparation, reusing unchanged outputs, then stops after generating the project. It does not build an IPA, sign, or install. It needs the extracted files, so it cannot be combined with `--no-keep-extracted`.
+
+1. In **Xcode > Settings > Apple Accounts**, add your Apple developer account.
+2. Open the **DmIOS** target's **Signing & Capabilities**, enable **Automatically manage signing**, and select your team, replacing the generated placeholder. If Xcode reports that the bundle identifier is unavailable, choose an identifier you own (or pass `--bundle-id` when preparing).
+3. Connect and trust your iPhone or iPad, enable **Developer Mode** on the device, and select it as the run destination. The iOS Simulator cannot run the game's code.
+4. Select the game's scheme, named **Game name (title ID)**, and press **Run**. Its Run configuration is **Release**. Xcode manages provisioning, signs the app and installs it on your device.
+
+Each game has its own generated project at `<NSP folder>/<title ID>_build/xcode/DmIOS.xcodeproj`. Its **Copy game resources** target phase (`dm/ios/tools/stage_resources.sh`) runs before code signing: it syncs the RomFS, the iOS shader libraries and the add-on content named in the project's `Gen/resources.env` to `DmIOS.app/romfs`, `DmIOS.app/msl/<b-chain, vk or gl>` and `DmIOS.app/aoc`. The rewritten game code is embedded by `Gen/embed.S` at link time. No keys are copied to the device. The project links `Sources`, `tools` and the host sources to the checkout it was prepared from (relinked on each preparation), so code edits apply to every prepared game. The prepared shaders do not follow a chain change: when the profile's `dmsh_chain.h` names another chain than the prepared shader folder (after a pull, or `dmsh_chain.py --header`), the phase stops and asks to prepare the game again.
+
+The project asks for the Increased Memory Limit capability (`Gen/DmIOS.entitlements`; without it iOS closes the bigger games, see the README). `DM_ENTITLEMENTS=<plist>` when preparing uses another entitlements file, and an empty `DM_ENTITLEMENTS=` none, for an account that cannot provision it.
+
+The first Xcode build copies the complete game, so allow free space on the game's drive for another uncompressed copy; later builds sync changes. Derived data and build products go under `<NSP folder>/<title ID>_build/xcode-derived-data/`; keep that drive connected while building. The installed app holds its files and runs without the Mac.
+
+Each prepared game is a scheme in the shared workspace (by default `NxNative.xcworkspace` beside the NSP folder; `--xcode-workspace`, `XCODE_WORKSPACE` in Spyder, collects games from different folders in one). Give each game its own bundle ID (`--bundle-id`) to keep them installed together; keep it when updating an installed game, as another ID is a separate app with separate saves. The script rejects a bundle ID that another project in the workspace uses. Preparing a game again regenerates only its project and keeps its Release bundle ID and team, including changes made in Xcode; `--bundle-id` / `--team-id` (`BUNDLE_ID` / `TEAM_ID` in Spyder, or `DM_TEAM_ID`) override them. Other manual project edits are replaced; edit `dm/ios/project.yml` for shared changes. Prepare a game again after changing its game files, profile, shaders or the project template; switching games needs only the scheme menu.
+
+The unsigned IPA build still uses the repository's `dm/ios/DmIOS.xcodeproj`, skips the resource phase (`DM_COPY_GAME_RESOURCES=NO`) and packs the resources straight from the drive as before.
+
+## Port another game
+
+Each game has a profile in `dm/games/<id>/`:
+- `game.tsv` holds the title ID, known builds, code modules, RomFS marker, memory split, app name and bundle ID;
+- the shader tables: `shader_map.tsv`, `shader_facts.tsv`, `shader_pairs.tsv`, `pso_pairs.tsv` (pairs only the pipeline prebuild reads), `pso_manifest.tsv`, and `c1_full.tsv` / `cb_extent.tsv`, which each checkout's full shader build makes (not committed);
+- `patches.py` (when there are any): the rewriter's patches of the game's own builds.
+
+The shader translation chain has one version for every game, in `dm/gfx/nvn/dmsh_chain.h`.
+
+The shader tools pick a profile with `DM_GAME=<id>`; `make -C dm/host` and `build_ipa.sh` pick it with `GAME=<id>`. Profiles are named after the base game's title ID. There is no default game: without `GAME` / `DM_GAME` the tools stop and list the profiles. `python3 dm/games/game.py list` lists the profiles. Host code that relies on one build's fixed addresses checks that build's ID.
+
+To add a game:
+1. Run `scripts/build_ipa_from_nsp.py` on its NSP folder. With no matching profile, it writes a survey to `<title ID>_survey/survey.md`. The survey covers the modules, SDK, engine, containers, rewrite sites, and the imports compared with the host's hooks. It then writes a provisional profile into `<title ID>_build/profile/<title ID>/` (outside the repository; tools find it through `DM_GAMES_DIR`) with the keys `dm/games/profile_guess.py` reads off the game files: the graphics API, the modules to load, where the shaders come from, the memory partition, SDK and engine presets. After the rewrite it sets `mem_used` from the rewritten modules and, for a game with virtual address memory that sets a heap, boots it on the Mac until its heap request (the heap check, a few seconds) to size the heap region. Then it generates the shader tables and chain header and packs a best-effort IPA that may not boot. `--survey-only` stops after the survey, `--no-heap-check` skips the heap check, and `--profile-out` puts the profile elsewhere. `--provisional` does all this for a game that has a profile, to test the guesses; `python3 dm/games/profile_guess.py --check` compares the static guesses with every profile. Details in [dm/games/README.md](../dm/games/README.md).
+2. Add a profile as described in [dm/games/README.md](../dm/games/README.md).
+3. Bring the game up following [docs/agents](agents/README.md): extraction, binary survey, a catalogue of host bring-up failures, graphics, and debugging recipes.
+
+## Build by hand (Mac)
+
+`scripts/build_ipa_from_nsp.py --platform mac` does steps 1 to 4 in the game's NSP folder and prints the command of step 5 ([A Mac-only build for development](#a-mac-only-build-for-development)). The steps by hand follow. You need the same tools as the script. The shader translator is the prebuilt `dm/gfx/tools/dmsh_xlate_bin`, the build that matches `dmsh_chain.lock`; a fresh `dotnet publish` gives different fingerprints. Its launcher `dmsh_xlate` is a universal binary (arm64 and x86_64), so an Intel Mac runs it too, with the same output; after a rebuild, join the new launcher with lipo to the one `dotnet build -r osx-x64` makes of the same .NET version (the lock does not cover the launcher). What an Intel Mac cannot run is the Mac host, which runs the game's own arm64 code: the NSP script stops at a step that boots the game there (a run-time shader capture, a decode with the game's own Oodle or LZ5) and skips a provisional profile's heap check. The commands use three variables:
+- `G`, the profile;
+- `W`, the game's work folder: `<title ID>-work` inside the game's NSP folder, outside this repository and off the home folder (it grows to the size of the game files);
+- `VER`, a version folder named after the NSP version.
+
+```
+G=010015100B514000; W="<NSP folder>/$G-work"; VER=v327680
+# 1. extract: the base game alone (update -), or an update layered over it (the last argument lets unchanged files become clones)
+dotnet build dm/tools/nx_extract -c Release -o $W/build/nx_extract
+$W/build/nx_extract/nx_extract <prod.keys> <base NSP> - $W/data/v0
+$W/build/nx_extract/nx_extract <prod.keys> <base NSP> <update NSP> $W/data/$VER $W/data/v0/RomFS
+# 2. rewrite the profile's code modules
+for m in $(python3 dm/games/game.py $G modules); do python3 dm/tools/patch_nso.py $W/data/$VER/ExeFS/$m $W/build/patched_$VER $m; done
+# 3. shaders: extract from every version in the profile's shader_versions (comma-separated, base first), then translate into <cache>/b-<chain version>/
+DM_GAME=$G python3 dm/gfx/tools/shader_split.py $W/data/v0/RomFS,$W/data/$VER/RomFS $W/data/v0/ExeFS/main,$W/data/$VER/ExeFS/main $W/shader/pkg dm/games/$G/shader_map.tsv dm/games/$G/shader_facts.tsv dm/games/$G/shader_pairs.tsv
+DM_GAME=$G python3 dm/gfx/tools/dmsh_build.py $W/shader/pkg $W/build/cache/metal_shader_cache   # also writes dm/games/$G/c1_full.tsv and cb_extent.tsv
+# 4. the host, and the button-icon font for the Nintendo-extension shared font
+make -C dm/host GAME=$G dmhost
+python3 dm/tools/make_ext_font.py $W/build/font/nintendo_ext.ttf
+# 5. run on the Mac
+DM_ROOT=$W DM_ROMFS=$W/data/$VER/RomFS DM_SAVE=$W/run/save DM_TEMP=$W/run/temp DM_MSL_DIR=$W/build/cache/metal_shader_cache DM_FONT_DIR=$W/build/font dm/host/dmhost $W/build/patched_$VER
+# 6. iOS shader libraries (about 15 min for Mario), then the IPA (default <NSP folder>/<the profile's ipa>)
+IOSOUT=$W/build/ios/dmsh_b DM_GAME=$G python3 dm/gfx/tools/dmsh_build.py $W/shader/pkg $W/build/cache/metal_shader_cache
+GAME=$G W=$W dm/ios/tools/build_ipa.sh [out.ipa]
+```
+
+Notes on these steps:
+- `dmsh_build.py` stops when a tool differs from `dm/gfx/tools/dmsh_chain.lock`. With another Xcode or spirv-cross, run `dm/gfx/tools/own_compilers.py` with the same arguments and environment instead: it builds with the local compilers, and only the translator must match.
+- `dmsh_build.py` compiles each shader's Metal source through a cache keyed by that source, the compile flags and the compiler (`dm/gfx/tools/dmsh_mtlcache.py`, in `<cache>/cas/metallib/`). A chain change that leaves a shader's MSL unchanged, such as a translator fix, costs that shader no Metal compile. Before building, the cache takes the libraries of the earlier `b-*/` folders beside its output (and beside `IOSOUT`), and of `DMSH_PREFILL=<Mac root>[=<iOS root>]` (several separated by `:`). It takes a folder only when its recorded flags are the current ones and a fresh compile of a few of its shaders reproduces their libraries byte for byte. The summary line `Metal cache:` shows reused, compiled and filled counts per target.
+- `build_ipa.sh` takes the rewritten modules from `$W/build/patched_<package>` and the RomFS from `$W/data/<package>/RomFS`; `PATCHED` and `ROMFS` override them. In unsigned IPA mode, `pack_ipa.py` packs the shader libraries, RomFS and add-on content beside the app Xcode built, as `DmIOS.app/msl/b-<chain version>`, `romfs` and `aoc`. Prepared Xcode projects instead sync these resources into the app before signing.
+- It also bundles a standard font (macOS's Arial Unicode, `STD_FONT=` overrides it) and the generated `nintendo_ext.ttf`.
+- The icon is the `icon.jpg` that `nx_extract` saves next to `RomFS/`; `DM_ICON=` points at another image.
+- `DM_ENV_FILE=` bakes environment switches into the app, and `DM_DISPLAY_NAME=` renames it.
+- `DM_LANG=<code>` is the game language (`DMLanguage` in `Info.plist`, default `en-US`; `main.m` sets `DM_LANG` from it unless `Documents/env.txt` or the baked env file sets it).
+- `DM_SHOW_FPS=1` turns the frame-rate counter on (`DMShowFPS` in `Info.plist`, which `front_ios.m` reads; `DM_SHOW_FPS` in `Documents/env.txt` overrides it). It counts the frames put on screen each second (`mtl_present_count`), so frames the display link merges away are not counted.
+- The unsigned build pins its build product and intermediate directories inside `$W/build/ios/pkg/dd`, independently of Xcode's Locations preference.
+- hactool cannot read every update (Mario 1.2.1's patch NCA gives "Invalid BKTR layout!"), which is why `nx_extract` uses LibHac.
+
+## Prewarm lists
+
+Metal compiles each combination of shaders and pipeline settings for the GPU the first time it is used. Each takes tens of milliseconds, so a burst of them on entering a level is a visible freeze. The host records what it had to compile and rebuilds those pipelines on a background queue at the next launch:
+
+- `pso_user.tsv` sits next to the save directory: `Documents/pso_user.tsv` on iOS, the parent of `DM_SAVE` on the Mac (`DM_PSO_USER=path` overrides it). It is appended while playing, one line per item built on the spot: a shader (`S`), a render pipeline (`R`, the hex of `pso_skey` in `dm/gfx/nvn/nvn_pso_skey.h`) or a compute pipeline (`C`).
+- `dm/games/<id>/pso_manifest.tsv` is the seed list bundled with the app, prewarmed before `pso_user.tsv`.
+
+The lines name shaders by content key and hold no compiled code and nothing personal, so a list recorded on one device works on any other. To seed the bundled list:
+1. Record on the Mac with prewarm off, so everything is built on demand: `DM_PSO_MANIFEST=off DM_PSO_RECORD=<file>`, playing the scenes players reach first. Engage's list covers boot, the opening movie, the title, a save load and the prologue battle.
+2. Append the recorded lines below the header comments, in the recorded order. Duplicates are dropped at load, and so are shaders the shader map does not have (a list of another version of the game: the bundled list packed with a version the profile was not brought up on, or a device's `pso_user.tsv` kept across a game update), which the `prewarm done` line counts.
+3. Rebuild the IPA.
+
+Record on the game version you ship. At launch the log names each list it read and its line count (`pipeline prewarm list …: N lines`), or says that `pso_user.tsv` does not exist yet.
+
+During rendering, a pipeline miss compiles and caches the demanded pipeline before scanning subsequent draws for speculative work. The scan admits at most two new jobs, with at most two speculative compilations outstanding; completed predictions remain available by exact key. This limit does not apply to the startup warmer. `t_pso_pending` checks scheduling and ownership with a gated compiler; it does not establish that the two-job budget is optimal on every device or remove the cost of compiling an unseen pipeline.
+
+### The prepare step
+
+With a window (the Mac host with `DM_WINDOW`, the iOS app), the game waits for the prewarm before its first frame: the first submission (`mtl_sub_begin`) runs every line of both lists and goes on only when the shaders are loaded and the pipelines built (`warm_prepare` in `dm/gfx/nvn/nvn_mtl.m`). The workers are as many as the device has cores (`hw.activecpu`; `DM_PSO_PREPARE_THREADS=<n>`), at user-initiated QoS, since the game draws nothing meanwhile. Each task is a shader, a compute pipeline, or all render pipelines of one shader pair, which share their bases, so no two workers compile the same base. A vertex shader's pulling entry is loaded with it, so neither a listed draw nor its hybrid stand-in loads a library on the submit thread; the shaders and pipelines go into the caches the draws use, which keep them for the whole run. The step runs at the first submission and not before the game starts because the vertex entry each pipeline is built with follows the depth mode the game sets (`nvnDeviceSetDepthMode`).
+
+It runs at every start. When the Metal shader cache and the pipeline archive hold everything it takes well under a second, and the front end shows its screen only past 0.5 s, and only when the rate so far leaves 0.3 s or more to go (no screen that flashes up and goes): a dark view over the game's with "Preparing shaders", a progress bar and a count (`front_progress` in `front_mac.m` and `front_ios.m`). A stamp saying that the step ran would skip it exactly when the system has dropped the Metal cache (an OS update, or storage pressure on iOS), which is when it is needed. The log has `pipeline prepare: N lines (… shaders, … render pipelines, … compute pipelines) in … s on N workers before the first frame, progress screen shown / not shown; bases … compiled, … from the archive, … reused`. Without a window, or with `DM_PSO_PREPARE=0`, the prewarm runs in the background on one worker, as before; `DM_PSO_PREPARE=1` makes a windowless run wait too.
+
+The step covers what the lists name: a first start as far as the profile's `pso_manifest.tsv` covers the route (record it as above, over the scenes a new player reaches first and a save load), every later start through `pso_user.tsv`. A shader or pipeline no list names yet is built when first drawn, served meanwhile by the hybrid pipelines below. It is NVN only: the Vulkan and GL layers keep no prewarm lists (Hades creates its pipelines itself while it loads, 1,856 before its first frame).
+
+The compiles scale with the workers only about three to seven times over one, since the Metal compiler service is shared. Breath of the Wild's starts with and without its seed list and the step: [its note](../dm/games/01007EF00011E000/README.md#pipelines-on-a-cold-start).
+
+### Pipeline bases and the pipeline archive
+
+Concurrent requests for the same base share its in-progress build and result; unrelated bases can compile in parallel. Rasterizing pipelines without a fragment function use the `MTLDevice` path so depth-only draws keep their depth writes: Metal 4 requires a fragment function when rasterization is enabled. Transform-feedback pipelines, whose rasterization is disabled, can still use Metal 4.
+
+Render pipelines are built through Metal 4's `MTL4Compiler` (`pso_build` in `dm/gfx/nvn/nvn_mtl.m`). `pso_desc` still describes each pipeline; from it the host builds a *base* whose colour attachments (format, blending, write mask) are left unspecialized, once per base, and makes every pipeline from its base by specialization, which takes a few microseconds instead of the 3–5 ms of a pipeline build. Metal 4 pipelines name no depth or stencil format, so one base serves every depth/stencil attachment. Live keys and historical prewarm rows share [normalization of unused colour state](reference/shaders.md#pipeline-keys-omit-unused-colour-state), and the warmer deduplicates parsed keys before compiling.
+
+The bases are kept in a per-game pipeline archive in `pso_archive/` beside `pso_user.tsv`. Each file holds what one flush captured (`NNNNN.mtl4a`). A flush runs after the prewarm and 10 s after a burst of new bases. At start the host opens every file, and a base found in one is taken from it directly, in about 0.06 ms where building it takes 10–80 ms. Only bases no file holds are compiled, so each file holds new bases only. The serializer must capture binaries only: with descriptor capture as well, it writes no archive and reports no error. A flush and a compile must not overlap (a compile that finished during a flush crashed in Metal), so compiles hold a read lock and a flush the write lock (`g_arch_rw`).
+
+Every start adds a file or more: Breath of the Wild wrote 5–7 per start, and each file a base is not in costs a lookup about 0.06 ms. With more than 8 files (`PSO_ARCH_COMPACT`) the archive is compacted: the bases the prewarm takes from the old files are taken again through the compiler, with those files as its lookup archives, which captures them; the flush after the prewarm writes them into one file, and the old files are removed (`arch_compact_finish`). Bases the prewarm did not take (no `pso_user.tsv` line names them) go with the old files and are built again when drawn. The log says `pipeline archive compacted: N files gave M bases …`.
+
+The log shows `pipeline archive …: N files, … MB, opened in … ms` at start, `pipeline archive: N new pipeline bases written to …` after each flush, and after the prewarm a line counting the bases compiled, taken from the archive and reused. `DM_PSO_ARCHIVE=off` turns the archive off; `DM_PSO_ARCHIVE=<folder>` puts it elsewhere. `DM_PSO_MTL4=0` builds every pipeline through the `MTLDevice` as before, with no bases and no archive. The Metal 4 path, with the hybrid pipelines and the prebuild, is on by default on the Mac. On iOS it is on for a game whose profile sets `pso_mtl4 on` (Breath of the Wild, tested on an iPhone 17 Pro Max) or with `DM_PSO_MTL4=1`, and off otherwise: the archive's memory is not measured against an iPhone's limit yet, and an archive cannot be made offline for an iPhone, because `metal-tt` rejects the pipeline script the Metal 4 serializer writes. iOS is a later step. Pipelines whose functions have no Metal 4 descriptor (the diagnostic `DM_NVN_HILITE` and `DM_NVN_MAGSCAN` overrides) always take the `MTLDevice` path.
+
+During compaction, timed flushes defer while prewarm runs. Once it finishes, one archive-queue task flushes the recaptured bases and removes the old files. The pending count and serializer capture are protected by the same compile/flush lock, so a flush consumes the count for the bases it writes.
+
+### Hybrid pipelines
+
+A draw whose pipeline is not built yet no longer waits for the Metal compiler when a stand-in exists (`hybrid_get`, `pso_get_` in `dm/gfx/nvn/nvn_mtl.m`). On a miss the draw first takes its pipeline without compiling: its base made already or in the archive, then a specialization. Failing that, it draws with the shader pair's *pulling* pipeline (the `<key>_bp` vertex entry, [pulling vertex inputs](reference/rendering.md#pulling-vertex-inputs)). That pipeline has no vertex descriptor and reads the draw's streams through a per-draw layout block (`pull_bind`), specialized with the draw's colour state. Meanwhile the pipeline for the draw's own vertex layout is built in the background, and a later draw takes it when it is ready. Both compute the same positions (`t_pull_inv.m`), so a draw that switches between them does not flicker or z-fight. Merged passes, readable-tile and diagnostic fragments, and layer-writing or transform feedback vertex shaders have no stand-in and wait as before. A pulling stand-in is used only when its base is already made or in the archive. Otherwise the base is built in the background for the pair's next miss, and the draw waits. `DM_PSO_HYBRID=0` turns the hybrid off. It needs the Metal 4 path, so it is on by default on the Mac; on iOS, the profile key `pso_mtl4 on` or `DM_PSO_MTL4=1` turns both on.
+
+The hybrid keeps the demand-first order above (PR #75). A draw that gets a stand-in queues its own pipeline first (`pso_pend_demand`), before the prediction runs. Such demanded builds are outside the speculative limit and go to serial queues at utility QoS, one per two performance cores (`pp_bg_queue`), so they never wait behind speculation and speculation never waits behind them. The prediction's budget of two speculative builds goes only to draws that will have no stand-in, because those would wait. A draw that would wait for a build still queued makes the pipeline itself at once, instead of waiting behind the queue (`pso_pend_take`). When the table is full, the oldest finished entry no draw took is reclaimed, as for the speculative builds. The first pipeline miss of a submission also loads, in parallel, the shader libraries the rest of the submission binds (`shader_prefetch_rest`). For the frame that entered Zora's Domain in Breath of the Wild that was 248 libraries in about 210 ms, where loading them one by one on the submit thread took about 1 s.
+
+The path of a draw whose pipeline is not in the cache:
+
+```mermaid
+flowchart TD
+    D[Draw needs a pipeline] --> C{In the cache?}
+    C -- yes --> R[Draw with it]
+    C -- no --> B{Base made already<br/>or in the archive?}
+    B -- yes --> S[Specialize, a few µs] --> R
+    B -- no --> P{Pulling stand-in<br/>for the pair?}
+    P -- yes --> H[Draw with the pulling pipeline now]
+    H --> Q[Queue the draw's own pipeline first<br/>pso_pend_demand, low priority]
+    Q -. later draws .-> R
+    P -- no --> W[Build at once and wait]
+    W --> R
+    W --> K[Then predict: at most 2 speculative builds,<br/>only for draws without a stand-in]
+```
+
+Every 300 frames the log has a `pipelines up to frame` line. It gives the submit thread's pipeline, library and prediction time; archive lookups that found the base or none; specializations and base compiles on all threads; draws with a hybrid pipeline; background builds; and the draws that waited, by why no stand-in served them. `DM_PSO_WAITLOG=1` logs every wait over 20 ms with its shader pair. `DM_PSO_PULL_ALL=1` (diagnostic) draws every draw that has a pulling pipeline with it. In steady state the GPU time is the same with and without the hybrid: in Breath of the Wild, mean GPU p50 over frames 2,400–5,100 was 8.98 ms with it, 8.98 ms on the Metal 4 path without it, and 9.35 ms through the `MTLDevice`.
+
+The **prebuild** puts the pulling base of every known shader pair into the archive (`pso_prebuild`), so a cold start's draws have stand-ins. The pairs come from the profile's `shader_pairs.tsv` and `pso_pairs.tsv`. `shader_pairs.tsv` pairs the stages of one BNSH variation (and the other readers' programs). It held none of the pairs from agl's BAHS shader archives (`.sharcb`, the agl / gsys / terrain resource packs), and in Breath of the Wild 109 of the 543 pairs drawn on entering Zora's Domain came from those. `shader_split.py` now reads the binary and program arrays of a BAHS file (`bahs_variations`) and pairs the n-th vertex binary of a program with its n-th fragment binary. Those pairs go to `pso_pairs.tsv`, which only the prebuild reads. `vs_pad` keeps reading `shader_pairs.tsv`, so the shader libraries, the inputs digest and the other profiles' tables are unchanged. For Breath of the Wild that is 3,012 more pairs, and all 543 pairs drawn are now known. A profile made before the table existed still packs: the NSP script then keeps the table beside the shader package and hands it to the prebuild (`DM_PSO_PAIRS`). Super Mario Odyssey, Mario Bros. Wonder, Mario Kart 8 Deluxe, 3D World, Animal Crossing, Captain Toad and Tears of the Kingdom have BAHS files too; their tables are made at their next pack.
+
+With the prepare step (a window, the iPhone) the prebuild runs right after it, before the game's first frame, behind the same progress screen ("Preparing pipelines"), on every core, flushing every 1,000 bases; a first start waits for it once. Built in the background while playing instead, they took an iPhone 17 Pro Max's GPU from about 13 to 15–18 ms a frame in Breath of the Wild, through the compiler's load on the shared power budget. Without a prepare step it still runs in the background after the prewarm, on a utility queue on half the performance cores (`DM_PSO_PREBUILD=0` turns it off either way). On the Mac it also runs as a tool, `DM_PSO_PREBUILD=tool`: build, write, exit. The NSP script runs the tool in a `--platform mac` build, into `<id>_build/run/pso_archive` (log `pso_prebuild.log`). It runs once per chain version, depth mode and pair list (`pso_archive/prebuilt.tsv`). `DM_PSO_PREBUILD_DEPTH=zero` serves a game that sets the near=0 depth mode; `DM_PSO_PREBUILD_THREADS=<n>` sets the workers. Its files hold bases without a vertex layout only, and are named `pNNNNN.mtl4a`; a base with a vertex layout is never looked up in them, and compaction leaves them alone. Breath of the Wild on an M2 Max: 15,767 bases, 910 MB in 16 files, 187 s with 7 workers for the first 12,755 and 19 s for the 3,012 more. Opening the files took 2.2 s on the first start (0.25 s from the file cache). The host's footprint is about 850 MB larger with them open (2,067 against 1,215 MiB at the title), which is one reason the Metal 4 path stays off on iOS unless a game's profile was tested with it (`pso_mtl4`). iOS archives cannot be made offline either: `metal-tt` rejects the pipeline script the Metal 4 serializer writes (format 0.1: "expecting [ instead got {"). On iOS this is a later step.
+
+Breath of the Wild's cold starts with and without the prebuild and `pso_pairs.tsv`: [its note](../dm/games/01007EF00011E000/README.md#pipelines-on-a-cold-start).
+
+## Power
+
+The game's own work and its frame rate stay as they are; the host avoids work of its own that the Switch never did. Every 300 frames the log has a `power` line (CPU energy in watts and per frame, CPU time, wakeups, thermal state, the threads that yield most) and a `residency set` line; [05](agents/05-debugging.md) explains them.
+
+- **Yield loops.** On the Switch, a yield with nothing else to run is free; a guest loop that polls the clock or a flag and yields is a busy spin on the host. Three Houses waited out each frame this way (228,000 yields a frame on an iPhone) until a per-build cut made its frame limiter sleep (see its notes). After 2 ms of consecutive yields with no other SVC, each yield sleeps an eighth of the wait so far, from 10 to 250 µs (`DM_YIELD_BACKOFF=0` turns it off, `=<cap µs>[:<start µs>]` sets the cap and the start). Three Houses on the Mac, before that cut: CPU time 78% → 19% of a core, same frame times. The back-off first started after 200 µs, which also caught Tears of the Kingdom's main thread waiting for its workers on the frame's critical path: frames ran past 33 ms and the game dropped itself to 20 fps (9 times in 300 s on the Mac; on the iPhone the threads also stayed on efficiency cores). From 2 ms on it never backs off there. Not every yield loop waits, though: some yield between steps of work. A yield whose caller's callee-saved registers (x19–x28, which the SDK's `YieldThread` leaves as the loop had them) differ from the last yield's counts as progress: it returns at once with no host call, as a yield with no other thread to run does on the Switch, and the run starts again. A poll keeps its pointers and deadline in those registers; a loop that works moves its counters. Animal Crossing: New Horizons' `SaveProc` builds a new island in grid walks that yield once per cell: with the back-off the screen stayed black for 77 s after the opening movie, now about 10 s. Breath of the Wild's `PlacementMgr` and `RadarMgr` yield once per item of their batches (the back-off stretched a 94,263-item radar batch to about 30 s); outdoors on the Mac, CPU energy went from 0.35–0.74 to 0.21–0.34 W at 60 fps, CPU from 76–83% to 96–106% of a core, and the frame interval's p99 from 19 to 20–21 ms.
+- **Spin loops.** A guest loop that polls memory with no SVC at all spins on a host core. On the Switch the spin fills only its own core, and a higher-priority thread pinned there preempts it. Paper Mario: The Thousand-Year Door's three job workers (`main+0xa8e680`) poll the job list this way while a batch is pending; in Rogueport on an iPhone they took 94% of a core each and the game ran at 24 fps. The rewriter finds such loops in every module (`patch_nso.py`, "Spin waits"). A loop counts only when it provably cannot leave by itself:
+  - every path from its head back to it runs only loads, register and flag arithmetic, direct branches and barriers (no store, call, SVC, system register or event wait);
+  - nothing live at the head is written on the way (no counter, cursor or delay);
+  - an exclusive add that every path back undoes on the same address is allowed (a worker that registers with a job, sees it finished and backs out);
+  - so is a spin lock taken and released on the same address on every path back (an exclusive test-and-set retried until it stores, then an exclusive compare-and-clear or a store-release of zero), a test loop on a word inside the loop (load, compare with a constant, branch back to the load), and up to four stores whose value and address registers the loop never writes. Each such store writes a fixed value to a fixed address, so the words it writes can only hold their first value or a stored one: a loop like that changes its own state for a few hundred passes at most (a fraction of the gate's 2 ms of polling), then its passes repeat and only another thread can end it (a loop with such stores must also load something). A store of a value the pass changes ends its path, and the search runs again without it: a poll that takes its item once the wait is over stores the new cursor there;
+
+  Such a pass leaves memory and registers as they were, so only another thread can end the loop, and a pause there changes only timing. The loop is copied into the patch area. Its original back-edges jump to the copy, so the first pass costs nothing, and the copy's back-edges go through a spin gate (`dm_spin_wait`). A wait polls on through the gate for its first 2 ms and then sleeps as a run of yields does (`DM_SPIN_POLL`, `DM_YIELD_BACKOFF`); `DM_SPIN=0` never sleeps there. The gate alone slows the poll down, and on the Mac that was the whole gain: most waits are handoffs between workers, and a `sched_yield` on every pass raised frame p95 by 2–5 ms there.
+
+  Breath of the Wild's job queue (`main+0xef62dc`) needed the lock rule. The first item of some of its jobs is for the thread of core 0, and the threads of the other cores wait until it is taken (the queue's flag at +0x98, its cursor at +0x94), each taking and releasing the queue's lock (+0x1c) on every pass. The two workers (cores 1 and 2) polled at full speed, so the lock went back and forth between their cores, and the main thread (core 0), whose item it was, lost nearly every exclusive store to them: in 40 s of a Time Profiler trace it never once held the lock while the workers held it about 750 times each, and the three spun for 30–210 ms at a time, the CPU hitches in its notes below. Through the gate the workers leave the lock a moment between passes and the main thread takes its item at once. Zora's Domain on an M2 Max at 120 Hz, the same host, 42 s of steady play per run, three runs each, before → after: standing still, frames with more than 30 ms of CPU work 2.8 / 6.3 / 3.5 → 0 per 30 s, the frame's work p99 20–21 → 8.3–8.4 ms, frames late on screen 2.8 / 5.6 / 2.8 → 2.1 / 0.7 / 2.1 per 30 s (the rest are 120 Hz refresh slips); turning the camera, 11.9 / 13.3 / 6.3 → 0 CPU hitches, p99 21–25 → 9–15 ms, late frames 12.6 / 13.3 / 7.7 → 1.4 each. The search keeps every loop it found before and adds: Breath of the Wild's `main` 308 → 310 (this one, and a state setter at `main+0xf82230` that stores its state and returns on the second pass unless another thread changed it), its `subsdk0` one loop wider (`0x27804`, the movie library's thread loop, 6 → 23 instructions over the same back-edge and two more); Mario Kart 8 Deluxe's `main` 25 → 26 (a state setter like Breath of the Wild's, `main+0x715df8`) and its `subsdk0` one loop wider (the same movie library loop, `0x24118`). Of the 206 modules on the game drives (108 NSOs and Super Smash Bros. Ultimate's 98 NROs), 175 rewrite byte for byte as before (Hades, Super Smash Bros. Ultimate and Super Mario Odyssey among them) and 7 fail under both rewriters (every `rtld`, New Super Mario Bros. U Deluxe); the other 24 take new loops, all through the store rule alone (only Breath of the Wild's job queue has a lock): Monster Hunter Rise's `main` 90 → 166 (72 of them one inlined countdown, `ldr w9,[x21,#0x24]; subs w9,w9,#1; b.ge; str w22,[x21,#0x24]; ldr; cbz`, whose reset makes the next pass leave), BALL x PIT 87 → 94, Animal Crossing: New Horizons 162 → 166, Balatro 9 → 12, Octopath Traveler 0 75 → 78, Pikmin 4 80 → 83, Bayonetta 3 35 → 37, and one more each in Big Brain Academy, Metroid Dread, Pokémon Legends: Z-A, Stardew Valley, Super Mario Bros. Wonder (both builds) and Tears of the Kingdom; the movie library loop is wider in the `subsdk0` of Animal Crossing, BALL x PIT, Monster Train 2 and Octopath Traveler 0 too, and one loop is wider in the `main` of AI: THE SOMNIUM FILES and of Advance Wars 1+2. No loop of the old search is lost or loses a back-edge. Each distinct shape was read in its disassembly: one-pass resets and state setters (the gate is reached only when another thread changes the word), parser states that leave on the next pass (Octopath Traveler 0 `main+0x4ebfa54`, Balatro `main+0x1f4600`), and real flag waits (Big Brain Academy `main+0x1734e0`, the movie library). Monster Hunter Rise, the module with the most new loops, runs alike on the Mac with both rewrites from a fresh save (180 s headless from the boot each, the same host: 60 fps, frame p95 about 17.5 ms, the same red lines, no hang). Searching paths through stores costs time: Breath of the Wild's `main` takes 26 s of CPU to rewrite instead of 19, all 206 modules about 4,100 s instead of 3,250.
+
+  Results, on the Rogueport route on the Mac, side by side with the committed build under the same load: frame p95 29–37 ms → 18–22 ms, CPU 93–129% → 38–57% of a core, the workers 576–885 → 65–94 ms/s, CPU energy 22–32 → 11–17 mJ per frame. Loops found: TTYD 17 in `main`, 5 in `sdk`, 8 in `subsdk0`; Wonder's `main` 175, Breath of the Wild's 308, Tears of the Kingdom's 843. In Tears of the Kingdom, 701 of them are one inlined atomic decrement (a compare-and-swap retried after another thread changed the count), which yields only on a second retry in a row. The x18 scan now decodes in blocks without details, so the rewrite takes less time than before even with the search: TTYD `main` 20.5 → 11.7 s of CPU, Tears of the Kingdom's 101.5 → 64.2 s, Monster Hunter Rise's 507 → 342 s.
+- **Waits block instead of polling:** the in-process audio renderer, upload batches, `nvnQueueFinish`. A signalled event wakes only the threads waiting on it; leaving an SVC takes the global lock only while a pause (IL2CPP's garbage collector) is pending.
+- **Real-time policy.** The thread that acquires the window texture declares a Mach time-constraint policy, which tells the performance controller the frame deadline. `DM_RT=0` leaves it on its QoS, for measuring.
+- **Frame-step probes.** A game that waits out a longer hold (`nvn_fstep.h`, 30 fps after late frames) gets parked on the efficiency cores even though the declared period stays at 60 fps. Tears of the Kingdom on an iPhone ran 6% on performance cores at 1.6 GHz, thermal 0, where its frames never fit 60 again. While under 30% of the process's CPU time runs on performance cores, in two windows of 30 presents in a row (thermal state nominal or fair, Low Power Mode off), the frame step therefore tries 60 again after its hold-off even when the cost does not fit. The first 30 frames of such a probe may be late, so the controller has time to raise the clock. A probe whose run at 60 then ends within 8 s counts as failed, so the next one waits twice as long (1 → 8 s). The GPU clock follows the hold too: Breath of the Wild on an iPhone went from 14.4 to about 25 ms of GPU time a frame at 30 fps with the same 4,900 draws, its CPU still on the performance cores, and never tried 60 again. A GPU time at the longer hold of at least 1.3 times its time at 60 fps that alone does not fit 60 (`nvn_fstep_gpu_slowed`; the reference is not updated during a probe) also allows probes, under the same gates. A hitch starts probes too. A step up after 8 s or more at 60 fps keeps what that run's frames cost (frames on time only), and a cost at the longer hold of at most 1.1 times it means the scene costs what it did (`nvn_fstep_same`; measured, so no thermal gate). The fit trial alone did not bring such a game back: the iPhone lowers its GPU clock until the work fills most of the frame, so a GPU-bound game's cost sits near the fit line (0.85 of a vsync) at either hold. Breath of the Wild, stepped up by pipeline compiles after a cutscene, took 12.8–15.2 ms of GPU time a frame at 30 fps (p50), where 60 had held for minutes, and stayed at 30 for 36 and 46 s until the player switched out and back (the same 4,900 draws took 5.8 ms right after a trip to the background and 13.5 ms half a minute later). A run under 8 s keeps no cost, so a device that steps up every few seconds stays at 30 rather than flap. Log: `frame step: hold 2 → 1 … (probe, CPU N% on performance cores)`, `(probe, GPU 1.70× its time at hold 1)` or `(probe, cost 1.04× the cost that held hold 1)`, `the probe held / failed`, and on a step up `hold 1 held at 0.86`. `DM_TEST_PRESENT_LAG=1,10;1200,30,3` imitates such a hitch on the Mac.
+- **Thread classes.** Every guest thread runs at QoS user-interactive, whatever its Switch priority. `DM_QOS_MAP=1` (off by default, for a phone A/B) maps priority ≤ 44 to user-interactive, 45–59 to user-initiated and the rest to utility (`DM_QOS_EDGES=44,59` moves the edges). `SetThreadPriority` moves a thread's class too, and a thread waiting on a lock lends its class to the owner until the lock is handed over. Host helper threads then set their own class (audio notify, silent sink and vsync user-interactive, movie decode user-initiated) instead of inheriting it from the guest thread that made them.
+- **Replay CPU.** Memory-pool addresses are cached per thread; per-encoder draw state is sent only when it changes; texture IDs of GPU-only textures stay cached when the game writes other memory; upload staging blocks are reused (Breath of the Wild used to allocate, make resident and free a 32 MB block for each re-upload of a small CPU-written texture, about 3 GB/s) and the residency set is committed only when it changed.
+- **Vertex bindings.** Normal and transform-feedback draws reuse resolved stream addresses until the guest address or memory-pool generation changes. The vertex argument table skips unchanged addresses, including slot 30's zero buffer; converted streams and shader-argument writes update the same table cache. `DM_NVN_VBUF_CACHE=0` restores repeated lookups and table writes for an A/B run. Every 300 frames, `vertex bindings` reports per-frame lookups/reuse and table writes/skips (the table counts include vertex shader arguments). Compare the existing submit CPU/instruction and onscreen interval logs as well: fewer binding calls alone do not establish a frame-rate gain. `make -C dm/gfx/tests GAME=<id> t_vbuf` builds the GPU-readback regression; run it with `MTL_DEBUG_LAYER=1`, both with the cache enabled and with `DM_NVN_VBUF_CACHE=0`.
+- **GPU.** An inline uniform update inside a render pass no longer ends the pass (Metroid Dread ended about 246 passes a frame this way, each one storing and reloading its attachments): the update lands when the pass ends, and the draws after it read a copy of the updated data (`DM_NVN_UB_DEFER=0` restores the old behaviour). When the update covers only part of what a draw's shader reads of the block, the rest of the copy comes from memory and the other inline updates queued in the submission, unless a copy, fill, storage write or an earlier submission still running may have written it (`DM_NVN_UB_PARTIAL=0` ends the pass instead; `DM_NVN_UBP_CHECK=1` checks every such copy against the GPU's memory). Attachment loads and stores per frame on the Mac, old → new: Fire Emblem Engage's battles about 1,850 → 360 MB (88 → 38 passes), Tears of the Kingdom 1,100 → 700 MB, Link's Awakening and 13 Sentinels about 15% less, Super Mario 3D World 5%; Breath of the Wild 386 → 158 passes; Mario Wonder and Metroid Dread unchanged (their updates already covered what the draws read). Clears with no draw after them no longer open a pass of their own when the game sets other targets: the next pass that attaches the same target clears it as its load action (`DM_NVN_LAZY_CLEAR=0` restores the old behaviour). A format-changing texture copy that covers the whole destination level does not load it first. `DM_NVN_BARRIER=game` lets a pass's vertex work overlap the previous pass ([04](agents/04-graphics.md) section 7); it is off by default, as the games issue their own barriers before most passes anyway.
+
+## Game notes
+
+Each game's notes are in its profile folder, `dm/games/<id>/README.md`: what the profile needs and why, what was found on the game, Mac routes and open items. The [games table](../dm/games/README.md#games) lists them.
+
+## Tools (`dm/tools`)
+
+| Tool | What it does |
+|---|---|
+| `nx_extract/` | NSP → ExeFS / RomFS / icon with LibHac, merging an update over the base game (C#, `dotnet build`). `--manifest` writes ExeFS and a RomFS file list only, for surveys |
+| `nso_fnmap.py` | Carries offsets from one build to another (function matching with addresses masked; globals via their references) |
+| `nso2elf.py` | Converts NSO to ELF for Ghidra / REA |
+| `insn_census.py` | Counts the instruction sites the rewriter must handle |
+| `nso_code.py` | Function ranges from `.eh_frame` and the data blocks in a text segment, which the rewriter and the census leave out |
+| `nso_syms.py` | Compares the SDK import surface of two games, or of one game (`-` for the reference) with the host hooks |
+| `nro_collect.py` | The NRO modules a game registers in its NRRs, found as loose files, among an indexed archive's current files (`data.arc`) or by a scan, written out for the rewriter with `nro.tsv`; online SDKs are listed as refused |
+| `nvn_slots_got.py` | Builds the NVN fetch table and call sites (GOT-indirect loaders) |
+| `loader_census.py` | Which of the functions a name loader fetches (glad's GL loader over `eglGetProcAddress`, NVN's C proc loader) the code really calls: the GOT slots or globals the loader stores, loaded by other code (followed through registers, relocated GOT entries and `csel`, for LÖVE's glad) |

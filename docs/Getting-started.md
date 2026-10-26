@@ -1,12 +1,12 @@
 # Getting started with LumaDock
 
-LumaDock runs on Apple Silicon Macs with macOS 26 or later. Preparing games requires the full Xcode app and Apple's Metal compiler component. The nxnative engine is external and must be obtained by the player; generic runtime dependencies are bundled.
+LumaDock runs on Apple Silicon Macs with macOS 26 or later. Preparing games requires the full Xcode app and Apple's Metal compiler component. nxnative, its reader and translator, and runtime dependencies are bundled.
 
 See the [complete environment and repair guide](Environment.md) for every dependency, installation method, and live verification. Python is bundled; a separate system Python installation is not required.
 
 1. Open the DMG and drag **LumaDock.app** into **Applications**. The current community build uses ad-hoc signing and is not notarized. Verify the release source and `SHA256SUMS` before opening it through the procedure offered in macOS Privacy & Security.
 2. Open LumaDock. The setup assistant checks hardware, macOS, Xcode, Metal, bundled tools, and free space. **Get Xcode on the App Store** opens Apple's listing. Open Xcode once to accept its license and complete initial setup. Return to LumaDock, choose the correct Developer directory if necessary, and check again. Install Metal through the app if it is missing.
-3. In the environment step, choose the nxnative source root containing `dm` and `scripts`. LumaDock has no engine download action. Click **Prepare engine tools**; the initial build requires the [.NET 10 SDK for macOS Arm64](https://dotnet.microsoft.com/en-us/download/dotnet/10.0) and may restore NuGet dependencies. Reader outputs and adapted source snapshots stay in the private app cache. Your original directory is never modified. After preparation, check again.
+3. Click **Prepare engine tools** to copy the included source snapshot and compiled reader into the private cache. Packaged apps need no separate nxnative download, .NET SDK or NuGet restore. Check again after preparation.
 4. Choose an empty folder for your managed library. External drives are supported; keep the drive connected during preparation and play. Large games can require tens of gigabytes for source copies and build caches.
 5. Import your own **prod.keys**. Keys are stored privately on this Mac and excluded from diagnostics. Format is checked locally; decryption is verified while reading a game.
 6. Add authorized **NSP, XCI, NSZ or XCZ** base, update, and DLC files, or scan their folder. NSP and XCI are read directly by nxnative. NSZ/XCZ inputs are automatically decompressed to temporary NSP/XCI files with your library key, then imported without opening File conversion. The app matches content metadata rather than filenames and copies files into your library. Missing versions appear in game details.

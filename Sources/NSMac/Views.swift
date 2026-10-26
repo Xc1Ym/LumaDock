@@ -334,7 +334,7 @@ struct SettingsView: View {
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
     @State private var showPassed=false
-    private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","外部引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
+    private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","内置引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
     var body: some View {
         let passed=store.checks.filter(\.ok)
         VStack(alignment:.leading,spacing:18) {
@@ -394,7 +394,7 @@ struct EnvironmentCheckRow: View {
                 if let location=check.location {
                     DisclosureGroup(L("组件位置")) {
                         VStack(alignment:.leading,spacing:4) {
-                            Text(L(check.group == "engine" ? "外部引擎或其私有工具缓存的当前位置。" : "随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
+                            Text(L(check.group == "engine" ? "内置引擎或其私有工具缓存的当前位置。" : "随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
                             Text(location).font(.caption.monospaced()).textSelection(.enabled)
                         }.padding(.top,4)
                     }.font(.caption)
@@ -481,7 +481,7 @@ struct EnvironmentSetupView: View {
             DisclosureGroup(L("安装其他环境")) {
                 VStack(alignment:.leading,spacing:10) {
                     Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。")).font(.callout).foregroundStyle(.secondary)
-                    Text(L("Python、Python 扩展、.NET 运行时、SPIRV-Cross 和 Zstandard 随应用提供。nxnative 及其读取器、翻译器不内置；首次准备引擎工具还需要 .NET 10 SDK，安装方法见环境说明。")).font(.caption).foregroundStyle(.secondary)
+                    Text(L("Python、Python 扩展、.NET 运行时、SPIRV-Cross、Zstandard 与 nxnative 随应用提供。首次准备工具无需单独下载引擎或安装 .NET SDK。")).font(.caption).foregroundStyle(.secondary)
                 }
             }
             TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).textFieldStyle(.roundedBorder)
@@ -498,12 +498,10 @@ struct EngineSettingsView: View {
     @EnvironmentObject var store:Store
     var body:some View {
         VStack(alignment:.leading,spacing:10) {
-            Text(L("外部 nxnative 引擎")).font(.headline)
-            Text(L("应用不附带或下载 nxnative。请自行下载并解压完整源码，再选择包含 dm 和 scripts 的根目录。原目录保持不变，构建使用私有副本。")).font(.caption).foregroundStyle(.secondary)
-            LabeledContent(L("nxnative 目录"),value:(store.preferences.engineDir ?? "").isEmpty ? L("未选择") : store.preferences.engineDir!).textSelection(.enabled)
+            Text(L("内置 nxnative 引擎")).font(.headline)
+            Text(L("引擎随应用提供，无需单独下载。Switch Pro、Xbox 与 PS 手柄自动识别，无需配置按键映射。引擎更新随新版应用发布。")).font(.caption).foregroundStyle(.secondary)
             HStack {
-                Button(L("选择 nxnative 目录…"),action:store.chooseEngine).disabled(!store.canManageToolchain)
-                Button(L("准备引擎工具"),action:store.prepareEngine).disabled(!store.canManageToolchain || (store.preferences.engineDir ?? "").isEmpty)
+                Button(L("准备引擎工具"),action:store.prepareEngine).disabled(!store.canManageToolchain)
             }
             if let task=store.tasks.first(where:{$0.id==store.executionTask && $0.operation=="prepareEngine"}) {
                 VStack(alignment:.leading) {Text(L(task.stage ?? "准备引擎工具")).font(.caption);TaskProgressView(task:task)}

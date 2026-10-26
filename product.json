@@ -6,5 +6,5 @@
   "executable": "NSMac",
   "bundleIdentifier": "org.nsmac.launcher",
   "minimumSystemVersion": "26.0",
-  "engineMode": "external"
+  "engineMode": "bundled"
 }

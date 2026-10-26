@@ -11,15 +11,28 @@ def macho(p):
 
 def audit(root):
     files=[]
+    sys.path.insert(0,str(ROOT/'Worker'))
+    from bundled_engine import verify_bundle
+    engine_roots=list(root.glob('**/Resources/Engine/nxnative'))
+    for engine_root in engine_roots:
+        verify_bundle(engine_root)
+        reader_root=engine_root.parent/'reader'
+        if reader_root.exists():
+            record=json.loads((reader_root/'manifest.json').read_text())
+            actual={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in reader_root.iterdir() if p.is_file() and p.name!='manifest.json'}
+            if not actual or actual!=record.get('files') or any(p.is_dir() or p.is_symlink() for p in reader_root.iterdir()):raise RuntimeError('Bundled reader integrity check failed')
     banned={'.nsp','.xci','.nsz','.xcz','.ipa','.keys','.metallib','.patched.bin'}
     for p in root.rglob('*'):
         if not p.is_file():continue
         rel=p.relative_to(root)
+        if any(p.is_relative_to(engine_root) for engine_root in engine_roots):
+            files.append({'path':str(rel),'size':p.stat().st_size});continue
+        reader = any(p.parent == engine_root.parent/'reader' for engine_root in engine_roots)
         converter=next((index for index,part in enumerate(rel.parts) if part=='converter' and index>0 and rel.parts[index-1]=='Runtime'),None)
         if (any(part.lower() in ('nsc_builder','nsz') for part in rel.parts) or p.name in ('squirrel.py','nsz')) and converter is None:
             raise RuntimeError('Conversion code outside the bundled runtime: '+str(rel))
         if p.name=='keys.txt':raise RuntimeError('Player keys in distribution: '+str(rel))
-        if any(part.lower() in ('vendor','nxnative','nx_extract','dmsh_xlate_bin') for part in rel.parts) or p.name in ('nx_extract.dll','dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','LibHac.dll'):
+        if not reader and (any(part.lower() in ('vendor','nxnative','nx_extract','dmsh_xlate_bin') for part in rel.parts) or p.name in ('nx_extract.dll','dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','LibHac.dll')):
             raise RuntimeError('Bundled external engine in distribution: '+str(rel))
         if p.suffix.lower() in banned or p.name in ('prod.keys','catalog.json','preferences.json','control.nacp','romfs_manifest.tsv') or any(x in rel.parts for x in ('romfs','RomFS','ExeFS','save','saves','backups','pso_user','shader','extract')):
             raise RuntimeError('Private data in distribution: '+str(rel))
@@ -93,6 +106,9 @@ def main():
         ignore=shutil.ignore_patterns('__pycache__','*.pyc','.git','gen','bin','obj','dmhost')
         shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
         shutil.copytree(ROOT/'work/Runtime',resources/'Runtime',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+        shutil.copytree(ROOT/'Engine/nxnative',resources/'Engine/nxnative')
+        if not (ROOT/'work/EngineReader/manifest.json').is_file(): raise RuntimeError('Run scripts/bundle_engine.py first.')
+        shutil.copytree(ROOT/'work/EngineReader',resources/'Engine/reader')
         shutil.copytree(ROOT/'docs',resources/'docs',ignore=shutil.ignore_patterns('screenshots'))
         shutil.copytree(pathlib.Path(result)/'NSMac_NSMac.bundle',resources/'NSMac_NSMac.bundle')
         for language,display in [('en','LumaDock'),('zh-Hans','璃游 LumaDock')]:
@@ -103,7 +119,12 @@ def main():
         for name in ('LICENSE','README.md','README.zh-CN.md','product.json'):shutil.copy2(ROOT/name,resources/name)
         # Sign every nested native executable/library before sealing the outer app.
         native=[p for p in app.rglob('*') if p.is_file() and not p.is_symlink() and macho(p)]
-        for p in sorted(native,key=lambda p:len(p.parts),reverse=True):run(['codesign','--force','--sign','-',p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        for p in sorted(native,key=lambda p:len(p.parts),reverse=True):
+            # Keep the pinned engine and reader hashes stable. Their .NET apphosts
+            # already carry valid ad-hoc signatures from the upstream/SDK build.
+            if p.is_relative_to(resources/'Engine'):
+                run(['codesign','--verify','--strict',p])
+            else: run(['codesign','--force','--sign','-',p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         # Python's framework launcher is itself a nested application.
         for p in sorted(app.rglob('*.app'),key=lambda p:len(p.parts),reverse=True):run(['codesign','--force','--sign','-',p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         run(['codesign','--force','--sign','-',app],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

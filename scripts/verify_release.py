@@ -52,6 +52,18 @@ def verify_source(path):
             assert archive.getinfo(name).file_size < 100*1024*1024, f'File exceeds GitHub size limit: {name}'
         for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaDock.ico'):
             assert PRODUCT['name']+'/'+required in names, f'Missing source file: {required}'
+        engine_prefix=PRODUCT['name']+'/Engine/nxnative/'
+        if any(name.startswith(engine_prefix) for name in names):
+            import sys
+            sys.path.insert(0,str(ROOT/'Worker'))
+            from bundled_engine import verify_bundle
+            with tempfile.TemporaryDirectory(prefix='source-engine-verify-') as directory:
+                engine_root=Path(directory)
+                for name in names:
+                    if name.startswith(engine_prefix) and not name.endswith('/'):
+                        dest=engine_root/name[len(engine_prefix):]
+                        dest.parent.mkdir(parents=True,exist_ok=True);dest.write_bytes(archive.read(name))
+                verify_bundle(engine_root)
 
 
 def verify_dmg(path):
@@ -117,7 +129,14 @@ assert lz4.block.decompress(lz4.block.compress(b'portable'))==b'portable'
 assert next(capstone.Cs(capstone.CS_ARCH_ARM64,capstone.CS_MODE_ARM).disasm(bytes.fromhex('1f2003d5'),0)).mnemonic=='nop'
 ok,dotnet=probe(c,[c.runtime/'bin/dotnet','--list-runtimes'])
 assert ok and str(c.runtime/'dotnet/shared/Microsoft.NETCore.App') in dotnet,dotnet
-assert c.engine is None
+assert c.engine == resources/'Engine/nxnative'
+from engine import inspect_source, prepare
+info=inspect_source(c);assert info['nativeControllers']
+# The packaged reader must prepare offline without an installed SDK.
+import contextlib,io
+with contextlib.redirect_stdout(io.StringIO()):
+ prepared=prepare(c)
+assert prepared['fingerprint']==info['fingerprint']
 assert not (resources/'Vendor').exists()
 assert not (c.runtime/'nx_extract').exists()
 for name,args in [('spirv-cross',['--revision']),('zstd',['--version'])]:
@@ -131,7 +150,7 @@ print(json.dumps(dict(python=sys.version.split()[0],paths=paths,dotnet=dotnet)))
         assert all(str(moved) in path for path in report['paths'])
         assert str(moved) in report['dotnet']
         verify_converter(resources,Path(directory)/'converter-check')
-    print(f'Verified runtime relocation: {count} native files, relative symlinks, Python/extensions, .NET and generic conversion tools; no bundled engine')
+    print(f'Verified runtime relocation: {count} native files, Python/extensions, .NET, conversion tools and bundled nxnative/reader')
 
 
 def verify_converter(resources, private):

@@ -93,7 +93,10 @@ class Context:
         atomic(self.jobpath, self.job)
         self.resource = Path(request.get('resources', Path(__file__).resolve().parents[1])).resolve()
         selected = request.get('engineDir', '').strip()
-        self.engine = Path(selected).expanduser().resolve() if selected else None
+        bundled = self.resource/'Engine/nxnative'
+        # The shipped engine is authoritative, including for old preferences that
+        # still point to an external checkout. Source-only fixtures may opt out.
+        self.engine = bundled if bundled.exists() else Path(selected).expanduser().resolve() if selected else None
         self.runtime = self.resource / 'Runtime'
         if not self.runtime.exists() and (self.resource/'work/Runtime/versions.json').is_file():
             self.runtime = self.resource/'work/Runtime'

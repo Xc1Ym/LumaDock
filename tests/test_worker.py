@@ -8,6 +8,7 @@ class WorkerTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(dir=ROOT/'work');self.root=Path(self.tmp.name)
         self.ctx=Context({'schema':1,'taskId':'test','operation':'setup','privateRoot':str(self.root/'private'),'resources':str(ROOT),'engineDir':str(make_engine(self.root/'External 引擎')),'library':str(self.root/'中文 空格 游戏库')})
+        self.ctx.engine=Path(self.ctx.r['engineDir'])
         with contextlib.redirect_stdout(io.StringIO()):library.setup(self.ctx)
     def tearDown(self):self.tmp.cleanup()
     def quiet(self,fn,*args):

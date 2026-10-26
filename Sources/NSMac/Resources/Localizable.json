@@ -3150,5 +3150,77 @@
   {
     "source": "仅处理托管副本；原始文件、存档和上次成功的运行版本保留。其他游戏仍在引用的共享文件会保留。",
     "en": "Only managed copies are affected. Original files, saves, and the last successful runtime version are kept. Shared files referenced by other games are kept."
+  },
+  {
+    "source": "nxnative 随应用内置。组件缺失或校验失败时，请重新安装完整璃游；游戏构建使用私有副本。",
+    "en": "nxnative is bundled with the app. Reinstall the complete app if components are missing or invalid; games build from private snapshots."
+  },
+  {
+    "source": "点击“准备引擎工具”，将内置引擎与读取器复制到私有缓存。源码开发时首次编译读取器需要 .NET 10 SDK。",
+    "en": "Choose Prepare engine tools to copy the bundled engine and reader into a private cache. Building the reader from source requires the .NET 10 SDK."
+  },
+  {
+    "source": "验证 nxnative",
+    "en": "Verify nxnative"
+  },
+  {
+    "source": "内置读取器与引擎版本不匹配，请重新安装完整璃游。",
+    "en": "The bundled reader and engine versions do not match. Reinstall the complete LumaDock app."
+  },
+  {
+    "source": "准备引擎读取工具",
+    "en": "Prepare engine reader"
+  },
+  {
+    "source": "内置读取器校验失败，请重新安装完整璃游。",
+    "en": "The bundled reader failed verification. Reinstall the complete LumaDock app."
+  },
+  {
+    "source": "已验证 nxnative 组件及构建接口",
+    "en": "nxnative components and build interfaces verified"
+  },
+  {
+    "source": "引擎读取工具已就绪",
+    "en": "Engine reader ready"
+  },
+  {
+    "source": "请先准备引擎工具",
+    "en": "Prepare the engine tools first"
+  },
+  {
+    "source": "检查引擎翻译器与源码是否一致",
+    "en": "Check the engine translator against its source"
+  },
+  {
+    "source": "引擎工具已就绪。",
+    "en": "Engine tools are ready."
+  },
+  {
+    "source": "内置引擎",
+    "en": "Bundled engine"
+  },
+  {
+    "source": "内置引擎或其私有工具缓存的当前位置。",
+    "en": "Current location of the bundled engine or its private tool cache."
+  },
+  {
+    "source": "内置 nxnative 引擎",
+    "en": "Bundled nxnative engine"
+  },
+  {
+    "source": "引擎随应用提供，无需单独下载。Switch Pro、Xbox 与 PS 手柄自动识别，无需配置按键映射。引擎更新随新版应用发布。",
+    "en": "The engine is included. Switch Pro, Xbox and PS controllers are detected automatically without manual bindings. Engine updates ship with new app versions."
+  },
+  {
+    "source": "原生手柄：Switch Pro A / Xbox A / PS 叉键 → 游戏 A，无需配置。",
+    "en": "Native controllers: Switch Pro A / Xbox A / PS cross → game A, with no configuration."
+  },
+  {
+    "source": "Python、Python 扩展、.NET 运行时、SPIRV-Cross、Zstandard 与 nxnative 随应用提供。首次准备工具无需单独下载引擎或安装 .NET SDK。",
+    "en": "Python, extensions, .NET runtime, SPIRV-Cross, Zstandard and nxnative are included. Initial tool preparation needs no separate engine download or .NET SDK."
+  },
+  {
+    "source": "当前引擎未声明 DM_INPUT_CONFIG 支持。自定义映射仅保存，键鼠使用引擎默认操作；原生手柄自动识别不受影响。",
+    "en": "This engine does not declare DM_INPUT_CONFIG support. Custom bindings are saved only; keyboard and mouse use engine defaults. Automatic native controller support is independent."
   }
 ]

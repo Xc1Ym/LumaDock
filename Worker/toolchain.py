@@ -125,10 +125,10 @@ def inspect_environment(c):
     info = None
     try:
         info = inspect_source(c)
-        message = '已验证外部 nxnative 目录及构建接口'
+        message = '已验证 nxnative 组件及构建接口'
     except Failure as error:
         message = str(error)
-    add('外部 nxnative', info is not None, message, HELP, 'chooseEngine', 'engine', location=c.engine)
+    add('nxnative', info is not None, message, HELP, 'reinstall', 'engine', location=c.engine)
     sdk, sdk_version = find_sdk(c)
     add('.NET 10 SDK', sdk is not None, sdk_version or '尚未检测到 .NET 10 SDK', SDK_HELP, '', 'engine', [], location=sdk)
     reader = None
@@ -138,7 +138,7 @@ def inspect_environment(c):
         nx_ok = reader is not None and 'usage: nx_extract <prod.keys>' in output
     except (Failure, OSError, ValueError):
         nx_ok=False; output=''
-    add('NSP 读取组件', nx_ok, '外部引擎读取工具已就绪' if nx_ok else '请先准备外部引擎工具', TOOLS_HELP, 'prepareEngine', 'engine', detail=output, location=reader)
+    add('NSP 读取组件', nx_ok, '引擎读取工具已就绪' if nx_ok else '请先准备引擎工具', TOOLS_HELP, 'prepareEngine', 'engine', detail=output, location=reader)
     xlate = c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate' if info else None
     ok, output = probe(c, [xlate, '--source-sha']) if xlate else (False,'')
     try:
@@ -146,7 +146,7 @@ def inspect_environment(c):
         ok = ok and output == expected and all((xlate.parent/n).is_file() for n in ('dmsh_xlate.dll','Ryujinx.Graphics.Shader.dll','Ryujinx.Common.dll'))
     except OSError:
         ok = False
-    add('着色器翻译组件', ok, '检查外部引擎翻译器与所选源码是否一致', HELP, 'chooseEngine', 'engine', detail=output, location=xlate)
+    add('着色器翻译组件', ok, '检查引擎翻译器与源码是否一致', HELP, 'reinstall', 'engine', detail=output, location=xlate)
     ok, output = probe(c, [runtime/'bin/spirv-cross', '--revision'])
     add('SPIRV-Cross', ok and bool(output), output if ok else '着色器转换组件不可用', repair, 'reinstall', 'bundled', detail=output, location=runtime/'bin/spirv-cross')
     ok, output = probe(c, [runtime/'bin/zstd', '--version'])

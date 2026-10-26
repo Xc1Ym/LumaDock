@@ -167,9 +167,6 @@ struct GameDetail: View {
                 }
             }
             Text(game.id).font(.caption.monospaced()).foregroundStyle(.secondary)
-            if game.compatibility=="startup" {Text(L("已验证启动；完整游戏流程仍需玩家验证。")).font(.caption).foregroundStyle(.secondary)}
-            if game.compatibility=="experimental" {Text(L("已有引擎配置，尚未完成 Mac 实机验收。")).font(.caption).foregroundStyle(.secondary)}
-            if game.preparationMode=="derived" {Text(L("将按导入版本生成独立配置与着色器；可玩性仍需验证。")).font(.caption).foregroundStyle(.orange)}
             if game.needsPreparation==true {Text(L("新增内容或引擎更新尚未准备；启动将使用上次成功版本。")).font(.caption).foregroundStyle(.orange)}
             GameLanguagePicker(gameId:game.id)
             Text(L("下次启动生效，无需重新准备。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
@@ -179,23 +176,30 @@ struct GameDetail: View {
             }
             Button {store.enqueue(game)} label:{Label(game.ready==true ? L("重新检查并准备") : L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable)
             Button {store.generateIPA(game)} label:{Label(L("生成 IPA…"),systemImage:"iphone.and.arrow.forward").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable || store.executionBusy || !store.queue.isEmpty)
-            Text(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。")).font(.caption).foregroundStyle(.secondary)
+                .help(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。"))
             Button {store.inputGame=game;store.editingInput=true} label:{Label(L("键鼠与手柄映射"),systemImage:"keyboard").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large)
             Divider()
-                VStack(alignment:.leading,spacing:12) {
+                VStack(alignment:.leading,spacing:8) {
                     if !(game.missing ?? []).isEmpty {
                         Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
                         ForEach(game.missing ?? [],id:\.self){Text(L($0)).font(.caption)}
                         Text(L("当前 nxnative 配置要求指定版本及着色器素材；这与 DLC 或本体是否完整无关。")).font(.caption).foregroundStyle(.secondary)
                         Divider()
                     }
-                    Text(L("导入内容")).font(.headline)
+                    Text(L("导入内容")).font(.subheadline.bold())
                     ForEach(game.packages){package in
-                        VStack(alignment:.leading,spacing:4){
-                            HStack{Text(package.kindName);Spacer();Text(package.display.isEmpty ? "v\(package.version)" : package.display)}
-                            Text(package.titleId).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            Text(ByteCountFormatter.string(fromByteCount:package.size,countStyle:.file)).font(.caption).foregroundStyle(.secondary)
-                        }.padding(10).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:10))
+                        VStack(alignment:.leading,spacing:3){
+                            HStack(spacing:8){
+                                Text(package.kindName).font(.subheadline.weight(.medium))
+                                Spacer(minLength:8)
+                                Text(package.display.isEmpty ? "v\(package.version)" : package.display).font(.caption.monospacedDigit())
+                            }
+                            HStack(spacing:8){
+                                Text(package.titleId).font(.caption2.monospaced()).textSelection(.enabled)
+                                Spacer(minLength:8)
+                                Text(ByteCountFormatter.string(fromByteCount:package.size,countStyle:.file)).font(.caption2).fixedSize()
+                            }.foregroundStyle(.secondary)
+                        }.padding(.horizontal,10).padding(.vertical,7).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
                 .id(Localization.language)
@@ -329,19 +333,36 @@ struct SettingsView: View {
 }
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
+    @State private var showPassed=false
     private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","外部引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
     var body: some View {
+        let passed=store.checks.filter(\.ok)
         VStack(alignment:.leading,spacing:18) {
-            ForEach(groups,id:\.0) { group,title in
-                let checks=store.checks.filter{($0.group ?? "system")==group}
-                if !checks.isEmpty {
-                    VStack(alignment:.leading,spacing:12) {
-                        Text(L(title)).font(.headline)
-                        ForEach(checks) { check in EnvironmentCheckRow(check:check) }
-                    }
+            checkGroups(store.checks.filter{!$0.ok})
+            if !passed.isEmpty {
+                DisclosureGroup(isExpanded:$showPassed) {
+                    VStack(alignment:.leading,spacing:18) {checkGroups(passed)}.padding(.top,8)
+                } label: {
+                    Label(L("已通过的检查（\(passed.count) 项）"),systemImage:"checkmark.circle.fill")
+                        .font(.callout).foregroundStyle(.teal)
                 }
             }
         }.id(Localization.language)
+            .onChange(of:store.checkingEnvironment) {_,checking in if checking {showPassed=false}}
+    }
+    @ViewBuilder private func checkGroups(_ checks:[ToolCheck])->some View {
+        ForEach(groups,id:\.0) { group,title in
+            let items=checks.filter {
+                let key=$0.group ?? "system"
+                return (groups.contains(where:{$0.0==key}) ? key : "system")==group
+            }
+            if !items.isEmpty {
+                VStack(alignment:.leading,spacing:12) {
+                    Text(L(title)).font(.headline)
+                    ForEach(items) {check in EnvironmentCheckRow(check:check)}
+                }
+            }
+        }
     }
 }
 struct EnvironmentCheckRow: View {
@@ -599,9 +620,9 @@ struct GameLanguagePicker: View {
     var body: some View {
         if gameId == nil { picker }
         else {
-            VStack(alignment:.leading,spacing:6) {
-                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary)
-                picker.labelsHidden().frame(maxWidth:.infinity)
+            HStack(spacing:10) {
+                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary).fixedSize()
+                picker.labelsHidden().frame(minWidth:0,maxWidth:.infinity)
             }
         }
     }

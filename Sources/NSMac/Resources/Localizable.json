@@ -3222,5 +3222,121 @@
   {
     "source": "当前引擎未声明 DM_INPUT_CONFIG 支持。自定义映射仅保存，键鼠使用引擎默认操作；原生手柄自动识别不受影响。",
     "en": "This engine does not declare DM_INPUT_CONFIG support. Custom bindings are saved only; keyboard and mouse use engine defaults. Automatic native controller support is independent."
+  },
+  {
+    "source": "游戏引擎在运行时崩溃。",
+    "en": "The game engine crashed during execution."
+  },
+  {
+    "source": "保留游戏版本、崩溃位置和日志，核对该版本的引擎修复后重试；无需重新导入游戏或删除存档。",
+    "en": "Keep the game version, crash location and log. Check engine fixes for this build before retrying; there is no need to reimport the game or delete saves."
+  },
+  {
+    "source": "进行中 {0}",
+    "en": "Active {0}"
+  },
+  {
+    "source": "等待中 {0}",
+    "en": "Queued {0}"
+  },
+  {
+    "source": "等待队列",
+    "en": "Queue"
+  },
+  {
+    "source": "历史任务",
+    "en": "Task history"
+  },
+  {
+    "source": "任务详情",
+    "en": "Task details"
+  },
+  {
+    "source": "阶段与构建信息",
+    "en": "Stages and build information"
+  },
+  {
+    "source": "处理记录",
+    "en": "Processing record"
+  },
+  {
+    "source": "按你的习惯，准备下一次启动。",
+    "en": "Make your next launch feel at home."
+  },
+  {
+    "source": "语言说明",
+    "en": "Language details"
+  },
+  {
+    "source": "存储与导入说明",
+    "en": "Storage and import details"
+  },
+  {
+    "source": "环境详情与工具",
+    "en": "Environment details and tools"
+  },
+  {
+    "source": "{0} 项检查待处理",
+    "en": "Checks needing attention: {0}"
+  },
+  {
+    "source": "Xcode 与 Metal 工具",
+    "en": "Xcode and Metal tools"
+  },
+  {
+    "source": "转换、压缩与合并，在一处完成。",
+    "en": "Convert, compress and merge in one place."
+  },
+  {
+    "source": "待转换文件",
+    "en": "Files to convert"
+  },
+  {
+    "source": "输出位置与说明",
+    "en": "Output location and details"
+  },
+  {
+    "source": "最近转换",
+    "en": "Recent conversion"
+  },
+  {
+    "source": "转换密钥已就绪",
+    "en": "Conversion keys ready"
+  },
+  {
+    "source": "当前转换工具未就绪，请展开检查。",
+    "en": "Conversion tools are not ready. Expand to check."
+  },
+  {
+    "source": "原生手柄自动识别",
+    "en": "Native controllers detected automatically"
+  },
+  {
+    "source": "输入行为说明",
+    "en": "Input behavior"
+  },
+  {
+    "source": "{0} 个版本",
+    "en": "{0} versions"
+  },
+  {
+    "source": "构建信息",
+    "en": "Build information"
+  },
+  {
+    "source": "诊断详情",
+    "en": "Diagnostic details"
+  },
+  {
+    "source": "更多工具",
+    "en": "More tools"
+  },
+  {
+    "source": "引擎与高级设置",
+    "en": "Engine and advanced settings"
+  },
+  {
+    "source": "环境检查详情",
+    "en": "Environment check details"
   }
 ]

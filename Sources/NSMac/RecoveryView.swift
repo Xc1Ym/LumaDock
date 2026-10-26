@@ -75,14 +75,9 @@ struct GameRecoveryView: View {
 
     var body: some View {
         VStack(alignment:.leading,spacing:16) {
-            HStack {
-                VStack(alignment:.leading) {
-                    Text(L("存档与运行版本")).font(.title2.bold())
-                    Text(game.name).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(L("刷新"),action:reload).disabled(loading || busy)
-                Button(L("关闭")) { dismiss() }.keyboardShortcut(.cancelAction)
+            WorkspaceHeading(title:"存档与运行版本",subtitle:game.name,symbol:"clock.arrow.circlepath") {
+                Button(L("刷新"),action:reload).disabled(loading || busy).buttonStyle(.glass)
+                Button(L("关闭")) { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(.glass)
             }
             if let notice = store.notice { Text(L(notice)).font(.callout).foregroundStyle(.secondary) }
             if let task = store.activeTasks.first(where: { $0.gameId == game.id && ["backupSave","restoreSave","activateRelease"].contains($0.operation) }) {
@@ -91,48 +86,61 @@ struct GameRecoveryView: View {
             }
             if busy { Text(L("请先结束游戏及准备任务，再管理存档和运行版本。")).font(.caption).foregroundStyle(.secondary) }
             ScrollView {
-                VStack(alignment:.leading,spacing:18) {
-                    HStack {
-                        Text(L("存档备份")).font(.headline)
-                        Spacer()
-                        Button(L("立即备份")) { store.performRecovery("backupSave",game:game,completion:reload) }.disabled(busy || loading)
-                    }
-                    if loading { ProgressView().progressViewStyle(.linear) }
-                    if let report {
-                        if report.backups.isEmpty { Text(L("尚无存档备份。")).foregroundStyle(.secondary) }
-                        ForEach(report.backups) { backup in
+                GlassEffectContainer(spacing:16) {
+                    VStack(alignment:.leading,spacing:16) {
+                        GlassPanel {
                             HStack {
-                                VStack(alignment:.leading,spacing:4) {
-                                    Text(Date(timeIntervalSince1970:backup.created),style:.date)
-                                    Text(Date(timeIntervalSince1970:backup.created),style:.time).font(.caption)
-                                    Text(backup.reasonName).font(.caption).foregroundStyle(.secondary)
-                                    Text(ByteCountFormatter.string(fromByteCount:backup.size,countStyle:.file)).font(.caption)
-                                }
+                                Label(L("存档备份"),systemImage:"externaldrive.badge.timemachine").font(.headline)
                                 Spacer()
-                                Button(L("恢复此备份…")) { restore = backup }.disabled(busy || loading)
-                            }.padding(12).contentCard(12)
-                        }
-                        Divider()
-                        Text(L("运行版本")).font(.headline)
-                        Text(L("切换运行版本前会自动备份存档。切换不会自动恢复旧存档；旧版本可能无法读取新版本存档。")).font(.caption).foregroundStyle(.secondary)
-                        if report.releases.isEmpty { Text(L("尚无已准备的运行版本。")).foregroundStyle(.secondary) }
-                        ForEach(report.releases) { release in
-                            HStack {
-                                VStack(alignment:.leading,spacing:4) {
-                                    Text(release.version.isEmpty ? L("版本待识别") : release.version).font(.headline)
-                                    Text(Date(timeIntervalSince1970:release.created),style:.date).font(.caption)
-                                    Text(Date(timeIntervalSince1970:release.created),style:.time).font(.caption)
-                                    Text(L("引擎标识：") + String(release.engine.prefix(16))).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                Button(L("立即备份")) { store.performRecovery("backupSave",game:game,completion:reload) }
+                                    .buttonStyle(.glassProminent).disabled(busy || loading)
+                            }
+                            if loading { ProgressView().progressViewStyle(.linear) }
+                            if let report {
+                                if report.backups.isEmpty {
+                                    Text(L("尚无存档备份。")).font(.callout).foregroundStyle(.secondary).frame(maxWidth:.infinity,minHeight:90)
                                 }
-                                Spacer()
-                                if release.current { Label(L("当前运行版本"),systemImage:"checkmark.circle.fill").foregroundStyle(.teal) }
-                                else { Button(L("切换到此版本…")) { activate = release }.disabled(busy || loading) }
-                            }.padding(12).contentCard(12)
+                                ForEach(report.backups) { backup in
+                                    HStack(spacing:12) {
+                                        Image(systemName:"archivebox").foregroundStyle(WorkspacePalette.accent)
+                                        VStack(alignment:.leading,spacing:4) {
+                                            Text(Date(timeIntervalSince1970:backup.created).formatted(date:.abbreviated,time:.shortened)).font(.callout.weight(.medium))
+                                            Text(backup.reasonName + " · " + ByteCountFormatter.string(fromByteCount:backup.size,countStyle:.file)).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        Button(L("恢复此备份…")) { restore = backup }.controlSize(.small).disabled(busy || loading)
+                                    }.padding(12).contentCard(12)
+                                }
+                            }
                         }
-                    }
+                        GlassPanel {
+                            CompactDisclosure(title:"运行版本",subtitle:report.map{"\($0.releases.count) 个版本"} ?? "",symbol:"shippingbox") {
+                                Text(L("切换运行版本前会自动备份存档。切换不会自动恢复旧存档；旧版本可能无法读取新版本存档。")).font(.caption).foregroundStyle(.secondary)
+                                if let report {
+                                    if report.releases.isEmpty { Text(L("尚无已准备的运行版本。")).font(.callout).foregroundStyle(.secondary) }
+                                    ForEach(report.releases) { release in
+                                        VStack(alignment:.leading,spacing:8) {
+                                            HStack {
+                                                VStack(alignment:.leading,spacing:4) {
+                                                    Text(release.version.isEmpty ? L("版本待识别") : release.version).font(.callout.weight(.medium))
+                                                    Text(Date(timeIntervalSince1970:release.created).formatted(date:.abbreviated,time:.shortened)).font(.caption).foregroundStyle(.secondary)
+                                                }
+                                                Spacer()
+                                                if release.current { StatusPill(title:"当前运行版本") }
+                                                else { Button(L("切换到此版本…")) { activate = release }.controlSize(.small).disabled(busy || loading) }
+                                            }
+                                            CompactDisclosure(title:"构建信息",symbol:"hammer") {
+                                                Text(L("引擎标识：") + release.engine).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                                            }
+                                        }.padding(12).contentCard(12)
+                                    }
+                                }
+                            }
+                        }
+                    }.padding(2)
                 }
             }
-        }.padding(24).frame(width:650,height:640)
+        }.padding(24).frame(width:720,height:620).background(LibraryBackdrop()).tint(WorkspacePalette.accent)
         .onAppear { store.notice = nil; reload() }
         .onChange(of:store.preferences.libraryId) { _,_ in dismiss() }
         .alert(L("恢复所选存档？"),isPresented:Binding(get:{restore != nil},set:{if !$0 {restore = nil}})) {

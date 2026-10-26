@@ -692,14 +692,6 @@
     "en": "Continue setup"
   },
   {
-    "source": "已验证启动；完整游戏流程仍需玩家验证。",
-    "en": "Startup tested. Full gameplay still needs player testing."
-  },
-  {
-    "source": "已有引擎配置，尚未完成 Mac 实机验收。",
-    "en": "An engine profile exists; Mac hardware testing is still pending."
-  },
-  {
     "source": "新增内容或引擎更新尚未准备；启动将使用上次成功版本。",
     "en": "New content or engine updates are not prepared yet. Launch uses the last successful version."
   },
@@ -1698,6 +1690,10 @@
   {
     "source": "Mac 与图形",
     "en": "Mac and graphics"
+  },
+  {
+    "source": "已通过的检查（{0} 项）",
+    "en": "Passed checks ({0})"
   },
   {
     "source": "应用内置组件",
@@ -2958,10 +2954,6 @@
   {
     "source": "版本配置与着色器产物不一致，请重新准备游戏。",
     "en": "The version profile and shader outputs do not match. Prepare the game again."
-  },
-  {
-    "source": "将按导入版本生成独立配置与着色器；可玩性仍需验证。",
-    "en": "A separate profile and shaders will be generated for the imported version. Gameplay still needs validation."
   },
   {
     "source": "找不到着色器转换工具 spirv-cross。",

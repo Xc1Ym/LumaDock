@@ -622,18 +622,22 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
             ImageDeclaration declaration = context.Images[texOp.GetTextureSetAndBinding()];
             SpvInstruction image = declaration.Image;
 
-            bool bounded = context.HostCapabilities.Msl23ImageAtomics;
+            bool bounded = context.HostCapabilities.MetalImageAtomics;
+            // CAS is a native texture compare-exchange on Metal (SPIRV-Cross loops
+            // atomic_compare_exchange_weak into a strong one), so it takes the same guard.
             if (bounded && ((texOp.Flags & TextureFlags.AtomicBoundsMask) != 0 ||
-                !texOp.Flags.HasFlag(TextureFlags.AtomicDiscardResult)))
+                texOp.Flags.HasFlag(TextureFlags.AtomicPredicateResult)))
             {
-                throw new NotSupportedException("MSL 2.3 image atomics require IGN with a discarded result; TRAP/returning semantics are not implemented.");
+                throw new NotSupportedException("Metal image atomics require IGN without a predicate result; TRAP semantics are not implemented.");
             }
+            // Metal's texture atomics (MSL 3.1) cover buffer, 2D, 2D-array and 3D textures of
+            // R32Uint / R32Sint; source 1D surfaces arrive here already normalized to 2D.
             if (bounded && (declaration.IsIndexed ||
                 (texOp.Type != SamplerType.TextureBuffer && texOp.Type != SamplerType.Texture2D &&
-                 texOp.Type != (SamplerType.Texture2D | SamplerType.Array)) ||
+                 texOp.Type != (SamplerType.Texture2D | SamplerType.Array) && texOp.Type != SamplerType.Texture3D) ||
                 (texOp.Format != TextureFormat.R32Uint && texOp.Format != TextureFormat.R32Sint)))
             {
-                throw new NotSupportedException("MSL 2.3 bounded image atomics support non-indexed 32-bit buffer/2D/2D-array images only.");
+                throw new NotSupportedException("Metal image atomics support non-indexed 32-bit buffer/2D/2D-array/3D images only.");
             }
 
             SpvInstruction resultType = context.GetType(componentType);
@@ -673,6 +677,8 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
             SpvInstruction value = Src(componentType);
 
             SpvInstruction merge = null;
+            SpvInstruction valid = null;
+            SpvInstruction invalid = null;
             if (bounded)
             {
                 // Test each original coordinate, including the array layer, before
@@ -691,10 +697,11 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
                     inside = context.All(boolType, inside);
                 }
 
-                SpvInstruction valid = context.Label();
+                valid = context.Label();
                 merge = context.Label();
+                invalid = texOp.Flags.HasFlag(TextureFlags.AtomicDiscardResult) ? merge : context.Label();
                 context.SelectionMerge(merge, SelectionControlMask.MaskNone);
-                context.BranchConditional(inside, valid, merge);
+                context.BranchConditional(inside, valid, invalid);
                 context.AddLabel(valid);
 
 
@@ -726,10 +733,21 @@ namespace Ryujinx.Graphics.Shader.CodeGen.Spirv
             if (bounded)
             {
                 context.Branch(merge);
-                context.AddLabel(merge);
-                // The source instruction discards this result. This constant is
-                // IR plumbing, not an invented OOB return value for SUATOM.
-                result = context.Constant(resultType, 0);
+                if (texOp.Flags.HasFlag(TextureFlags.AtomicDiscardResult))
+                {
+                    context.AddLabel(merge);
+                    result = context.Constant(resultType, 0);
+                }
+                else
+                {
+                    // IGN image atomics leave memory alone and return zero outside
+                    // the image (ARB_shader_image_load_store, issue 30). Inside it,
+                    // return the actual old texel, as Unreal's particle counters need.
+                    context.AddLabel(invalid);
+                    context.Branch(merge);
+                    context.AddLabel(merge);
+                    result = context.Phi(resultType, result, valid, context.Constant(resultType, 0), invalid);
+                }
             }
             return new OperationResult(componentType, result);
         }

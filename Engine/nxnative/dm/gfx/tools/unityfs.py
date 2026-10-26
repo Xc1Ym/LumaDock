@@ -9,6 +9,7 @@
 #     8 bytes {offset, length}. A subprogram = version, program type, stats, keywords, program code bytes, ...
 #     From Unity 2021.2 (subprogram version 202012090) the local keyword list is gone; Unity 2022 also keeps each program's parameters in the blob as entries of their own (the parsed form's
 #     m_ParameterBlobIndices), and the code entries are the m_BlobIndex of m_PlayerSubPrograms (Ace Attorney Investigations Collection, Unity 2022.3.17f1)
+#   · TextAsset (class 49): name and bytes (text_assets), for games that keep whole GLSLC outputs of their own in one (FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition, Unity 2018.4)
 #   The pre-2019.3 layouts were found by armyja on Cuphead (Unity 2017.4.9f1, serialized format 17), GitHub pull request #2
 # Only depends on lz4 (the same package shader_split uses for NSOs)
 import lzma, struct
@@ -150,6 +151,11 @@ PPtr<Shader>: int m_FileID; SInt64 m_PathID
 PPtr<Texture>: int m_FileID; SInt64 m_PathID
 Shader: string m_Name; SerializedShader m_ParsedForm; vector<data:unsigned int> platforms; vector<data:vector<data:unsigned int>> offsets; vector<data:vector<data:unsigned int>> compressedLengths; vector<data:vector<data:unsigned int>> decompressedLengths; vector<data:UInt8> compressedBlob; vector<data:unsigned int> stageCounts; vector<data:PPtr<Shader>> m_Dependencies; map<data:pair(string,PPtr<Texture>)>~ m_NonModifiableTextures; bool! m_ShaderIsBaked
 '''
+# Unity 6000.0.28f1 (Donkey Kong Country Returns HD) strips every tree and ships no bundles. Its Shader hash is the one BALL x PIT's 6000.0.62f1 bundles carry:
+# the 2022.3 layout without the pass's editor hashes / platforms, with a final asset GUID. Checked against that bundle's nodes, order and alignment flags,
+# and all 214 stripped Shader objects read to their exact ends. Keep the older layout intact: its pass headers still contain those two arrays.
+SHADER_6000_0 = SHADER_2022_3.replace('vector<data:Hash128> m_EditorDataHash; vector<data:UInt8> m_Platforms; ', '').replace(
+    'bool! m_ShaderIsBaked\n', 'bool! m_ShaderIsBaked; GUID m_AssetGUID\n') + 'GUID: unsigned int data[0]; unsigned int data[1]; unsigned int data[2]; unsigned int data[3]\n'
 # The Unity 2020.3 Shader (Patrick's Parabox, Unity 2020.3.30f1: only Data/*.assets, its shaders the built-in ones in Data/Resources) matches the type tree in Fire Emblem Engage's bundles
 # (Unity 2020.3.18f1), whose hash is the same: global and local keyword indices per subprogram, every subprogram in m_SubPrograms, no parameter blobs, keyword names or stage counts
 SHADER_2020_3 = _SHADER_COMMON + '''SerializedSubProgram: unsigned int m_BlobIndex; ParserBindChannels m_Channels; vector<data:UInt16> m_GlobalKeywordIndices; vector<data:UInt16> m_LocalKeywordIndices; SInt8 m_ShaderHardwareTier; SInt8! m_GpuProgramType; SerializedProgramParameters m_Parameters; int m_ShaderRequirements
@@ -205,11 +211,23 @@ ComputeShaderCB: string name; int byteSize; vector<data:ComputeShaderParam> para
 ComputeShaderPlatformVariant: int targetRenderer; int targetLevel; vector<data:ComputeShaderKernelParent> kernels; vector<data:ComputeShaderCB> constantBuffers; bool! resourcesResolved
 ComputeShader: string m_Name; vector<data:ComputeShaderPlatformVariant> variants
 '''
+# Unity 2019.4.27f1's release tree (AssetRipper TypeTreeDumps, StructsDump/release/2019.4.27f1.dump): kernels hold code directly, without keyword variants or requirements.
+# Pokemon Brilliant Diamond's stripped built-ins use this hash; their GPU skinning dispatch needs these kernels. Checked against the dump's nodes and alignment flags.
+COMPUTE_2019_4 = '''ComputeShaderResource: string name; string generatedName; int bindPoint; int samplerBindPoint; int texDimension
+ComputeShaderBuiltinSampler: unsigned int sampler; int bindPoint
+ComputeShaderKernel: string name; vector<data:ComputeShaderResource> cbs; vector<data:ComputeShaderResource> textures; vector<data:ComputeShaderBuiltinSampler> builtinSamplers; vector<data:ComputeShaderResource> inBuffers; vector<data:ComputeShaderResource> outBuffers; vector<data:UInt8> code; staticvector<data:unsigned int>~ threadGroupSize
+ComputeShaderParam: string name; int type; int offset; int arraySize; int rowCount; int colCount
+ComputeShaderCB: string name; int byteSize; vector<data:ComputeShaderParam> params
+ComputeShaderVariant: int targetRenderer; int targetLevel; vector<data:ComputeShaderKernel> kernels; vector<data:ComputeShaderCB> constantBuffers; bool! resourcesResolved
+ComputeShader: string m_Name; vector<data:ComputeShaderVariant> variants
+'''
 CLASS_COMPUTE_SHADER = 72
 KNOWN_TREES = {(CLASS_SHADER, bytes.fromhex('ea424a5fc1e48db62144df956f9e1005')): ('Shader', SHADER_2022_3),
+               (CLASS_SHADER, bytes.fromhex('2ec7223dce3af4232b14ae1441bd7999')): ('Shader', SHADER_6000_0),
                (CLASS_SHADER, bytes.fromhex('a30e3dcf6c6d25153d6f64e5e41caf4e')): ('Shader', SHADER_2020_3),
                (CLASS_SHADER, bytes.fromhex('8db760073e1392061e4a36995f0735af')): ('Shader', SHADER_2018_3),
-               (CLASS_COMPUTE_SHADER, bytes.fromhex('bfdf63ab0ce84d5a2c765ee560d90fe7')): ('ComputeShader', COMPUTE_2022_3)}
+               (CLASS_COMPUTE_SHADER, bytes.fromhex('bfdf63ab0ce84d5a2c765ee560d90fe7')): ('ComputeShader', COMPUTE_2022_3),
+               (CLASS_COMPUTE_SHADER, bytes.fromhex('1a95529ac2eb1a97cd9d2a4356bd722f')): ('ComputeShader', COMPUTE_2019_4)}
 
 def _split_top(s, sep):   # s split at sep outside <> and ()
     out, depth, cur = [], 0, ''
@@ -235,7 +253,7 @@ def tree_from_layout(root, layout):
             a = Node('Array', 'Array', -1, arr_align); a.kids = [Node('int', 'size', 4, 0), el]; return a
         if t == 'string':
             n = Node('string', name, -1, flags); n.kids = [array(Node('char', 'data', 1, 0))]
-        elif t.startswith(('vector<', 'map<')):
+        elif t.startswith(('vector<', 'map<', 'staticvector<')):
             kind, inner = t[:-1].split('<', 1); el_name, el_type = inner.split(':', 1)
             n = Node(kind, name, -1, flags); n.kids = [array(node(el_type, el_name))]
         elif t.startswith('pair('):
@@ -256,6 +274,36 @@ def known_tree(cid, h):
 def serialized_objects(d, common, want=None, trees=None):
     """serialized file → yields (class ID, path ID, object dict); want = only decode these class IDs.
     trees = {(class ID, type hash): type tree}: files with type trees record theirs, files without (the game's own data.unity3d and so on) borrow one of the same class and hash -- the same hash means the same layout"""
+    le, doff, tlist, objs = _tables(d, common, want, trees)
+    for pid, start, size, ti in objs:
+        cid, h, root = tlist[ti]
+        if want and cid not in want: continue
+        if root is None: raise NoTree(f'class {cid} (type hash {h.hex()}) has no type tree available')
+        o = Reader(d, le); o.d = d[doff + start:doff + start + size]
+        yield cid, pid, _read(o, root)
+
+CLASS_TEXT_ASSET = 49
+
+def text_assets(d, common):
+    """serialized file → yields (path ID, name, script bytes) of its TextAsset objects (class 49). The object starts with the same two fields in every Unity version these tools read
+    (m_Name, then m_Script: an aligned string each), so it is read without a type tree, also from files that carry none"""
+    le, doff, tlist, objs = _tables(d, common, {CLASS_TEXT_ASSET}, None)
+    for pid, start, size, ti in objs:
+        if tlist[ti][0] != CLASS_TEXT_ASSET: continue
+        r = Reader(d, le); r.d = d[doff + start:doff + start + size]
+        if len(r.d) < 8: continue
+        ln = r.u('i')
+        # A TextAsset is m_Name then m_Script, two aligned strings. The first 4 bytes are the name's length (already read), so the name must leave 4 more
+        # for the script's length field after it: the -8 is those two 4-byte length fields. Anything else is not this layout, so leave it out.
+        if not 0 <= ln <= len(r.d) - 8: continue
+        name = r.d[r.p:r.p + ln].decode('utf-8', 'replace'); r.p += ln; r.align()
+        if r.p + 4 > len(r.d): continue   # the name's padding left no room for the script's length
+        ln = r.u('i')
+        if not 0 <= ln <= len(r.d) - r.p: continue
+        yield pid, name, r.d[r.p:r.p + ln]
+
+def _tables(d, common, want, trees):
+    """serialized file → (little-endian, data offset, [(class ID, type hash, type tree or None)], [(path ID, start, size, type index)]): its type table and object table"""
     msz, fsz, ver, doff = struct.unpack_from('>IIII', d, 0)
     if not 17 <= ver <= 22: raise ValueError(f'serialized file format {ver} is not supported')
     p = 16; le = d[p] == 0; p += 4
@@ -289,12 +337,7 @@ def serialized_objects(d, common, want=None, trees=None):
     for _ in range(r.u('i')):
         r.align(); pid = r.u('q'); start = r.u('q') if ver >= 22 else r.u('I'); size = r.u('I'); ti = r.u('i')
         objs.append((pid, start, size, ti))
-    for pid, start, size, ti in objs:
-        cid, h, root = tlist[ti]
-        if want and cid not in want: continue
-        if root is None: raise NoTree(f'class {cid} (type hash {h.hex()}) has no type tree available')
-        o = Reader(d, le); o.d = d[doff + start:doff + start + size]
-        yield cid, pid, _read(o, root)
+    return le, doff, tlist, objs
 
 def is_serialized(d):
     """does it look like a serialized file (big-endian header: format 17..22; from 22 the sizes follow +0x14)"""

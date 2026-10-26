@@ -10,6 +10,7 @@ Update 1.0.1 (v65536) over the base game. PlatinumGames' engine, SDK 6.4.0, NVN,
 | `sys_resource 0x0` | `game.tsv` | the NPDM declares no system resource; no virtual address memory |
 | `pad_layout full` | `game.tsv` | movement and camera use both sticks |
 | `fps_target 60` | `game.tsv`, [`patches.py`](patches.py) | host-paced gameplay with fractional timer carry, integer input windows and camera smoothing; only the verified 1.0.1 main build |
+| `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode, so the pipeline bases made before it runs (the NSP script's Mac prebuild, and a [pipeline archive made offline](../../../docs/development.md#the-pipeline-archive-made-offline) for the iPhone when one is built with `DM_PSO_GPUS`) take its vertex shaders' `main0_z` entries (the host itself follows the mode the game sets) |
 
 ## Files and shaders
 

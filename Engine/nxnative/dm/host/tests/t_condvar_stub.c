@@ -4,7 +4,10 @@ struct dm_flags g_flag;
 uint64_t g_t0_ns;
 void crash_thread_init(void) {}
 void guest_thread_init(void) {}
+// The notification scheduler test supplies a C entry for real thread SVCs.
+#ifndef DM_TEST_THREAD_ENTER
 void dm_thread_enter(uint64_t entry, uint64_t arg, uint64_t sp) { (void)entry; (void)arg; (void)sp; abort(); }
+#endif
 void *guest_sym(const char *name) { (void)name; return NULL; }
 module_t *module_of(const void *p) { (void)p; return NULL; }
 #include <mach/mach_time.h>

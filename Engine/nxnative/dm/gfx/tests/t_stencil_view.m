@@ -34,6 +34,7 @@ int main(void) { @autoreleasepool {
         tex_t sb = s, d = s; sb.serial++; sb.stencil = 1; d.serial += 2;   // sb: the same storage built in stencil mode; d: the copy's destination
         mtl_tex_init(&s); mtl_tex_init(&sb); mtl_tex_init(&d);
         id<MTLTexture> base = tex_mtl(&s), dst = tex_mtl(&d);
+        mtl_drain();   // finish production initialization before the fixture writes on its independent classic queue
         CHECK(base && base.pixelFormat == MTLPixelFormatDepth32Float_Stencil8, "the depth-stencil texture is Depth32Float_Stencil8");
         CHECK(base.usage & MTLTextureUsagePixelFormatView, "a depth-stencil texture is made with the format-view usage");
         if (!base || !dst) continue;

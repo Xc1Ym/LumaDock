@@ -398,6 +398,26 @@ namespace Ryujinx.Graphics.Shader.Translation
             return new SetBindingPair(setIndex, binding);
         }
 
+        // nxnative: the types other instructions gave the texture whose handle word is at the given offset of constant buffer cbufSlot (whatever sampler it was paired with),
+        // for BindlessElimination.TryTableHandle; arrays of handles are left out
+        public List<SamplerType> GetTextureTypes(int cbufSlot, int textureOffset, bool isImage)
+        {
+            List<SamplerType> types = new();
+
+            foreach ((TextureInfo info, TextureMeta meta) in isImage ? _usedImages : _usedTextures)
+            {
+                (int offset, _, _) = TextureHandle.UnpackOffsets(info.Handle);
+                (int slot, _) = TextureHandle.UnpackSlots(info.CbufSlot, cbufSlot);
+
+                if (info.ArrayLength == 1 && meta.AccurateType && slot == cbufSlot && offset == textureOffset)
+                {
+                    types.Add(meta.Type);
+                }
+            }
+
+            return types;
+        }
+
         private static TextureMeta MergeTextureMeta(TextureMeta meta, TextureMeta existingMeta)
         {
             meta.Set = existingMeta.Set;

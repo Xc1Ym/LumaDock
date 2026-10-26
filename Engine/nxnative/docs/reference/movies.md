@@ -171,6 +171,14 @@ A decoder hands out as many outputs as it has slots, and while every slot is tak
 - **Fix:** VP9 packets are decoded with libvpx (`dm/third_party/libvpx`) on one host thread per decoder: guest threads run on the stacks the SDK gives them, too small for libvpx. Packets are decoded in arrival order from one queue.
 - **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md).
 
+### VP8 uses the same libvpx worker and output paths
+
+- **Symptom:** VP8 WebM movies play black; `movie::Decoder` is created with decoder type 2.
+- **Cause:** the host offered output slots for VP8 without decoding the packets, and its vendored libvpx included only the VP9 decoder.
+- **Fix:** the same libvpx revision now includes its VP8 decoder. Type 2 selects `vpx_codec_vp8_dx`, type 3 selects VP9; both use the existing worker, NV12 conversion and native RGBA output. VP8 keyframe dimensions come from its ten-byte uncompressed header. Only decoded pictures and end-of-stream packets make an output ready.
+- **Found on:** [Pokémon Brilliant Diamond](../../dm/games/0100000011D90000/README.md): logos and opening WebM movies. Decoding 3,182 packets over 106 seconds averaged about 1 ms per packet; making the picture visible also needed [zero initialization of depth textures](rendering.md#new-textures-start-as-zero).
+- **Check:** `t_movie_vpx` decodes synthetic VP8 and VP9 keyframes through the real decoder, checking NV12 and RGBA pixels and a truncated VP8 header.
+
 ### H.264 into an RGBA texture and AAC through AudioToolbox
 
 - H.264 (type 1) into the client's NVN texture (output 3 = RGBA, mode 2), with AAC 5.1 sound (type 4, PCM16). VideoToolbox decodes to BGRA for that mode (`mavc_set_rgba`), and AAC goes through AudioToolbox's converter with an MPEG-4 ES descriptor built from the AudioSpecificConfig in `csd-0` (as FFmpeg's AudioToolbox decoder does). Found on [Monster Hunter Rise](../../dm/games/0100B04011742000/README.md); its end-of-stream packets and decoder deletes are in [End-of-stream packets with no data, and deleted decoders](#end-of-stream-packets-with-no-data-and-deleted-decoders).

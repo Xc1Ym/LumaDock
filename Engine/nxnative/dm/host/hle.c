@@ -1,11 +1,9 @@
 // Import resolution (implemented ones go to the host, the rest go to named stubs) and host gate dispatch.
-#include "dm.h"
+#include "hle.h"
 #include <mach-o/getsect.h>
 #include <mach-o/ldsyms.h>
 #include <dlfcn.h>
 #include <time.h>
-
-typedef struct { const char *name; void *fn; } hle_ent;
 
 // ---------- Unimplemented imports: named stubs (the statically assembled stub table in entry.S, the k-th = movz x9,#k; b unimpl_entry) ----------
 #define MAX_STUB 4096                 // Matches the .rept count in entry.S
@@ -25,31 +23,66 @@ uint64_t unimpl_c(unsigned idx, uint64_t *regs) {
 // Per module, one cache of symbol number → resolved address
 static uint64_t g_cache[MAX_MOD][8192];
 
+// Name hash over the swhle section, built at the first lookup. Startup resolution is single-threaded;
+// runtime NRO relocation holds the loader's module write lock, so later lookups and stub insertions are serialized too.
+// resolve_import used to strcmp its way through the whole section for every import no module defines, and
+// hle_implements for every weak one: 270 entries (the HLE hooks and the libc / Vulkan / GL passthrough tables of
+// hle_table.c / hle_vk.m / hle_gl.m) per lookup. These were the last by-name linear scans of the loading phase
+// whose module symbol tables module_sym's hash already fixed (loader.c build_symhash, whose comment measured
+// that phase at 77-86 ms of the ① load before it)
+static uint32_t name_h(const char *s) { uint32_t h = 2166136261u; while (*s) h = (h ^ (uint8_t)*s++) * 16777619u; return h; }
+static unsigned *g_hle_idx, g_hle_mask; static const hle_ent *g_hle_sec;
+static const hle_ent *hle_find(const char *name) {
+    if (!g_hle_mask) {
+        unsigned long secsz;
+        g_hle_sec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swhle", &secsz);
+        unsigned n = g_hle_sec ? (unsigned)(secsz / sizeof *g_hle_sec) : 0;
+        unsigned cap = 16; while (cap < n * 2) cap <<= 1;
+        g_hle_idx = calloc(cap, sizeof *g_hle_idx); g_hle_mask = cap - 1;
+        for (unsigned i = 0; i < n; i++)   // the first entry of a duplicated name wins, as the linear scan did
+            for (unsigned j = name_h(g_hle_sec[i].name) & g_hle_mask;; j = (j + 1) & g_hle_mask) {
+                if (!g_hle_idx[j]) { g_hle_idx[j] = i + 1; break; }
+                if (!strcmp(g_hle_sec[g_hle_idx[j] - 1].name, g_hle_sec[i].name)) break;
+            }
+    }
+    if (!g_hle_sec) return NULL;
+    for (unsigned j = name_h(name) & g_hle_mask; g_hle_idx[j]; j = (j + 1) & g_hle_mask)
+        if (!strcmp(g_hle_sec[g_hle_idx[j] - 1].name, name)) return &g_hle_sec[g_hle_idx[j] - 1];
+    return NULL;
+}
+
 uint64_t resolve_import(module_t *m, const char *name) {
-    static const hle_ent *sec; static unsigned long secsz;
-    if (!sec) sec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swhle", &secsz);
-    for (unsigned i = 0; i < secsz / sizeof(hle_ent); i++)
-        if (!strcmp(sec[i].name, name)) {
-            if (g_flag.imports) { Dl_info di; dladdr(sec[i].fn, &di); LOG("import %s -> %s", name, di.dli_sname); }
-            void *hlecount_wrap(const char *, const char *, void *); return (uint64_t)hlecount_wrap("HLE", name, sec[i].fn);   // With DM_HLECOUNT it is a counting stub (including the libc passthrough table)
-        }
-    // Reuse the stub if one was already allocated for the same name
+    const hle_ent *e = hle_find(name);
+    if (e) {
+        if (g_flag.imports) { Dl_info di; dladdr(e->fn, &di); LOG("import %s -> %s", name, di.dli_sname); }
+        void *hlecount_wrap(const char *, const char *, void *); return (uint64_t)hlecount_wrap("HLE", name, e->fn);   // With DM_HLECOUNT it is a counting stub (including the libc passthrough table)
+    }
+    // Reuse the stub if one was already allocated for the same name (its own hash: the reuse scan over every stub was quadratic in the stub count)
     void *hlecount_wrap(const char *, const char *, void *);
-    for (unsigned k = 0; k < g_nstub; k++)
-        if (!strcmp(g_stub_name[k], name)) return (uint64_t)hlecount_wrap("STUB", name, (void *)&unimpl_stubs[k]);
+    static unsigned *stub_idx, stub_mask;
+    if (stub_idx)
+        for (unsigned j = name_h(name) & stub_mask; stub_idx[j]; j = (j + 1) & stub_mask)
+            if (!strcmp(g_stub_name[stub_idx[j] - 1], name)) return (uint64_t)hlecount_wrap("STUB", name, (void *)&unimpl_stubs[stub_idx[j] - 1]);
     if (g_nstub >= MAX_STUB) die("stub overflow");
     unsigned k = g_nstub++;
     g_stub_name[k] = name;
+    if (!stub_idx || (unsigned)g_nstub * 2 > stub_mask + 1) {   // the first stub, or past half full: (re)build at twice the size
+        unsigned cap = stub_idx ? (stub_mask + 1) * 2 : 512;
+        free(stub_idx); stub_idx = calloc(cap, sizeof *stub_idx); stub_mask = cap - 1;
+        for (unsigned i = 0; i < (unsigned)g_nstub; i++)
+            for (unsigned j = name_h(g_stub_name[i]) & stub_mask;; j = (j + 1) & stub_mask) {
+                if (!stub_idx[j]) { stub_idx[j] = i + 1; break; }
+                if (!strcmp(g_stub_name[stub_idx[j] - 1], g_stub_name[i])) break;   // a duplicated name: keep the lower index
+            }
+    } else
+        for (unsigned j = name_h(name) & stub_mask;; j = (j + 1) & stub_mask)
+            if (!stub_idx[j]) { stub_idx[j] = k + 1; break; }
     (void)m;
     return (uint64_t)hlecount_wrap("STUB", name, (void *)&unimpl_stubs[k]);
 }
 
 // The host implements this import (the swhle table), without allocating a stub for it
-int hle_implements(const char *name) {
-    unsigned long secsz; const hle_ent *sec = (const hle_ent *)getsectiondata(&_mh_execute_header, "__DATA", "swhle", &secsz);
-    for (unsigned i = 0; sec && i < secsz / sizeof(hle_ent); i++) if (!strcmp(sec[i].name, name)) return 1;
-    return 0;
-}
+int hle_implements(const char *name) { return hle_find(name) != NULL; }
 
 void stubs_report(void) { LOG("stubs=%u", g_nstub); }
 

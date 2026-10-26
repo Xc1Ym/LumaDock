@@ -37,3 +37,5 @@ sys_resource	0x0
 # ---- Shader split ----
 shader_groups	/sound/=sound /mv/=mv /miscTex/=misctex /movie/=movie /effect/=effect /Text/=text /ba/=ba /bg/=bg /bh/=bh /bv/=bv /core/=core /em/=em /es/=es /et/=et /event/=event /font/=font /it/=it /ph1/=ph1 /ph2/=ph2 /ph3/=ph3 /ph4/=ph4 /ph5/=ph5 /ph6/=ph6 /ph7/=ph7
 shader_note	ASTRAL CHAIN shaders
+# the NVN depth mode the game sets (nvnDeviceSetDepthMode near = 0): the pipeline archive made offline holds the main0_z vertex entries (dm/gfx/tools/pso_offline.py)
+depth_mode	zero

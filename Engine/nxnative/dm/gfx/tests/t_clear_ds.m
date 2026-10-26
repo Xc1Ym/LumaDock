@@ -26,6 +26,7 @@ int main(void) { @autoreleasepool {
         {0, {2,1,0,2}, 1, 255, "empty scissor writes nothing"},
         {0, {-1,-1,3,3}, 1, 15, "negative scissor origin is clamped"},
         {0, {0,0,8,8}, 1, 255, "full clear remains a load action"},
+        {0, {0,0,8,8}, 0, 0, "new texture initialization zeros both planes"},
     };
     for (unsigned i=0; i<sizeof cases/sizeof *cases; i++) {
         tex_t t = {.magic=MAGIC('T','E','X',0), .serial=99401+i};
@@ -49,7 +50,9 @@ int main(void) { @autoreleasepool {
         ops.head=(op_hdr){OP_CLEAR_DS, sizeof(op_hdr)+sizeof(p_clear_ds)};
         ops.clear=(p_clear_ds){.depth=.25, .depth_mask=cases[i].depth, .stencil=0x3c, .stencil_mask=cases[i].mask};
         ops.end=(op_hdr){OP_END,sizeof(op_hdr)};
-        mtl_exec((const uint8_t *)&ops); mtl_sub_commit(); mtl_drain();
+        int zero_init = i == sizeof cases/sizeof *cases - 1;
+        if (zero_init) tex_zero_fill(base); else mtl_exec((const uint8_t *)&ops);
+        mtl_sub_commit(); mtl_drain();
         CHECK(!mtl_last_commit_error(), "production clear completes without GPU error");
         id<MTLTexture> stencil = [base newTextureViewWithPixelFormat:MTLPixelFormatX32_Stencil8];
         id<MTLBuffer> result = [g_dev newBufferWithLength:64*8 options:MTLResourceStorageModeShared];
@@ -60,8 +63,8 @@ int main(void) { @autoreleasepool {
         uint32_t *pixels=result.contents; int valid=1;
         for (int y=0;y<8;y++) for (int x=0;x<8;x++) {
             p_scissor sc=cases[i].sc; int inside=x>=sc.x && x<sc.x+sc.w && y>=sc.y && y<sc.y+sc.h;
-            unsigned mask=inside?cases[i].mask:0, want_s=(0xa5&~mask)|(0x3c&mask);
-            uint32_t want_d=inside&&cases[i].depth?0x3e800000:0x3f400000;
+            unsigned mask=inside?cases[i].mask:0, want_s=zero_init?0:(0xa5&~mask)|(0x3c&mask);
+            uint32_t want_d=zero_init?0:inside&&cases[i].depth?0x3e800000:0x3f400000;
             valid &= pixels[2*(y*8+x)]==want_s && pixels[2*(y*8+x)+1]==want_d;
         }
         CHECK(valid,cases[i].label);

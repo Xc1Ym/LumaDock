@@ -34,7 +34,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     BindlessToArray.RunPass(context.Blocks[blkIndex], context.ResourceManager, context.GpuAccessor);
                 }
 
-                BindlessElimination.RunPass(context.Blocks[blkIndex], context.ResourceManager, context.GpuAccessor);
+                BindlessElimination.RunPass(context.Blocks[blkIndex], context.ResourceManager, context.GpuAccessor, deferSeveral: true);
 
                 // FragmentCoord only exists on fragment shaders, so we don't need to check other stages.
                 if (context.Stage == ShaderStage.Fragment)
@@ -47,6 +47,12 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                 {
                     DoubleToFloat.RunPass(context.Hfm, context.Blocks[blkIndex]);
                 }
+            }
+
+            // nxnative: the reads whose handle merges several c[2] handles, once every other read has registered its texture (BindlessElimination.TryTableHandle)
+            for (int blkIndex = 0; blkIndex < context.Blocks.Length; blkIndex++)
+            {
+                BindlessElimination.RunPass(context.Blocks[blkIndex], context.ResourceManager, context.GpuAccessor);
             }
 
             // Run optimizations one last time to remove any code that is now optimizable after above passes.

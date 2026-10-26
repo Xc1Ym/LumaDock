@@ -97,7 +97,7 @@ class XcodePipelineTests(unittest.TestCase):
                 self.assertEqual(mocks['split_shaders'].call_args.args[8], derived)
             else:
                 builder = mocks['build_vk_shaders' if graphics == 'vulkan' else 'build_gl_shaders']
-                self.assertEqual(builder.call_args.kwargs['reuse'], not derived)
+                self.assertTrue(builder.call_args.kwargs['reuse'])
             warnings = [event.get('msg', '') for event in events]
             self.assertEqual(any('this Xcode project uses' in message for message in warnings), derived)
             if derived:
@@ -163,6 +163,32 @@ class ResourceStagingTests(unittest.TestCase):
             environment.update(DM_COPY_GAME_RESOURCES='NO', PLATFORM_NAME='iphonesimulator')
             result = subprocess.run(['bash', str(REPO / 'dm/ios/tools/stage_resources.sh')], env=environment)
             self.assertEqual(result.returncode, 0)
+
+    def test_pipeline_archive(self):   # the archive made offline goes to <App>/pso when build_ipa.sh names one, and leaves when it no longer does
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            ios, romfs, shader, pso = root / 'xcode', root / 'romfs', root / 'shaders/b-fixture', root / 'pso'
+            for folder in (ios / 'Gen', romfs, shader, pso):
+                folder.mkdir(parents=True)
+            (ios / 'Gen/dm.xcconfig').touch(); (romfs / 'marker').write_text('game'); (shader / 'k_bp.metallib').write_text('lib')
+            (pso / 'prebuilt.tsv').write_text('chain\tfixture\n'); (pso / 'applegpu_g18p.mtl4a').write_text('archive')
+            chain_h = root / 'dmsh_chain.h'; chain_h.write_text('#define DMSH_CHAIN "fixture"\n')
+            app = root / 'products/DmIOS.app'
+            environment = dict(os.environ, SRCROOT=str(ios), TARGET_BUILD_DIR=str(app.parent), UNLOCALIZED_RESOURCES_FOLDER_PATH=app.name, PLATFORM_NAME='iphoneos')
+            def stage(*pso_arg):
+                with patch.object(sys, 'argv', ['gen_resources.py', str(ios), str(romfs), 'marker', str(shader), 'b-fixture', '', str(root / 'dd'), str(chain_h), *pso_arg]):
+                    gen_resources.main()
+                return subprocess.run(['bash', str(REPO / 'dm/ios/tools/stage_resources.sh')], env=environment, capture_output=True, text=True)
+            result = stage(str(pso))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((app / 'pso/applegpu_g18p.mtl4a').read_text(), 'archive')
+            self.assertTrue((app / 'msl/b-fixture/k_bp.metallib').exists())   # the pulling libraries the bases are made of
+            (pso / 'prebuilt.tsv').unlink()   # an archive folder without its stamp: stop before copying
+            self.assertNotEqual(stage(str(pso)).returncode, 0)
+            self.assertTrue((app / 'pso/applegpu_g18p.mtl4a').exists())
+            result = stage('')   # built without an archive (DM_PSO_GPUS=none)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((app / 'pso').exists())
 
 
 if __name__ == '__main__':

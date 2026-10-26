@@ -45,7 +45,63 @@ static void roundtrip(const char *tag, int target, int fmt, uint32_t w, uint32_t
     free(st);
 }
 
+// Compare both copy directions against byte addresses, independently of move()'s segment arithmetic.
+// Comparing all storage bytes and padded rows also checks that tails leave unrelated data untouched.
+static void differential(const nvn_texdesc *d, unsigned level, unsigned layer) {
+    uint32_t rb, rows, slices, bpb; uint64_t base; unsigned th, td;
+    int rc = nvn_deswizzle_geom(d, level, layer, &rb, &rows, &slices, &base, &th, &td, &bpb);
+    CHECK(!rc, "D geometry failed"); if (rc) return;
+    nvn_texlayout L; nvn_tex_layout(d, &L);
+    size_t pitch = rb + 1 + (rnd() & 31), nlin = pitch * rows * slices, nst = L.size + 32;
+    uint8_t *storage = malloc(nst), *expected = malloc(nst), *linear = malloc(nlin + 32), *out = malloc(nlin + 32);
+    for (size_t i = 0; i < nst; i++) storage[i] = rnd();
+    memset(linear, 0xAB, nlin + 32); memset(out, 0xAB, nlin + 32);
+    uint32_t lb = nvn_tex_level_gobs(d, level) * 64;
+    if (lb < rb) lb = rb;
+    for (uint32_t z = 0; z < slices; z++) for (uint32_t y = 0; y < rows; y++) for (uint32_t x = 0; x < rb; x++)
+        linear[((size_t)z * rows + y) * pitch + x] = storage[base + nvn_bl_offset(x, y, z, lb, rows, th, td)];
+    CHECK(!nvn_deswizzle(d, level, layer, storage, out, pitch) && !memcmp(linear, out, nlin + 32),
+          "D read differs target %d format %#x flags %#x mip %u layer %u", d->target, d->format, d->flags, level, layer);
+    for (size_t i = 0; i < nlin; i++) linear[i] = rnd();
+    memcpy(expected, storage, nst);
+    for (uint32_t z = 0; z < slices; z++) for (uint32_t y = 0; y < rows; y++) for (uint32_t x = 0; x < rb; x++)
+        expected[base + nvn_bl_offset(x, y, z, lb, rows, th, td)] = linear[((size_t)z * rows + y) * pitch + x];
+    CHECK(!nvn_swizzle(d, level, layer, linear, pitch, storage) && !memcmp(storage, expected, nst),
+          "D write differs target %d format %#x flags %#x mip %u layer %u", d->target, d->format, d->flags, level, layer);
+    CHECK(nvn_swizzle(d, level, layer, linear, rb - 1, storage) == -1 && !memcmp(storage, expected, nst),
+          "D short source pitch accepted");
+    CHECK(nvn_deswizzle(d, level, layer, storage, out, rb - 1) == -1,
+          "D short destination pitch accepted");
+    free(storage); free(expected); free(linear); free(out);
+}
+
+static void differential_shapes(void) {
+    static const int formats[] = {0x01, 0x0D, 0x19, 0x1D, 0x22, 0x25, 0x29, 0x2E, 0x42, 0x44, 0x82, 0x85};
+    static const int targets[] = {0, 1, 2, 3, 4, 7, 8, 9};
+    static const uint32_t widths[] = {1, 3, 7, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 129};
+    unsigned cases = 0;
+    for (unsigned i = 0; i < 256; i++) {
+        nvn_texdesc d = {0};
+        d.target = targets[i % 8]; d.format = formats[(i / 8) % 12];
+        d.width = widths[rnd() % 14]; d.height = 1 + rnd() % 65; d.depth = 1 + rnd() % 9; d.levels = 4;
+        if (d.target == 3) d.height = 3;
+        if (d.target == 9) d.depth = 12;
+        if ((i / 8) & 1) d.pkg_block_h = 1 + (rnd() % 4) + (d.target == 2 ? (rnd() % 3) * 16 : 0);
+        if ((i / 16) & 1) d.flags = 0x20;
+        nvn_texlayout L; nvn_tex_layout(&d, &L);
+        for (unsigned l = 0; l < d.levels; l++) {
+            differential(&d, l, L.layers - 1); cases++;
+        }
+    }
+    // Sparse levels wide enough for padded GOB columns, followed by their mip tails.
+    nvn_texdesc sparse = {1, 0x7D, 0x20, 0, 1024, 1024, 1, 5, 0, 0};
+    for (unsigned l = 0; l < sparse.levels; l++) { differential(&sparse, l, 0); cases++; }
+    printf("  D %u layouts: both directions equal byte-address oracle, including pitch padding and tails\n", cases);
+}
+
 int main(void) {
+    printf("D differential copy checks\n");
+    differential_shapes();
     printf("L linear render targets without the separate LINEAR flag\n");
     {
         // Persona 5 Royal asks for 16x16 RGBA8, flags 0x44, stride 128: 2 KB,

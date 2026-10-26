@@ -35,3 +35,5 @@ shader_groups	/=romfs
 shader_note	13 Sentinels: Aegis Rim (Asia) shaders
 # from the western 13 Sentinels profile: Vanillaware engine needs 64 KB aligned big allocations
 alloc_big_align	on
+# the NVN depth mode the game sets (nvnDeviceSetDepthMode near = 0): the pipeline archive made offline holds the main0_z vertex entries (dm/gfx/tools/pso_offline.py)
+depth_mode	zero

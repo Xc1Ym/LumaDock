@@ -28,38 +28,63 @@ class Nsz(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, self.tmp)
         self.base = self.tmp / 'Game [v0].nsz'; pfs0(self.base, [f'{APP:016x}0000000000000011.tik', 'a.ncz'])
         self.upd = self.tmp / 'Game [v65536].nsz'; pfs0(self.upd, [f'{APP | 0x800:016x}0000000000000011.tik', 'b.ncz'])
-        self.runs, self.fail = [], False
+        self.keys = self.tmp / 'custom keys' / 'console.keys'; self.keys.parent.mkdir(); self.keys.write_text('test keys\n')
+        self.runs, self.fail_conversion = [], False
         for cm in (mock.patch.object(nsp, 'PROG', mock.Mock()), mock.patch.object(nsp, 'say', lambda m: None), mock.patch.object(nsp, 'run', self.fake_nsz),
                    mock.patch.object(importlib.util, 'find_spec', lambda m, *a: object() if m == 'nsz' else None)):
             cm.__enter__(); self.addCleanup(cm.__exit__, None, None, None)
 
-    def fake_nsz(self, cmd, log, env=None, cwd=None, on_line=None):   # nsz -D --keys K -o OUT SRC: writes OUT/<stem>.nsp, or a partial one and a non-zero exit
+    def fake_nsz(self, cmd, log, env=None, cwd=None, on_line=None):   # nsz -D -o OUT SRC, with keys.txt available before import; or a partial output and a non-zero exit
         src, out = Path(cmd[-1]), Path(cmd[cmd.index('-o') + 1])
+        self.assertTrue(src.is_absolute())
+        self.assertTrue(out.is_absolute())
+        self.assertNotIn('--keys', cmd)   # nsz 4.6.1's argument parser rejects it
+        self.assertEqual(cmd[2], nsp.NSZ_MAIN)
+        self.assertEqual(Path(cwd), out)
+        staged = Path(cwd) / 'keys.txt'
+        self.assertTrue(staged.is_symlink())
+        self.assertEqual(staged.resolve(), self.keys.resolve())
+        self.assertEqual(staged.read_text(), 'test keys\n')
         self.runs.append(src.name)
-        (out / (src.stem + '.nsp')).write_bytes(b'partial' if self.fail else b'nsp of ' + src.name.encode())
-        if self.fail: raise nsp.BuildError('nsz exit code 1')
+        (out / (src.stem + nsp.COMPRESSED[src.suffix])).write_bytes(b'partial' if self.fail_conversion else b'nsp of ' + src.name.encode())
+        if self.fail_conversion: raise nsp.BuildError('nsz exit code 1')
 
     def test_scan_and_convert(self):
         app, fam = nsp.scan_nsps(self.tmp)
         self.assertEqual((app, fam['base'], fam['updates']), (APP, self.base, [(65536, self.upd)]))
-        fam = nsp.decompress_nsz(self.tmp, app, fam, self.tmp / 'prod.keys', {})
+        fam = nsp.decompress_nsz(self.tmp, app, fam, self.keys, {})
         out = self.tmp / f'{APP:016X}_build' / 'nsp'
         self.assertEqual((fam['base'], fam['updates']), (out / 'Game [v0].nsp', [(65536, out / 'Game [v65536].nsp')]))
         self.assertEqual(fam['base'].read_bytes(), b'nsp of Game [v0].nsz')
         self.assertFalse((out / 'partial').exists())
-        nsp.decompress_nsz(self.tmp, app, nsp.scan_nsps(self.tmp)[1], self.tmp / 'prod.keys', {})   # unchanged sources: reused
+        nsp.decompress_nsz(self.tmp, app, nsp.scan_nsps(self.tmp)[1], self.keys, {})   # unchanged sources: reused
         self.assertEqual(len(self.runs), 2)
         os.utime(self.upd, ns=(0, 0))   # a changed source: converted again
-        nsp.decompress_nsz(self.tmp, app, nsp.scan_nsps(self.tmp)[1], self.tmp / 'prod.keys', {})
+        nsp.decompress_nsz(self.tmp, app, nsp.scan_nsps(self.tmp)[1], self.keys, {})
         self.assertEqual(self.runs[2:], [self.upd.name])
 
+    def test_relative_paths(self):
+        previous_cwd = Path.cwd(); self.addCleanup(os.chdir, previous_cwd); os.chdir(self.tmp)
+        app, fam = nsp.scan_nsps(Path('.'))
+        fam = nsp.decompress_nsz(Path('.'), app, fam, self.keys.relative_to(self.tmp), {})
+        self.assertEqual(fam['base'].resolve(), (self.tmp / f'{APP:016X}_build/nsp/Game [v0].nsp').resolve())
+        self.assertFalse((fam['base'].parent / 'partial').exists())
+
+    def test_xcz_uses_the_selected_keys(self):
+        self.base.rename(self.base.with_suffix('.xcz')); self.upd.unlink()
+        app, fam = nsp.scan_nsps(self.tmp)
+        fam = nsp.decompress_nsz(self.tmp, app, fam, self.keys, {})
+        self.assertEqual(fam['base'].suffix, '.xci')
+        self.assertEqual(fam['base'].read_bytes(), b'nsp of Game [v0].xcz')
+        self.assertFalse((fam['base'].parent / 'partial').exists())
+
     def test_failed_conversion_is_not_kept(self):
-        app, fam = nsp.scan_nsps(self.tmp); self.fail = True
-        with self.assertRaises(nsp.BuildError): nsp.decompress_nsz(self.tmp, app, fam, self.tmp / 'prod.keys', {})
+        app, fam = nsp.scan_nsps(self.tmp); self.fail_conversion = True
+        with self.assertRaises(nsp.BuildError): nsp.decompress_nsz(self.tmp, app, fam, self.keys, {})
         out = self.tmp / f'{APP:016X}_build' / 'nsp'
         self.assertEqual(sorted(p.name for p in out.iterdir()), [])   # neither the partial file nor a key
-        self.fail = False
-        nsp.decompress_nsz(self.tmp, app, fam, self.tmp / 'prod.keys', {})
+        self.fail_conversion = False
+        nsp.decompress_nsz(self.tmp, app, fam, self.keys, {})
         self.assertEqual((out / 'Game [v0].nsp').read_bytes(), b'nsp of Game [v0].nsz')
 
     def test_an_nsp_beside_wins_and_nsps_need_no_nsz(self):

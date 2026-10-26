@@ -189,6 +189,7 @@ class GeometryOutputLayout(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('DMSH_TEST_XLATE'), 'set DMSH_TEST_XLATE to the offline translator')
 class PassthroughCompiler(unittest.TestCase):
     def test_passthrough_emits_positions_and_generic_attributes(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))   # a sibling module: the CI runs each test file from the repository root
         from test_dmsh_reflect import REFLECT
         root = Path(__file__).resolve().parents[3]
         table = (root / 'dm/third_party/ryujinx/src/Ryujinx.Graphics.Shader/Decoders/InstTable.cs').read_text()

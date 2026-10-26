@@ -57,6 +57,8 @@ The game builds Mii heads from the console's MiiModel system data, starting at b
 
 ## Found on this game
 
+- **Save-write failure isolation (resolved; host regression):** the separate device and account saves make this game a relevant two-save case. Failure state, recovery and commit synchronization now belong to each backing transaction: [Save-write failures stay with their backing transaction](../../../docs/reference/services.md#save-write-failures-stay-with-their-backing-transaction).
+
 General host changes first needed here; each applies to every game:
 
 - **The Mii database and the MiiModel stand-in** (`hle_mii.c`, `dm_mii_standin`, `MountSystemData`), **the add-on content cache sized as Horizon's RomFS working memory** (`romfs_work_size`), **device save data as a save of its own** for a game that mounts account save data too (`<DM_SAVE>_device`) and **SDK 4's DeviceSink** (`g_sink4`): [Mii database answered by the host](../../../docs/reference/services.md#mii-database-answered-by-the-host), [System data stand-in for the MiiModel archive](../../../docs/reference/services.md#system-data-stand-in-for-the-miimodel-archive), [Add-on content mount cache sized as RomFS working memory](../../../docs/reference/services.md#add-on-content-mount-cache-sized-as-romfs-working-memory), [Device and account save data as two saves](../../../docs/reference/services.md#device-and-account-save-data-as-two-saves), [SDK 4: DeviceSink is command 0xf of 0x130 bytes](../../../docs/reference/audio.md#sdk-4-devicesink-is-command-0xf-of-0x130-bytes).

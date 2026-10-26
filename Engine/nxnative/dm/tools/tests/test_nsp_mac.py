@@ -110,6 +110,27 @@ class Nvn(Base):
         (self.tmp / 'cb_extent.tsv').write_text(f'# chain b-{CHAIN} inputs bbbbbbbbbbbb 2026-10-23T00:00:00+00:00\n')
         self.assertEqual(self.build(True), self.sh / 'cache'); self.assertEqual([Path(c[1]).name for c, _ in self.ran], ['cb_extent.py'])
 
+    def test_split_pairs_invalidate_shader_reuse(self):
+        # A registered profile may have no pso_pairs.tsv: the split's copy feeds vs_pad.
+        def fingerprint(*args, **kwargs):
+            path = next(x[1][0] for x in args if isinstance(x, tuple) and x[0] == 'files' and x[1] and x[1][0].name == 'pso_pairs.tsv')
+            return str(path.read_bytes() if path.is_file() else b'missing')
+        with mock.patch.object(nsp, 'fingerprint', side_effect=fingerprint):
+            self.build(True); self.assertEqual(len(self.ran), 1)
+            self.build(True); self.assertEqual(self.ran, [])
+            (self.sh / 'pso_pairs.tsv').write_text('v\tf1\n')
+            self.build(True); self.assertEqual(len(self.ran), 1)
+            (self.sh / 'pso_pairs.tsv').write_text('v\tf2\n')
+            self.build(True); self.assertEqual(len(self.ran), 1)
+            self.build(True); self.assertEqual(self.ran, [])
+
+    def test_shader_watch_finishes_extra_pairs_last(self):
+        (self.tmp / 'shader_map.tsv').write_text('p.bin\t0\tvs\ta\tsrc\np.bin\t1\tps\tb\tsrc\np.bin\t2\tvs\tc\tsrc\n')
+        (self.tmp / 'shader_pairs.tsv').write_text('c\tb\n')
+        pso = self.tmp / 'pso_pairs.tsv'; pso.write_text('a\tb\n')
+        watch = nsp.ShaderWatch(self.g, self.tmp, self.tmp, pso)
+        self.assertEqual(list(watch.pos), ['b', 'a', 'c'])
+
 
 class EnvFile(Base):
     def test_pairs(self):

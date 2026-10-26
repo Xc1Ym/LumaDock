@@ -190,14 +190,20 @@ def resolve(image, text_end, rules, report=print):
     except MatchError as e:
         report(f'[RED] function patches skipped: {e}')
         return []
-    cuts = []
-    for rule in rules:
-        try: found = module.match(rule)
-        except MatchError as e:
-            report(f'[RED] function patch {rule["name"]!r} skipped: {e}')
+    cuts, groups = [], {}
+    # Rules with the same name are one patch's reviewed implementations (a function another build changed, with its own size or cut offsets): exactly one of them must match
+    for rule in rules: groups.setdefault(rule['name'], []).append(rule)
+    for name, alternatives in groups.items():
+        found, misses = [], []
+        for i, rule in enumerate(alternatives, 1):
+            try: found.append((i, module.match(rule)))
+            except MatchError as e: misses.append(str(e))
+        if len(found) != 1:
+            report(f'[RED] function patch {name!r} skipped: ' + (f'{len(found)} implementations match (need exactly one)' if found else '; '.join(misses)))
             continue
-        cuts.extend(found)
-        report(f'function patch {rule["name"]!r}: matched at {found[0][0]:#x}')
+        (i, got), = found
+        cuts.extend(got)
+        report(f'function patch {name!r}: matched at {got[0][0]:#x}' + (f' (implementation {i} of {len(alternatives)})' if len(alternatives) > 1 else ''))
     occupied = set()
     for off, old, _, _ in cuts:
         span = set(range(off, off + len(bytes.fromhex(old))))

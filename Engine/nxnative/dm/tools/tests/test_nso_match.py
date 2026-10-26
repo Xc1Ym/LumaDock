@@ -129,8 +129,30 @@ class Matching(unittest.TestCase):
             self.assertTrue(messages[0].startswith('[RED] '))
 
     def test_overlapping_rules_are_rejected(self):
+        other = dict(self.rule, name='another patch')
         with self.assertRaisesRegex(MatchError, 'overlap'):
-            resolve(self.original, 0x2000, [self.rule, self.rule], lambda _: None)
+            resolve(self.original, 0x2000, [self.rule, other], lambda _: None)
+
+    def test_same_name_rules_are_alternative_implementations(self):
+        # A later build changed the function (another size, the cut elsewhere in it): one rule per reviewed implementation, under one name
+        def changed(start):  # caller() with one more instruction before the cut
+            return [ADRP(8, start, 0x2200), ADDI(8, 8, 0x200), NOP, MOV, B(start + 16, 0x500) | 0x80000000, 0x54000040, NOP, RET]
+        later = image({0x100: changed(0x100), 0x500: [0xd2800020, RET]})
+        alt = Image(later, 0x2000).recipe(0x10c, 'e00317aa', 'e0124091', 'heap')
+        self.assertNotEqual(alt['size'], self.rule['size'])
+        for img, off in ((self.original, 0x108), (later, 0x10c)):
+            with self.subTest(off=hex(off)):
+                messages = []
+                cuts = resolve(img, 0x2000, [self.rule, alt], messages.append)
+                self.assertEqual([c[0] for c in cuts], [off])
+                self.assertFalse([m for m in messages if m.startswith('[RED]')], messages)
+        messages = []
+        self.assertEqual(resolve(image({0x100: [RET]}), 0x2000, [self.rule, alt], messages.append), [])
+        self.assertEqual(len(messages), 1); self.assertTrue(messages[0].startswith('[RED] '))
+        both = image({0x100: caller(0x100, 0x500), 0x800: changed(0x800), 0x500: [0xd2800020, RET]})
+        messages = []
+        self.assertEqual(resolve(both, 0x2000, [self.rule, alt], messages.append), [])
+        self.assertIn('2 implementations match', messages[0])
 
     def test_registry_scopes_rules_and_preserves_known_builds(self):
         source = TOOLS / 'patch_nso.py'; tree = ast.parse(source.read_text())

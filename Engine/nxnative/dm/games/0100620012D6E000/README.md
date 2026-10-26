@@ -12,8 +12,9 @@ Brought up on the Mac: the title, Solo, enrolling a new student (birthday, profe
 | `op_mode handheld` | `game.tsv` | handheld, the game reads the touch screen (menus, every activity, Party's two-player touch battles); docked it does not |
 | `perf_mode boost` | `game.tsv` | handheld Normal draws 1280x720, handheld with Boost 1920x1080 (the window crop goes from 1280x720 to 1920x1080 once the game sees Boost) |
 | 4 GB layout: `mem_reserve 0x100000000`, `mem_alias 0x10000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000` | `game.tsv` | a 3328 MB heap region: `SetHeapSize` asks for 3.14 GB |
+| `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode, so the pipeline bases made before it runs (the NSP script's Mac prebuild, and a [pipeline archive made offline](../../../docs/development.md#the-pipeline-archive-made-offline) for the iPhone when one is built with `DM_PSO_GPUS`) take its vertex shaders' `main0_z` entries (the host itself follows the mode the game sets) |
 
-No `patches.py`, and `dm/tools/sdk_patches.py` has no cut for its `sdk` build (`2d369d9999e3e10e665106f840ffff9b`).
+No `patches.py`. Its shared `sdk` build (`2d369d9999e3e10e665106f840ffff9b`) now has the node-area cut needed by [Pokémon Brilliant Diamond](../0100000011D90000/README.md); this game uses the heap path and does not need it.
 
 ## Memory
 

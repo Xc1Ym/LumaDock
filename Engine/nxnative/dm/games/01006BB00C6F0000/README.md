@@ -9,6 +9,7 @@ Update 1.1.0 (v131072) over the base game, SDK 8.2.0. Grezzo's engine on Nintend
 | Physics completion task `release` → `ret` | [`patches.py`](patches.py) `CUTS`, `main` `909e904a…` at `main+0x10cd070` | a late destructor wiped the rebuilt task and crashed the physics workers; see [Physics](#physics) |
 | Float vertex inputs 1–5 for `147c829e79fb322f`, `03c43da3e3f46da8`, `079700f3577e311f`, `15c02683a10f8e9d`, `2344874045b1e758` | [`shader_facts_manual.tsv`](shader_facts_manual.tsv) | the integer-input guess declared them `uint4` while the game feeds 16-bit or 8-bit normalized formats; see [Rendering](#rendering) |
 | 4 GB layout: `mem_reserve 0x100000000`, `mem_alias 0x10000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000` | [`game.tsv`](game.tsv) | no system resource in the NPDM: the game uses `SetHeapSize`. 13 Sentinels' partition (256 MB in front + 256 MB alias + 256 MB stack + 3.25 GB heap), "until measured" |
+| `depth_mode zero` | `game.tsv` | the game sets the near = 0 depth mode, so the pipeline bases made before it runs (the NSP script's Mac prebuild, and a [pipeline archive made offline](../../../docs/development.md#the-pipeline-archive-made-offline) for the iPhone when one is built with `DM_PSO_GPUS`) take its vertex shaders' `main0_z` entries (the host itself follows the mode the game sets) |
 
 No `dm/tools/sdk_patches.py` cut for its `sdk` build (`3ae34e68…`). No `pad_layout`: the virtual gamepad starts in the 2D layout.
 

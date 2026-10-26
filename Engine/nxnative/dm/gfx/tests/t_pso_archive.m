@@ -2,7 +2,7 @@
 // Checks: pipelines that differ only in colour state share one base; a specialized pipeline draws the same pixels as one built through the MTLDevice; a flushed archive
 // file serves the base again without compiling; a flush of bases without a vertex layout is a p<seq> file, where a base with a layout is not looked up; a function with no
 // Metal 4 descriptor keeps the MTLDevice path; pso_key_norm drops what no pipeline depends on; compaction merges the files the prewarm took bases from into one despite a
-// mid-prewarm flush; depth-only draws write depth; concurrent colour variants compile one base
+// mid-prewarm flush; depth-only draws write depth; concurrent colour variants compile one base; a flush removes the build folder Metal made for its captures
 #include "../nvn/nvn_mtl.m"
 uint64_t g_t0_ns;
 int dm_guest_as_contains(uintptr_t address) { (void)address; return 0; }
@@ -150,9 +150,13 @@ int main(void) { @autoreleasepool {
     EXPECT("one specialization per pipeline", 3, g_pb_spec);
     // the archive: flushed to a file, a later start takes the base from it without compiling
     EXPECT("one base waits for the archive", 1, g_arch_new);
+    NSString *ga = g_ga_mine ? [ga_dir() stringByAppendingPathComponent:g_ga_mine] : nil;   // fails only if another program captured in the same few ms
+    EXPECT("the first capture found Metal's build folder", 1, ga && [NSFileManager.defaultManager fileExistsAtPath:ga]);
     arch_flush();
     NSString *file = [@(dir) stringByAppendingPathComponent:@"00000.mtl4a"];
     EXPECT("archive file written", 1, [NSFileManager.defaultManager fileExistsAtPath:file]);
+    EXPECT("the flush removed Metal's build folder", 0, ga && [NSFileManager.defaultManager fileExistsAtPath:ga]);
+    EXPECT("the next capture looks again", 0, g_ga_seen);
     EXPECT("nothing left to write", 0, g_arch_new);
     nvn_hm_clear(&g_pbase, hm_rel);   // as a new start: no base in memory, the archive opened
     g_arch4 = @[[g_dev newArchiveWithURL:[NSURL fileURLWithPath:file] error:&err]];

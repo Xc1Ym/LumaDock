@@ -41,6 +41,7 @@ No `patches.py`. `op_mode` stays docked: Odyssey only takes its motion moves in 
 
 ## Files and shaders
 
+- **Resolved in the shader builder (#276): BAHS pipeline interfaces.** The local 1.4.1 libraries have 290 pairs with missing vertex outputs, involving 29 vertex shaders. All are among the split's 12,124 BAHS pairs; the profile's 20,740 other pairs have no missing outputs. The shared fix makes padding read both tables; see [Pixel shader inputs the vertex shader does not write](../../../docs/reference/shaders.md#pixel-shader-inputs-the-vertex-shader-does-not-write). The report's additional `Max Unstruct ID 758 ... exceeds supported limit` compiler error is separate and remains open; fixing missing outputs alone does not establish a successful full archive build. Targeted validation: the affected vertex sources compile for Mac and iOS, and all 290 pairs build into `g13s` and `g16s` Metal archives with both depth entry points (Metal 32023.921). Full Mac rebuild: 27,984 of 27,984 shaders successful, no binding or pulling-library failures, no regressions, and no interface mismatches across all 32,864 pairs. The Mac host also rebuilt with the regenerated uniform tables. No new gameplay or iPhone run.
 - 27,984 shaders: agl `sharcb` and `bfsha` in `ShaderData`, particles in `EffectData`; groups per RomFS folder in `game.tsv`.
 - The spin-wait rewrite leaves its modules byte for byte as before the lock and store rules.
 
@@ -52,7 +53,11 @@ No `patches.py`. `op_mode` stays docked: Odyssey only takes its motion moves in 
 
 ## Found on this game
 
-General host changes first needed here; each applies to every game:
+General host and tool changes first needed here; each applies to every game:
+
+- **BAHS pairs omitted from vertex padding:** [Pixel shader inputs the vertex shader does not write](../../../docs/reference/shaders.md#pixel-shader-inputs-the-vertex-shader-does-not-write).
+
+- **Resolved: NSZ decompression rejected `--keys`** when packing v0: [NSZ decompression rejects `--keys`](../../../docs/reference/packing.md#nsz-decompression-rejects---keys).
 
 - **Largest point size at `c0 + 0x610`**: [04, section 3](../../../docs/agents/04-graphics.md#3-find-the-binding-layout-by-census) and [Graphics `c0 + 0x610`: the largest point size](../../../docs/reference/shaders.md#graphics-c0--0x610-the-largest-point-size).
 - **Invariant positions** (`-fpreserve-invariance` in `dmsh_build.py` and `ios_metal.py`): [Position invariance across shaders](../../../docs/reference/shaders.md#position-invariance-across-shaders).

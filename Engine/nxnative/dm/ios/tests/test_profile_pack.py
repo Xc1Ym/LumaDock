@@ -14,10 +14,12 @@ import game
 
 class ProfilePackTests(unittest.TestCase):
     def test_pulling_libraries_follow_compiled_profile_and_explicit_override(self):
-        cases = [('01007EF00011E000', None, True), ('010015100B514000', None, False),
-                 ('01007EF00011E000', '0', False), ('010015100B514000', '1', True)]
-        for gid, override, included in cases:
-            with self.subTest(game=gid, IOS_PULL=override), tempfile.TemporaryDirectory() as temporary:
+        # (game, IOS_PULL, with a pipeline archive, _bp libraries packed): an archive's bases are made of the pulling libraries, so an IPA with one carries them whatever IOS_PULL says
+        cases = [('01007EF00011E000', None, False, True), ('010015100B514000', None, False, False),
+                 ('01007EF00011E000', '0', False, False), ('010015100B514000', '1', False, True),
+                 ('010015100B514000', None, True, True), ('01007EF00011E000', '0', True, True)]
+        for gid, override, with_pso, included in cases:
+            with self.subTest(game=gid, IOS_PULL=override, archive=with_pso), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 dm = root / 'dm'
                 header = dm / 'host/gen' / gid / 'game_profile.h'
@@ -35,6 +37,9 @@ class ProfilePackTests(unittest.TestCase):
                 env.update(GAME=gid, DM=str(dm), APP=str(app), MSL_IOS=str(shaders), MSLDIR='b-fixture',
                            AOC='', ROMFS=str(romfs), OUT_IPA=str(out), PROFILE_TOOL=str(REPO / 'dm/games/game.py'))
                 if override is not None: env['IOS_PULL'] = override
+                if with_pso:
+                    pso = root / 'pso'; pso.mkdir(); (pso / 'prebuilt.tsv').write_text('fixture')
+                    env['PSO'] = str(pso)
                 # Exercise the actual archive step; only the preceding Xcode build is bypassed.
                 script = (REPO / 'dm/ios/tools/build_ipa.sh').read_text()
                 packing = script[script.index('\nP=Payload/DmIOS.app;'):]
@@ -49,6 +54,7 @@ class ProfilePackTests(unittest.TestCase):
                     for name in ('fixture_b.metallib', 'fixture_bv.metallib', 'fixture_b.json'):
                         self.assertIn(prefix + name, names)
                     self.assertEqual(archive.read('Payload/DmIOS.app/romfs/marker'), b'romfs')
+                    self.assertEqual('Payload/DmIOS.app/pso/prebuilt.tsv' in names, with_pso)
 
 
 if __name__ == '__main__':

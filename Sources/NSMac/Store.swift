@@ -350,7 +350,7 @@ final class WorkerOutput: @unchecked Sendable {
             self.hasImportedKeys = keys["ready"] as? Bool == true
             self.keyStatus = keys["message"] as? String ?? "尚未导入 prod.keys"
             if let records = Self.decode([TaskRecord].self,r["jobs"]) {
-                for rec in records where rec.state=="failed" || ["setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","convertFiles","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
+                for rec in records where rec.state=="failed" || ["backupSave","restoreSave","activateRelease","setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","convertFiles","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
                     if !self.tasks.contains(where: { $0.id == rec.id }) { self.tasks.append(rec) }
                 }
                 self.tasks.sort { ($0.started ?? 0) > ($1.started ?? 0) }
@@ -422,7 +422,7 @@ final class WorkerOutput: @unchecked Sendable {
                     if visible { self.refresh() }
                 }
             }
-            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String,conversion:Self.decode(ConversionJob.self,extra["conversion"]),importPaths:operation == "import" ? extra["paths"] as? [String] : nil),at:0) }
+            if visible { tasks.insert(.init(id:id,operation:operation,state:"running",gameId:extra["gameId"] as? String,started:Date().timeIntervalSince1970,outputPath:extra["outputPath"] as? String,conversion:Self.decode(ConversionJob.self,extra["conversion"]),importPaths:operation == "import" ? extra["paths"] as? [String] : nil,backupId:extra["backupId"] as? String,releaseId:extra["releaseId"] as? String,libraryId:preferences.libraryId),at:0) }
             callbacks[id] = completion; processes[id] = process
             try process.run()
             if operation == "preflight" {lastWorkerEvent[id]=Date();watchEnvironmentWorker(id)}
@@ -561,15 +561,28 @@ final class WorkerOutput: @unchecked Sendable {
         processes[task.id]?.terminate()
     }
     func retry(_ task: TaskRecord) {
+        if task.operation != "convertFiles",let libraryId=task.libraryId,libraryId != preferences.libraryId {error="请切换回任务所属游戏库后重试。";return}
         if task.operation == "convertFiles",let conversion=task.conversion {startConversion(conversion);return}
         if task.operation == "import",let paths=task.importPaths {addGames(paths.map {URL(fileURLWithPath:$0)});return}
         guard let game = games.first(where:{$0.id == task.gameId}) else { return }
-        if task.operation == "launch" { launch(game) }
+        if task.operation == "backupSave" { performRecovery("backupSave",game:game) }
+        else if task.operation == "restoreSave" {
+            if let id=task.backupId {performRecovery("restoreSave",game:game,extra:["backupId":id])}
+        }
+        else if task.operation == "activateRelease" {
+            if let id=task.releaseId {performRecovery("activateRelease",game:game,extra:["releaseId":id])}
+        }
+        else if task.operation == "launch" { launch(game) }
         else if task.operation == "exportIPA" { generateIPA(game,destination:task.outputPath.map { URL(fileURLWithPath:$0) }) }
         else { enqueue(game) }
     }
     func remove(_ game: Game) { worker("remove",extra:["gameId":game.id]) { _ in self.refresh() } }
-    func clean(_ game: Game, kind: String) { worker("clean",extra:["gameId":game.id,"kind":kind]) { _ in self.refresh() } }
+    func clean(_ game: Game, kind: String) {
+        worker("clean",extra:["gameId":game.id,"kind":kind]) { result in
+            if (result["retainedShared"] as? Int ?? 0)>0 {self.notice="已移除该游戏的内容登记；其他游戏仍在使用的共享文件已保留。"}
+            self.refresh()
+        }
+    }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     func persistTask(_ task: TaskRecord) {
         let folder=privateRoot.appendingPathComponent("jobs")

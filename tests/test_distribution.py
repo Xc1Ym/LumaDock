@@ -35,7 +35,7 @@ class DistributionTests(unittest.TestCase):
     def test_release_audit_rejects_private_data_and_game_art(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
-            for name in ('prod.keys', 'game.nsp', 'game.xcz', 'cache/shaders.metallib', 'saves/slot.dat', 'cover.png', 'Vendor/nxnative/source.c', 'Runtime/nx_extract/nx_extract.dll', 'tools/dmsh_xlate.dll', 'Runtime/NSC_BUILDER/ztools/squirrel.py', 'Runtime/nsz/module.py'):
+            for name in ('prod.keys', 'game.nsp', 'game.xcz', 'cache/shaders.metallib', 'saves/slot.dat', 'backups/title/snapshot/data/slot.dat', 'cover.png', 'Vendor/nxnative/source.c', 'Runtime/nx_extract/nx_extract.dll', 'tools/dmsh_xlate.dll', 'Runtime/NSC_BUILDER/ztools/squirrel.py', 'Runtime/nsz/module.py'):
                 path = root/name
                 path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_bytes(b'private-fixture')
@@ -52,7 +52,7 @@ class DistributionTests(unittest.TestCase):
 
     def test_source_audit_rejects_hidden_private_directories(self):
         with tempfile.TemporaryDirectory() as directory:
-            for name in ('work/key.txt', 'Runtime/lib.txt', 'game.nsp', '../outside.txt','docs/game.XCZ','Sources/NSC_BUILDER/squirrel.py','Sources/nsz/__init__.py'):
+            for name in ('work/key.txt', 'Worker/backups/snapshot/data/slot.dat', 'Runtime/lib.txt', 'game.nsp', '../outside.txt','docs/game.XCZ','Sources/NSC_BUILDER/squirrel.py','Sources/nsz/__init__.py'):
                 archive = pathlib.Path(directory)/'test.zip'
                 with zipfile.ZipFile(archive, 'w') as output:
                     for required in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico'):

@@ -84,6 +84,8 @@ class Context:
         os.chmod(self.private, 0o700)
         self.jobpath = self.private / 'jobs' / (self.task + '.json')
         self.job = read(self.jobpath, {}) | {'schema': 1, 'id': self.task, 'operation': request['operation'], 'gameId': request.get('gameId'), 'state': 'running', 'started': time.time()}
+        for field in ('backupId','releaseId','libraryId'):
+            if field in request: self.job[field]=request[field]
         if request['operation'] == 'exportIPA': self.job['outputPath'] = request.get('outputPath')
         if request['operation'] == 'convertFiles': self.job['conversion'] = request.get('conversion')
         if request['operation'] == 'import': self.job['importPaths'] = request.get('paths')

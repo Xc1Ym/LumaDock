@@ -66,7 +66,7 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         let (root,store)=try fixture()
         var options=ConversionJob();options.mode = .compress;options.level=22;options.verify=false
         options.paths=[root.appendingPathComponent("base.nsp").path];options.outputDirectory=root.appendingPathComponent("other output").path
-        let record=TaskRecord(id:"failed",operation:"convertFiles",state:"failed",conversion:options)
+        let record=TaskRecord(id:"failed",operation:"convertFiles",state:"failed",conversion:options,libraryId:"previous-library")
         store.retry(record)
         try await waitUntil {operations(root).count==1 && !store.executionBusy}
         let request=try XCTUnwrap(operations(root).first)

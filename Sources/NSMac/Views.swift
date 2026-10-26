@@ -174,7 +174,7 @@ struct GameDetail: View {
             }
             Button {store.enqueue(game)} label:{Label(game.ready==true ? L("重新检查并准备") : L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable)
             Button {store.generateIPA(game)} label:{Label(L("生成 IPA…"),systemImage:"iphone.and.arrow.forward").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable || store.executionBusy || !store.queue.isEmpty)
-            Text(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。")).font(.caption).foregroundStyle(.secondary)
+                .help(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。"))
             Button {store.inputGame=game;store.editingInput=true} label:{Label(L("键鼠与手柄映射"),systemImage:"keyboard").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large)
             Divider()
                 VStack(alignment:.leading,spacing:8) {
@@ -616,9 +616,9 @@ struct GameLanguagePicker: View {
     var body: some View {
         if gameId == nil { picker }
         else {
-            VStack(alignment:.leading,spacing:6) {
-                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary)
-                picker.labelsHidden().frame(maxWidth:.infinity)
+            HStack(spacing:10) {
+                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary).fixedSize()
+                picker.labelsHidden().frame(minWidth:0,maxWidth:.infinity)
             }
         }
     }

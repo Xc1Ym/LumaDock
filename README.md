@@ -17,6 +17,7 @@ Switch Pro, Xbox and PlayStation controllers use native GameController input: Sw
 
 ## Features
 
+- **Compact utility pages** — Liquid Glass cards for setup, settings, conversion, tasks, input mapping and save recovery, with grouped environment tools.
 - **Library management** — Add NSP/XCI/NSZ/XCZ files or scan a folder; import NSP/XCI directly, decompress NSZ/XCZ, then prepare automatically.
 - **Automated builds** — Prepare code, shaders and runtime files with validated caches, cancellation and retry.
 - **Save protection and version rollback** — Create and verify save backups, restore saves, and switch between prepared runtime versions with an automatic save backup before switching.

@@ -46,13 +46,13 @@ func render(scale: Int) -> NSBitmapImageRep {
     glow(670, 590, 390, color(0.77, 0.71, 0.98, 0.22))
     glow(250, 490, 330, color(1, 1, 1, 0.95))
 
-    let logo = NSImage(contentsOf: root.appendingPathComponent("Assets/LumaDock.png"))!
+    let logo = NSImage(contentsOf: root.appendingPathComponent("Assets/LumaNX.png"))!
     logo.draw(in:NSRect(x:54,y:30,width:48,height:48),from:.zero,operation:.sourceOver,fraction:1,respectFlipped:true,hints:nil)
-    text("LumaDock", 114, 35, 31, .bold)
+    text("LumaNX", 114, 35, 31, .bold)
     text("璃游", 288, 47, 16, .medium, muted)
     round(NSRect(x:626,y:42,width:118,height:26),13,fill:color(1,1,1,0.62),stroke:color(1,1,1,0.9))
     text("MADE FOR MAC",640,49,10,.semibold,teal)
-    text("Drag LumaDock to Applications.",60,110,21,.semibold)
+    text("Drag LumaNX to Applications.",60,110,21,.semibold)
     text("将璃游拖入 Applications 文件夹，即可安装。",60,143,13,.regular,muted)
 
     for (x, step) in [(96.0,"01  DRAG"),(480.0,"02  DROP")] {
@@ -71,7 +71,7 @@ func render(scale: Int) -> NSBitmapImageRep {
 
     let rule=NSBezierPath();rule.move(to:NSPoint(x:60,y:404));rule.line(to:NSPoint(x:510,y:404))
     color(0.75,0.83,0.86,0.55).setStroke();rule.lineWidth=1;rule.stroke()
-    text("Open LumaDock from Applications.",60,427,15,.semibold)
+    text("Open LumaNX from Applications.",60,427,15,.semibold)
     text("复制完成后，从“应用程序”打开璃游。",60,454,12,.regular,muted)
     text("Apple Silicon   ·   macOS 26+   ·   v"+version,60,505,11,.medium,muted)
     text("English / 简体中文",60,525,10,.regular,muted)

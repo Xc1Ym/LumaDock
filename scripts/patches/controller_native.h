@@ -1,4 +1,4 @@
-// LumaDock automatic controller semantics. No keyboard events or user bindings.
+// LumaNX automatic controller semantics. No keyboard events or user bindings.
 #pragma once
 #import <GameController/GameController.h>
 

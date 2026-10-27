@@ -16,7 +16,7 @@ import diagnostics
 
 class DiagnosticTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix="lumadock-diagnostics-中文's-")
+        self.temp=tempfile.TemporaryDirectory(prefix="lumanx-diagnostics-中文's-")
         self.root=Path(self.temp.name).resolve()
         self.request=dict(schema=1,operation='build',privateRoot=str(self.root/'private'),
             library=str(self.root/'library'),resources=str(self.root/'resources'),engineDir=str(self.root/'engine'))

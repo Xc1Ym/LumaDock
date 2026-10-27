@@ -140,22 +140,22 @@ def prepared_tools(c, info=None):
 def adapt_snapshot(repo):
     program = repo/'dm/tools/nx_extract/Program.cs'
     text = program.read_text()
-    if 'LumaDockInspect(a)' not in text:
+    if 'LumaNXInspect(a)' not in text:
         text, changed = re.subn(r'\bstatic (?:partial )?class P\b', 'static partial class P', text, count=1)
         entry = re.search(r'static int Main\(string\[\] a\)\s*\{', text)
         if changed != 1 or not entry: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         start = entry.end()
-        text = text[:start]+'\n        a = LumaDockArgs(a);\n        if (a.Length >= 3 && a[1] == "--inspect") return LumaDockInspect(a);\n'+text[start:]
+        text = text[:start]+'\n        a = LumaNXArgs(a);\n        if (a.Length >= 3 && a[1] == "--inspect") return LumaNXInspect(a);\n'+text[start:]
         # The base/update can share one XCI. Select their CNMT content IDs before
         # the upstream extractor picks Program/Control/Data NCAs.
         for index,kind in ((1,'base'),(2,'update')):
             text, count = re.subn(r'OpenNsp\(ks,\s*a\['+str(index)+r'\]\)',
-                'LumaDockSelected(ks, a['+str(index)+'], "'+kind+'")',text,count=1)
+                'LumaNXSelected(ks, a['+str(index)+'], "'+kind+'")',text,count=1)
             if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
-        text, count = re.subn(r'OpenNsp\(ks,\s*nsp\)', 'LumaDockSelected(ks, nsp, "dlc")',text,count=1)
+        text, count = re.subn(r'OpenNsp\(ks,\s*nsp\)', 'LumaNXSelected(ks, nsp, "dlc")',text,count=1)
         if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         program.write_text(text)
-    shutil.copy2(Path(__file__).parent/'NspMetadata.cs', program.parent/'LumaDockMetadata.cs')
+    shutil.copy2(Path(__file__).parent/'NspMetadata.cs', program.parent/'LumaNXMetadata.cs')
     chain = repo/'dm/gfx/tools/dmsh_chain.py'
     text = chain.read_text()
     if 'DM_MAC_ONLY' not in text:
@@ -203,7 +203,7 @@ def prepare(c):
             atomic(repo/'global.json', {'sdk':{'version':version,'rollForward':'latestPatch','allowPrerelease':False}})
             c.begin('准备引擎读取工具', 3, 3)
             # An ASCII output path avoids an MSBuild apostrophe-path bug.
-            with tempfile.TemporaryDirectory(prefix='lumadock-reader-') as directory:
+            with tempfile.TemporaryDirectory(prefix='lumanx-reader-') as directory:
                 output=Path(directory)/'publish'
                 config=Path(directory)/'NuGet.Config'
                 config.write_text('<configuration><packageSources><clear/><add key="nuget.org" value="https://api.nuget.org/v3/index.json"/></packageSources></configuration>')

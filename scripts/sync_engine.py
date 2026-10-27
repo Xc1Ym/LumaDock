@@ -75,7 +75,7 @@ def main():
     if args.checkout:
         record = sync(args.checkout, args.output)
     else:
-        with tempfile.TemporaryDirectory(prefix='lumadock-upstream-') as directory:
+        with tempfile.TemporaryDirectory(prefix='lumanx-upstream-') as directory:
             subprocess.run(['git', 'clone', '--depth', '1', UPSTREAM, directory], check=True)
             record = sync(directory, args.output)
     print('Imported nxnative '+record['revision']+' ('+str(len(record['files']))+' files)')

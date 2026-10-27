@@ -23,7 +23,7 @@ from engine_fixture import make_engine, mark_prepared
 
 class EnvironmentTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='lumadock-env-')
+        self.temp=tempfile.TemporaryDirectory(prefix='lumanx-env-')
         self.root=Path(self.temp.name)
         self.c=Context(dict(schema=1,operation='preflight',privateRoot=str(self.root/'private'),resources=str(self.root/'resources'),engineDir=str(make_engine(self.root/'External 引擎')),developerDir=str(self.root/'Xcode.app/Contents/Developer')))
         self.versions=dict(python='3.14.8',capstone='5.0.9',lz4='4.4.5',fonttools='4.67.0',dotnet='10.0.13',spirvCross='fixture',zstd='fixture')

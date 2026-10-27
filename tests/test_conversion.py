@@ -50,7 +50,7 @@ print(json.dumps({'type':'complete','file':str(destination)}),flush=True)
 
 class ConversionTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix="lumadock-conversion-中文's-")
+        self.temp=tempfile.TemporaryDirectory(prefix="lumanx-conversion-中文's-")
         self.root=Path(self.temp.name).resolve();self.resource=self.root/'resources'
         self.backend=self.resource/'Runtime/converter';self.backend.mkdir(parents=True)
         venv.EnvBuilder(with_pip=False).create(self.resource/'Runtime/python')

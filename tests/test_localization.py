@@ -9,7 +9,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class LocalizationCoverageTests(unittest.TestCase):
     def test_all_worker_messages_have_translations(self):
-        entries = json.loads((ROOT/'Sources/NSMac/Resources/Localizable.json').read_text())
+        entries = json.loads((ROOT/'Sources/LumaNX/Resources/Localizable.json').read_text())
         translated = {entry['source'] for entry in entries}
         missing = []
         class Messages(ast.NodeVisitor):

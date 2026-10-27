@@ -1,19 +1,21 @@
 <p align="center">
-  <img src="Assets/LumaDock.png" width="128" alt="LumaDock icon">
+  <img src="Assets/LumaNX.png" width="128" alt="LumaNX icon">
 </p>
-<h1 align="center">LumaDock · 璃游</h1>
-<p align="center">Let your games continue on Mac.</p>
+<h1 align="center">LumaNX · 璃游</h1>
+<p align="center">Graphical Switch game builds &amp; packaging · macOS / iOS / iPadOS</p>
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
 <p align="center">Apple Silicon · macOS 26+ · SwiftUI / Liquid Glass</p>
-<p align="center"><a href="https://github.com/Xc1Ym/LumaDock/releases/latest">Download for Mac</a> · <a href="https://github.com/Xc1Ym/LumaDock/actions/workflows/ci.yml">Build status</a></p>
+<p align="center"><a href="https://github.com/Xc1Ym/LumaNX/releases/latest">Download for Mac</a> · <a href="https://github.com/Xc1Ym/LumaNX/actions/workflows/ci.yml">Build status</a></p>
 
-LumaDock is a native Switch game launcher for Apple Silicon Macs. With the bundled **[nxnative](https://github.com/seedds/nxnative) engine**, your authorized NSP/XCI files and `prod.keys`, import games, prepare and launch them on Mac, or export an unsigned iPhone / iPad IPA.
+LumaNX is a graphical Switch game builder and packager running on Apple Silicon Macs, and a third-party GUI for nxnative. With the bundled **[nxnative](https://github.com/seedds/nxnative) engine**, your authorized NSP/XCI files and `prod.keys`, import games, prepare and launch them on Mac, or export an unsigned iPhone / iPad IPA.
 
-nxnative provides native execution and Metal graphics; LumaDock provides the library and graphical workflow. The engine is included; games, updates, DLC, firmware, keys, game artwork and player caches are not.
+nxnative provides native execution and Metal graphics; LumaNX provides the library and graphical workflow. The engine is included; games, updates, DLC, firmware, keys, game artwork and player caches are not.
 
 nxnative is synchronized from upstream **daily**, with automated tests before repository updates. To use the latest synchronized engine, [build the App or DMG yourself](docs/Development.md). **Releases provide only the DMG, on demand**, not daily.
 
 Switch Pro, Xbox and PlayStation controllers use native GameController input: Switch A / Xbox A / PS cross → game A, with no manual key mapping. Prepare existing games again to apply the new engine.
+
+**Previously LumaDock.** The project is now named LumaNX. The original icon, application identifier, game library and settings are retained.
 
 ## Features
 
@@ -30,7 +32,7 @@ Switch Pro, Xbox and PlayStation controllers use native GameController input: Sw
 
 **Requirements:** Apple Silicon and macOS 26+. Preparing games also requires full Xcode with Metal. nxnative, the reader, shader translator and runtime dependencies are included in packaged apps.
 
-1. Download the latest **ARM64 DMG**, verify its SHA-256 against the Release notes, and drag **LumaDock.app** into Applications. Current builds use **ad-hoc signing and are not notarized**.
+1. Download the latest **ARM64 DMG**, verify its SHA-256 against the Release notes, and drag **LumaNX.app** into Applications. Current builds use **ad-hoc signing and are not notarized**.
 2. Follow setup: check the environment and choose **Prepare engine tools**; no separate engine download is needed.
 3. Choose a library, import your own `prod.keys`, then add the base game, updates and DLC as NSP, XCI, NSZ or XCZ files.
 4. Prepare the game and choose **Launch game**, or choose **Generate IPA…** in game details. Tasks show progress and support cancellation and retry.
@@ -41,15 +43,15 @@ Compatibility depends on the selected engine and game version. Successful prepar
 
 ## Screenshots
 
-Light appearance with an empty library; no player data or game content.
+LumaNX 0.2.14 in light appearance with an empty test library; no player data or game content.
 
-<img src="docs/screenshots/library-en.jpg" width="1000" alt="LumaDock game library">
+<img src="docs/screenshots/library-en.jpg" width="1000" alt="LumaNX game library">
 
 <details>
 <summary>Setup and Settings</summary>
 
-<img src="docs/screenshots/setup-en.jpg" width="1000" alt="LumaDock setup assistant">
-<img src="docs/screenshots/settings-en.jpg" width="1000" alt="LumaDock settings">
+<img src="docs/screenshots/setup-en.jpg" width="1000" alt="LumaNX setup assistant">
+<img src="docs/screenshots/settings-en.jpg" width="1000" alt="LumaNX settings">
 
 </details>
 
@@ -63,10 +65,14 @@ Light appearance with an empty library; no player data or game content.
 | [Release notes](docs/RELEASE_NOTES.md) | Latest changes in English and Chinese |
 | [Architecture](docs/架构说明.md) · [Engine interface](docs/引擎修改.md) · [Validation record](docs/验收记录.md) | Technical details and bounded test evidence (Chinese) |
 
-For failures, open the task's log or copy its redacted error summary. [Report an issue](https://github.com/Xc1Ym/LumaDock/issues) with the app, chip, macOS and Xcode versions plus reproduction steps. Review diagnostics before sharing; never upload games, keys, firmware, saves or private caches.
+For failures, open the task's log or copy its redacted error summary. [Report an issue](https://github.com/Xc1Ym/LumaNX/issues) with the app, chip, macOS and Xcode versions plus reproduction steps. Review diagnostics before sharing; never upload games, keys, firmware, saves or private caches.
 
 ## Acknowledgements and license
 
 Special thanks to **[nxnative](https://github.com/seedds/nxnative)** for the core execution and graphics capabilities, and to **[MacNativeGames](https://github.com/ly05010419/MacNativeGames)** and **[d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile)** for their upstream contributions. File conversion adapts code from **[SAK-Mac](https://github.com/ggaoph-lab/SAK-Mac)** (MIT). The pinned engine and its license are included. Thanks also to Ryujinx / Spv.Generator, LibHac, SPIRV-Cross, CPython, .NET and other dependencies; see the [full third-party notices](docs/Third-party-licenses.md).
 
 Launcher code and original artwork use the **[MIT License](LICENSE)**; third-party components retain their own licenses. The software is provided “AS IS.” Use only content you are authorized to use. Nintendo and game trademarks belong to their respective owners; this project is not affiliated with or endorsed by Nintendo or any game publisher.
+
+## Topics
+
+`nintendo-switch` · `nxnative` · `gui` · `macos` · `ios` · `ipados` · `apple-silicon` · `swiftui` · `metal` · `game-launcher` · `game-packaging` · `native-execution`

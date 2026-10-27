@@ -1,5 +1,5 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class MilestoneTests:XCTestCase {
     private var plan:[Milestone] {[

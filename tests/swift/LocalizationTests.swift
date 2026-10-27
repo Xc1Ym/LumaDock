@@ -1,5 +1,5 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class LocalizationTests: XCTestCase {
     func testSystemLanguageResolutionAndFallback() {
@@ -49,7 +49,7 @@ import XCTest
     }
     func testLanguageSettingPersistsAndLegacyPreferencesStillLoad() throws {
         let previous=Localization.preference;defer {Localization.preference=previous}
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-locale-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-locale-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         XCTAssertEqual(store.language,.system)

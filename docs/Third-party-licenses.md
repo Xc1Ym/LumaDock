@@ -1,14 +1,14 @@
 # Third-party components and copyright
 
-LumaDock's launcher and original icon use the MIT License, Copyright © 2026 LumaDock contributors. Third-party components retain their own licenses. This license grants no rights to Nintendo games, firmware, keys, trademarks or other rights holders' material.
+LumaNX's launcher and original icon use the MIT License, Copyright © 2026 LumaDock contributors. Third-party components retain their own licenses. This license grants no rights to Nintendo games, firmware, keys, trademarks or other rights holders' material.
 
 ## Bundled engine acknowledgements
 
-Special thanks to [nxnative](https://github.com/seedds/nxnative) (MIT, Copyright © 2026 jhaizhou). The pinned source snapshot and shader translator are bundled in `Engine/nxnative`, together with upstream LICENSE and dependency notices. A LibHac metadata reader is compiled on the app builder and included under `Engine/reader`. `Engine/nxnative/manifest.json` records the upstream revision, hashes and local controller adaptation. Engine screenshots are excluded. The snapshot retains the licenses for Ryujinx / Spv.Generator, libvpx, stb_vorbis and Vulkan headers under `dm/third_party`. We also thank [d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) and [MacNativeGames](https://github.com/ly05010419/MacNativeGames). LumaDock’s metadata bridge is in `Worker/NspMetadata.cs`.
+Special thanks to [nxnative](https://github.com/seedds/nxnative) (MIT, Copyright © 2026 jhaizhou). The pinned source snapshot and shader translator are bundled in `Engine/nxnative`, together with upstream LICENSE and dependency notices. A LibHac metadata reader is compiled on the app builder and included under `Engine/reader`. `Engine/nxnative/manifest.json` records the upstream revision, hashes and local controller adaptation. Engine screenshots are excluded. The snapshot retains the licenses for Ryujinx / Spv.Generator, libvpx, stb_vorbis and Vulkan headers under `dm/third_party`. We also thank [d2r-mobile](https://github.com/jhaizhou-ops/d2r-mobile) and [MacNativeGames](https://github.com/ly05010419/MacNativeGames). LumaNX’s metadata bridge is in `Worker/NspMetadata.cs`.
 
 ## S2Arm milestone progress
 
-Game-preparation and IPA milestone plans, step-time projection and local-history medians adapt [S2Arm](https://github.com/jhaizhou-ops/S2Arm) at `601b545407d45063d005b4e7ca7f078620f0d630`, specifically `pack/jobs/milestones.py` and `platforms/macos/Sources/S2ArmLauncher/MilestoneProgressView.swift`. The upstream [LumaDock copyright/MIT notice](licenses/S2Arm-progress-NOTICE.txt) is retained. The integration follows nxnative's actual stages and completed shader outputs; S2Arm's engine, shader pipeline and game-specific timing evidence are not bundled or presented as LumaDock validation.
+Game-preparation and IPA milestone plans, step-time projection and local-history medians adapt [S2Arm](https://github.com/jhaizhou-ops/S2Arm) at `601b545407d45063d005b4e7ca7f078620f0d630`, specifically `pack/jobs/milestones.py` and `platforms/macos/Sources/S2ArmLauncher/MilestoneProgressView.swift`. The upstream [LumaDock copyright/MIT notice](licenses/S2Arm-progress-NOTICE.txt) is retained. The integration follows nxnative's actual stages and completed shader outputs; S2Arm's engine, shader pipeline and game-specific timing evidence are not bundled or presented as LumaNX validation.
 
 ## SAK-Mac conversion integration
 
@@ -22,4 +22,4 @@ Pinned Python dependencies and their exact source URLs/hashes are listed in `Run
 
 CPython (PSF License), .NET runtime (MIT and third-party notices), Capstone (BSD), lz4 (BSD), fontTools (MIT), SPIRV-Cross (Apache-2.0), Zstandard (BSD option), and their runtime dependencies retain their license texts in `Runtime/licenses` and package metadata. Exact versions are recorded in `Runtime/versions.json`. The .NET SDK is installed separately by the user when building the engine reader from source.
 
-Apple Xcode, Metal compiler components and fonts are not redistributed. LumaDock includes no games, updates, DLC, firmware, keys, game artwork, saves or player caches. It is not affiliated with, sponsored by or endorsed by Nintendo or game publishers. Import only content you are authorized to use.
+Apple Xcode, Metal compiler components and fonts are not redistributed. LumaNX includes no games, updates, DLC, firmware, keys, game artwork, saves or player caches. It is not affiliated with, sponsored by or endorsed by Nintendo or game publishers. Import only content you are authorized to use.

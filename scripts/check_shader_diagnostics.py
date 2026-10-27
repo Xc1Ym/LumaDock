@@ -61,7 +61,7 @@ targets:
     deploymentTarget: "26.0"
     sources: [main.m]
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: org.lumadock.shaderfixture
+      PRODUCT_BUNDLE_IDENTIFIER: org.lumanx.shaderfixture
       GENERATE_INFOPLIST_FILE: YES
       CODE_SIGNING_ALLOWED: NO
 schemes:

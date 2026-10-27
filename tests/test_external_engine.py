@@ -15,7 +15,7 @@ from engine_fixture import make_engine, mark_prepared
 
 class ExternalEngineTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='lumadock-external-');self.root=Path(self.temp.name)
+        self.temp=tempfile.TemporaryDirectory(prefix='lumanx-external-');self.root=Path(self.temp.name)
         self.source=make_engine(self.root/"下载 中文's nxnative")
         self.c=Context(dict(operation='preflight',privateRoot=str(self.root/'private'),resources=str(self.root/'resources'),engineDir=str(self.source)))
     def tearDown(self):self.temp.cleanup()
@@ -52,8 +52,8 @@ class ExternalEngineTests(unittest.TestCase):
         snapshot=self.root/'snapshot';shutil.copytree(self.source,snapshot)
         engine.adapt_snapshot(snapshot)
         self.assertEqual(original,engine.source_hash(self.source))
-        self.assertIn('LumaDockInspect', (snapshot/'dm/tools/nx_extract/Program.cs').read_text())
-        self.assertTrue((snapshot/'dm/tools/nx_extract/LumaDockMetadata.cs').is_file())
+        self.assertIn('LumaNXInspect', (snapshot/'dm/tools/nx_extract/Program.cs').read_text())
+        self.assertTrue((snapshot/'dm/tools/nx_extract/LumaNXMetadata.cs').is_file())
         chain=(snapshot/'dm/gfx/tools/dmsh_chain.py').read_text()
         self.assertIn('DM_MAC_ONLY',chain)
         self.assertIn('iphoneos',chain)

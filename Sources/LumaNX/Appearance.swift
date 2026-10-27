@@ -3,7 +3,7 @@ import AppKit
 
 enum Brand {
     static var name: String { L("璃游") }
-    static let latinName = "LumaDock"
+    static let latinName = "LumaNX"
     static let accent = Color(red:0.02,green:0.53,blue:0.57)
 }
 
@@ -11,7 +11,7 @@ struct BrandMark: View {
     var size: CGFloat = 48
     var body: some View {
         Group {
-            if let icon = NSImage(contentsOf:Bundle.main.resourceURL?.appendingPathComponent("LumaDock.icns") ?? URL(fileURLWithPath:"/")) {
+            if let icon = NSImage(contentsOf:Bundle.main.resourceURL?.appendingPathComponent("LumaNX.icns") ?? URL(fileURLWithPath:"/")) {
                 Image(nsImage:icon).resizable().scaledToFit()
             } else {
                 Image(systemName:"play.square.stack.fill").resizable().scaledToFit().foregroundStyle(Brand.accent.gradient).padding(size*0.12)

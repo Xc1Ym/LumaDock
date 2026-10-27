@@ -552,8 +552,8 @@
     "en": "Choose the original BreathOfTheWild build folder"
   },
   {
-    "source": "NSMac-诊断.zip",
-    "en": "LumaDock-Diagnostics.zip"
+    "source": "LumaNX-诊断.zip",
+    "en": "LumaNX-Diagnostics.zip"
   },
   {
     "source": "映射已保存，下次启动游戏时生效，无需重新编译。",
@@ -872,20 +872,20 @@
     "en": "Reopen setup assistant"
   },
   {
-    "source": "关于璃游",
-    "en": "About LumaDock"
+    "source": "关于 LumaNX",
+    "en": "About LumaNX"
   },
   {
-    "source": "璃游 LumaDock",
-    "en": "LumaDock"
+    "source": "璃游 LumaNX",
+    "en": "LumaNX"
   },
   {
     "source": "开发版本",
     "en": "Development build"
   },
   {
-    "source": "独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。",
-    "en": "An independent community launcher powered by nxnative. Not affiliated with or endorsed by Nintendo."
+    "source": "LumaNX 是 nxnative 的第三方图形界面，支持 Switch 游戏准备、macOS 启动及 iPhone / iPad 未签名 IPA 导出。与 Nintendo 无隶属或认可关系。",
+    "en": "LumaNX is a third-party GUI for nxnative. Prepare Switch games, launch on macOS, and export unsigned iPhone / iPad IPAs. Not affiliated with or endorsed by Nintendo."
   },
   {
     "source": "上游 nxnative",
@@ -961,7 +961,7 @@
   },
   {
     "source": "欢迎使用璃游",
-    "en": "Welcome to LumaDock"
+    "en": "Welcome to LumaNX"
   },
   {
     "source": "先准备环境，再导入密钥和游戏。",
@@ -969,7 +969,7 @@
   },
   {
     "source": "游戏文件会复制到此位置，支持外置硬盘。请为大型游戏预留充足空间。璃游不附带游戏、密钥或固件，所有内容均由玩家自行导入。",
-    "en": "Game files are copied here. External drives are supported; allow enough space for large games. LumaDock includes no games, keys, or firmware. Import your own content."
+    "en": "Game files are copied here. External drives are supported; allow enough space for large games. LumaNX includes no games, keys, or firmware. Import your own content."
   },
   {
     "source": "选择游戏库文件夹…",
@@ -1029,7 +1029,7 @@
   },
   {
     "source": "璃游",
-    "en": "LumaDock"
+    "en": "LumaNX"
   },
   {
     "source": "编译并验证 Metal 库",
@@ -1272,8 +1272,8 @@
     "en": "Create game library"
   },
   {
-    "source": "请选择空文件夹或已有璃游（NS Mac）游戏库，避免混入其他文件。",
-    "en": "Choose an empty folder or an existing LumaDock (NS Mac) library to avoid mixing unrelated files."
+    "source": "请选择空文件夹或已有 LumaNX 游戏库，避免混入其他文件。",
+    "en": "Choose an empty folder or an existing LumaNX library to avoid mixing unrelated files."
   },
   {
     "source": "检查系统与工具链",
@@ -1496,8 +1496,8 @@
     "en": "Interface changes apply immediately. Built-in buttons in system file dialogs follow the macOS language."
   },
   {
-    "source": "Mac 游戏启动器",
-    "en": "Mac game launcher"
+    "source": "游戏构建与打包",
+    "en": "Build & package"
   },
   {
     "source": "选择",
@@ -1821,7 +1821,7 @@
   },
   {
     "source": "打开所选 Xcode，完成许可及必需系统组件设置。若已完成，可先退出并重新打开璃游，或点击“重新检查”。仍未通过时查看下方诊断；确需手动初始化时，先阅读并同意 Xcode 许可再执行修复命令，它会安装系统组件并接受许可。",
-    "en": "Open the selected Xcode and finish its license and required system component setup. If setup is already complete, quit and reopen LumaDock or click Check again first. If it still fails, review the diagnostics below. When manual initialization is needed, read and agree to Xcode's license before running the repair command; it installs system components and accepts the license."
+    "en": "Open the selected Xcode and finish its license and required system component setup. If setup is already complete, quit and reopen LumaNX or click Check again first. If it still fails, review the diagnostics below. When manual initialization is needed, read and agree to Xcode's license before running the repair command; it installs system components and accepts the license."
   },
   {
     "source": "请先安装并选择完整 Xcode，再检查初始设置。",
@@ -1853,7 +1853,7 @@
   },
   {
     "source": "退出璃游",
-    "en": "Quit LumaDock"
+    "en": "Quit LumaNX"
   },
   {
     "source": "稍后设置",
@@ -1937,7 +1937,7 @@
   },
   {
     "source": "应用不附带或下载 nxnative。请自行下载并解压完整源码，再选择包含 dm 和 scripts 的根目录。原目录保持不变，构建使用私有副本。",
-    "en": "LumaDock does not bundle or download nxnative. Obtain and extract its complete sources yourself, then select the root containing dm and scripts. Builds use private copies and leave your directory unchanged."
+    "en": "LumaNX does not bundle or download nxnative. Obtain and extract its complete sources yourself, then select the root containing dm and scripts. Builds use private copies and leave your directory unchanged."
   },
   {
     "source": "引擎目录包含指向外部的符号链接，请选择完整的本地源码副本。",
@@ -1981,7 +1981,7 @@
   },
   {
     "source": "请自行获取并解压完整 nxnative 源码，然后选择包含 dm 和 scripts 的根目录。璃游不附带、不下载引擎，也不修改所选源码。",
-    "en": "Obtain and extract complete nxnative sources yourself, then select the root containing dm and scripts. LumaDock neither bundles nor downloads the engine and leaves your sources unchanged."
+    "en": "Obtain and extract complete nxnative sources yourself, then select the root containing dm and scripts. LumaNX neither bundles nor downloads the engine and leaves your sources unchanged."
   },
   {
     "source": "运行引擎由玩家自行提供。",
@@ -2772,8 +2772,8 @@
     "en": "Conversion is adapted from SAK-Mac with bundled NSC_BUILDER / nsz. View third-party sources and licenses in Settings."
   },
   {
-    "source": "重新安装完整的 LumaDock 应用，内置转换组件缺失或损坏。",
-    "en": "Reinstall the complete LumaDock app. Bundled conversion components are missing or damaged."
+    "source": "重新安装完整的 LumaNX 应用，内置转换组件缺失或损坏。",
+    "en": "Reinstall the complete LumaNX app. Bundled conversion components are missing or damaged."
   },
   {
     "source": "校验游戏文件",
@@ -3165,7 +3165,7 @@
   },
   {
     "source": "内置读取器与引擎版本不匹配，请重新安装完整璃游。",
-    "en": "The bundled reader and engine versions do not match. Reinstall the complete LumaDock app."
+    "en": "The bundled reader and engine versions do not match. Reinstall the complete LumaNX app."
   },
   {
     "source": "准备引擎读取工具",
@@ -3173,7 +3173,7 @@
   },
   {
     "source": "内置读取器校验失败，请重新安装完整璃游。",
-    "en": "The bundled reader failed verification. Reinstall the complete LumaDock app."
+    "en": "The bundled reader failed verification. Reinstall the complete LumaNX app."
   },
   {
     "source": "已验证 nxnative 组件及构建接口",

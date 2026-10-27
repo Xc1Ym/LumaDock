@@ -1,5 +1,5 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 final class DerivedProfileTests: XCTestCase {
     func testSharedContainerContentsHaveDistinctRows() throws {

@@ -1,6 +1,6 @@
 # Environment and repair guide
 
-Setup and Settings use the same checks. They run once per app launch; opening Settings reuses the result. **Check again**, selecting a different engine/Xcode/library, and finishing component management refresh the checks. You can leave setup with **Set up later** / Esc or quit with **Quit LumaDock** / ⌘Q, including after a failure.
+Setup and Settings use the same checks. They run once per app launch; opening Settings reuses the result. **Check again**, selecting a different engine/Xcode/library, and finishing component management refresh the checks. You can leave setup with **Set up later** / Esc or quit with **Quit LumaNX** / ⌘Q, including after a failure.
 
 ## Bundled nxnative engine
 
@@ -33,16 +33,16 @@ The generic free-space threshold is 5 GB; individual game builds check their act
 
 ## Xcode and Metal installation
 
-Use **Get Xcode on the App Store**, open Xcode and finish Apple's license/initial components yourself. If Xcode is elsewhere, select it and check again. LumaDock sets its processes' `DEVELOPER_DIR` without changing global `xcode-select`.
+Use **Get Xcode on the App Store**, open Xcode and finish Apple's license/initial components yourself. If Xcode is elsewhere, select it and check again. LumaNX sets its processes' `DEVELOPER_DIR` without changing global `xcode-select`.
 
 Use **Install Metal compiler** after Xcode setup. This invokes Apple's `xcodebuild -downloadComponent MetalToolchain`; removal, when supported, uses the Apple component manager and requires confirmation. See [Apple's component instructions](https://developer.apple.com/documentation/xcode/downloading-and-installing-additional-xcode-components). No engine download occurs.
 
-If initial setup still fails, expand **Installation and repair** to see the selected path, actual command and diagnostic. If Xcode setup is already complete, check again or quit and reopen LumaDock first. The optional manual repair command installs initial components and accepts the Xcode license; read and agree to the license before running it yourself. LumaDock never executes that administrator command automatically.
+If initial setup still fails, expand **Installation and repair** to see the selected path, actual command and diagnostic. If Xcode setup is already complete, check again or quit and reopen LumaNX first. The optional manual repair command installs initial components and accepts the Xcode license; read and agree to the license before running it yourself. LumaNX never executes that administrator command automatically.
 
 ## Bundled dependencies and offline help
 
 Generic runtimes are resolved relative to the current app at `Contents/Resources/Runtime`. Full paths printed by .NET describe the current installation, rather than a fixed developer path. Moving or renaming the complete app does not require reinstalling Python/.NET. Native dependency paths are audited during packaging.
 
-A separate system Python or Homebrew is not required. If a bundled component is broken, reinstall the complete LumaDock app from its official release; do not modify its Python with pip. Repair engine problems by reinstalling the complete app and preparing the private tool cache again.
+A separate system Python or Homebrew is not required. If a bundled component is broken, reinstall the complete LumaNX app from its official release; do not modify its Python with pip. Repair engine problems by reinstalling the complete app and preparing the private tool cache again.
 
-**Environment installation guide** opens this included guide in LumaDock's offline reader. Already prepared runtimes can launch without an available engine directory or build tools when their runtime files and launch checks pass. Rebuilding or importing requires restoring the bundled engine and preparation tools.
+**Environment installation guide** opens this included guide in LumaNX's offline reader. Already prepared runtimes can launch without an available engine directory or build tools when their runtime files and launch checks pass. Rebuilding or importing requires restoring the bundled engine and preparation tools.

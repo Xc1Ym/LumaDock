@@ -1,6 +1,6 @@
 """Game milestone plans/history adapted from S2Arm pack/jobs/milestones.py.
 
-Source: jhaizhou-ops/S2Arm at 601b5454 (2026-10-24). LumaDock's nxnative
+Source: jhaizhou-ops/S2Arm at 601b5454 (2026-10-24). LumaNX's nxnative
 stages differ; only stages it actually executes are planned. Shader counters
 continue to count nxnative's completed reflection/Metal-library pairs.
 """
@@ -12,7 +12,7 @@ import statistics
 import time
 from core import atomic, read
 
-# Initial weights are reference estimates adapted from S2Arm, not LumaDock
+# Initial weights are reference estimates adapted from S2Arm, not LumaNX
 # benchmarks. Successful uncached runs replace them with local medians.
 REFERENCE_GB = 5.4
 STEPS = {

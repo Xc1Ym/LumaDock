@@ -1,9 +1,9 @@
 {
-  "name": "LumaDock",
-  "displayName": "璃游 LumaDock",
+  "name": "LumaNX",
+  "displayName": "璃游 LumaNX",
   "version": "0.2.14",
   "build": "16",
-  "executable": "NSMac",
+  "executable": "LumaNX",
   "bundleIdentifier": "org.nsmac.launcher",
   "minimumSystemVersion": "26.0",
   "engineMode": "bundled"

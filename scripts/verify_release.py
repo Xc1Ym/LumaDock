@@ -16,7 +16,7 @@ from package import audit
 
 def verify_icons():
     assets = ROOT/'Assets'
-    ico = (assets/'LumaDock.ico').read_bytes()
+    ico = (assets/'LumaNX.ico').read_bytes()
     reserved, kind, count = struct.unpack_from('<HHH', ico)
     assert (reserved, kind, count) == (0, 1, 7), 'Invalid ICO directory'
     dimensions = []
@@ -29,7 +29,7 @@ def verify_icons():
         assert (width, height) == (w or 256, h or 256)
         dimensions.append(width)
     assert dimensions == [16, 24, 32, 48, 64, 128, 256]
-    icns = (assets/'LumaDock.icns').read_bytes()
+    icns = (assets/'LumaNX.icns').read_bytes()
     assert icns[:4] == b'icns' and struct.unpack_from('>I', icns, 4)[0] == len(icns)
 
 
@@ -50,7 +50,7 @@ def verify_source(path):
             if rel.suffix.lower() in ('.png','.jpg','.jpeg','.webp','.ico','.icns','.svg'):
                 assert '/'.join(rel.parts[1:]) in SOURCE_ARTWORK, f'Unexpected artwork: {name}'
             assert archive.getinfo(name).file_size < 100*1024*1024, f'File exceeds GitHub size limit: {name}'
-        for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaDock.ico'):
+        for required in ('README.md', 'README.zh-CN.md', 'LICENSE', '.github/workflows/ci.yml', 'Assets/LumaNX.ico'):
             assert PRODUCT['name']+'/'+required in names, f'Missing source file: {required}'
         engine_prefix=PRODUCT['name']+'/Engine/nxnative/'
         if any(name.startswith(engine_prefix) for name in names):
@@ -94,7 +94,7 @@ def verify_dmg(path):
                     assert 0<position[0]<LAYOUT['width'] and 0<position[1]<LAYOUT['height']-40
             for name in ('Getting-started.md','使用说明.md','Environment.md','环境要求.md','Third-party-licenses.md','第三方许可.md'):
                 assert (mount/'Read me'/name).read_bytes()==(ROOT/'docs'/name).read_bytes()
-            assert (mount/'Read me/LumaDock-LICENSE.txt').read_bytes()==(ROOT/'LICENSE').read_bytes()
+            assert (mount/'Read me/LumaNX-LICENSE.txt').read_bytes()==(ROOT/'LICENSE').read_bytes()
             app=mount/(PRODUCT['name']+'.app')
             info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
             assert info['CFBundleShortVersionString']==PRODUCT['version']
@@ -110,7 +110,7 @@ def verify_runtime_relocation(app):
     from runtime_audit import verify_portable_runtime
     count=verify_portable_runtime(app/'Contents/Resources/Runtime')
     with tempfile.TemporaryDirectory(prefix='runtime-relocation-',dir=ROOT/'work') as directory:
-        moved=Path(directory)/'中文 空格目录'/'Renamed LumaDock.app'
+        moved=Path(directory)/'中文 空格目录'/'Renamed LumaNX.app'
         moved.parent.mkdir()
         subprocess.run(['cp','-cR',str(app),str(moved)],check=True)
         resources=moved/'Contents/Resources'
@@ -208,13 +208,13 @@ def main():
     info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
     assert info['CFBundleShortVersionString'] == PRODUCT['version']
     assert info['CFBundleIdentifier'] == PRODUCT['bundleIdentifier']
-    assert info['CFBundleIconFile'] == 'LumaDock.icns'
+    assert info['CFBundleIconFile'] == 'LumaNX.icns'
     assert (app/'Contents/Resources'/info['CFBundleIconFile']).is_file()
     for name in ('README.md','README.zh-CN.md'):
         assert (app/'Contents/Resources'/name).read_bytes() == (ROOT/name).read_bytes(), f'Packaged documentation is stale: {name}'
     assert info['CFBundleDevelopmentRegion'] == 'en'
     assert info['CFBundleLocalizations'] == ['en','zh-Hans']
-    bundle = app/'Contents/Resources/NSMac_NSMac.bundle'
+    bundle = app/'Contents/Resources/LumaNX_LumaNX.bundle'
     strings = next((p for p in (bundle/'Contents/Resources/Localizable.json',bundle/'Localizable.json') if p.is_file()),None)
     assert strings is not None, 'Missing packaged localization catalog'
     assert len(json.loads(strings.read_text())) > 350

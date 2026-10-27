@@ -67,9 +67,14 @@ class PackageGuardTests(unittest.TestCase):
         self.assertEqual((target/'sentinel').read_text(),'keep this app')
         self.assertFalse(list(output.glob('.lumadock-package-*')))
     @unittest.skipUnless(sys.platform=='darwin','macOS process path format')
+    @unittest.skipUnless(shutil.which('cc'),'needs a C compiler')
     def test_real_running_bundle_executable_is_detected(self):
-        executable=self.target/'Contents/MacOS/fixture-sleeper';shutil.copyfile('/bin/sleep',executable);executable.chmod(0o755)
-        child=subprocess.Popen([str(executable),'30'])
+        # Copied macOS platform binaries can be killed before the process check.
+        source=self.root/'fixture-sleeper.c'
+        source.write_text('#include <unistd.h>\nint main(void) { for (;;) pause(); }\n')
+        executable=self.target/'Contents/MacOS/fixture-sleeper'
+        subprocess.run(['cc',str(source),'-o',str(executable)],check=True)
+        child=subprocess.Popen([str(executable)])
         try:
             with self.assertRaisesRegex(RuntimeError,'running'):package.require_inactive(self.target)
             self.assertEqual((self.target/'sentinel').read_text(),'old working app')

@@ -44,7 +44,9 @@ struct ContentView: View {
                 .navigationTitle(store.selection=="conversion" ? L("文件转换") : store.selection=="tasks" ? L("准备任务") : store.selection=="settings" ? L("设置") : L("游戏库"))
                 .toolbar {
                     ToolbarItemGroup(placement:.primaryAction) {
+                        if store.selection == "library" || store.selection == nil {
                         Button(action:store.chooseGames){Label(L(store.importActionTitle),systemImage:"plus")}.help(L("先检查环境、选择游戏库并导入 prod.keys，再添加游戏（⌘O）"))
+                        }
                     }
                 }
         }
@@ -228,31 +230,86 @@ struct GameDetail: View {
 }
 struct TasksView: View {
     @EnvironmentObject var store: Store
+    private var attention: [TaskRecord] {store.tasks.filter {!$0.active && (["failed","interrupted"].contains($0.state) || $0.hasWarnings)}}
+    private var history: [TaskRecord] {store.tasks.filter {!$0.active && !["failed","interrupted"].contains($0.state) && !$0.hasWarnings}}
     var body: some View {
-        VStack(alignment:.leading,spacing:20) {
-            HStack {Text(L("准备任务")).font(.largeTitle.bold());Spacer();Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))}}
-            Text(L("准备队列串行执行；准备游戏时可以继续导入文件和修改映射。")).foregroundStyle(.secondary)
-            if store.tasks.isEmpty && store.queue.isEmpty { ContentUnavailableView(L("暂无任务"),systemImage:"checklist",description:Text(L("导入后，文件齐全的游戏会自动加入准备队列；也可在详情中手动准备。"))) }
-            ScrollView {
-                LazyVStack(spacing:14) {
-                    ForEach(Array(store.queue.enumerated()),id:\.element) { i,id in HStack { Image(systemName:"clock");Text(L("排队 \(i+1)：\(store.games.first(where:{$0.id==id})?.name ?? id)"));Spacer();Button(L("移出队列")) {store.dequeue(id)} }.padding().background(.quaternary,in:RoundedRectangle(cornerRadius:12)) }
-                    ForEach(store.tasks) { task in TaskCard(task:task) }
+        WorkspacePage {
+            WorkspaceHeading(title:"准备任务",subtitle:"准备队列串行执行；准备游戏时可以继续导入文件和修改映射。",symbol:"checklist") {
+                Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))}.buttonStyle(.glass)
+            }
+            HStack(spacing:8) {
+                StatusPill(title:"进行中 \(store.activeTasks.count)",symbol:"circle.dotted")
+                StatusPill(title:"等待中 \(store.queue.count)",symbol:"clock",color:.secondary)
+                Spacer()
+            }
+            if store.tasks.isEmpty && store.queue.isEmpty {
+                GlassPanel {
+                    ContentUnavailableView(L("暂无任务"),systemImage:"checklist",description:Text(L("导入后，文件齐全的游戏会自动加入准备队列；也可在详情中手动准备。")))
+                        .frame(minHeight:250)
                 }
             }
-        }.padding(28)
+            ForEach(store.tasks.filter(\.active)) {task in TaskCard(task:task)}
+            if !store.queue.isEmpty {
+                GlassPanel(title:"等待队列",symbol:"clock") {
+                    ForEach(Array(store.queue.enumerated()),id:\.element) { i,id in
+                        HStack(spacing:12) {
+                            Text("\(i+1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width:24)
+                            Text(store.games.first(where:{$0.id==id})?.name ?? id).lineLimit(1)
+                            Spacer()
+                            Button(L("移出队列")) {store.dequeue(id)}.controlSize(.small)
+                        }.padding(.vertical,4)
+                    }
+                }
+            }
+            ForEach(attention) {task in TaskCard(task:task)}
+            if !history.isEmpty {
+                GlassPanel {
+                    CompactDisclosure(title:"历史任务",subtitle:"\(history.count)",symbol:"clock.arrow.circlepath") {
+                        LazyVStack(spacing:10) {ForEach(history) {task in TaskCard(task:task,embedded:true)}}
+                    }
+                }
+            }
+        }
     }
 }
 struct TaskCard: View {
     @EnvironmentObject var store: Store
     let task: TaskRecord
+    var embedded=false
     var body: some View {
+        Group {
+            if embedded {content.padding(14).contentCard(14)}
+            else {GlassPanel {content}}
+        }
+    }
+    private var content:some View {
         VStack(alignment:.leading,spacing:12) {
-            HStack { Label(task.title,systemImage:task.state=="failed" || task.hasWarnings ? "exclamationmark.triangle.fill" : task.state=="completed" ? "checkmark.circle.fill" : "circle.dotted").font(.headline); Text(store.games.first(where:{$0.id==task.gameId})?.name ?? "").lineLimit(1);Spacer();Text(task.stateName).foregroundStyle(task.hasWarnings ? .orange : .secondary) }
-            let milestoneLabel=task.active ? task.milestones?.first(where:{$0.id==task.milestone})?.label:nil
-            if let stage=task.stage,stage != milestoneLabel { Text(L(stage)).font(.callout) }
-            if task.active {TaskProgressView(task:task)}
-            if let msg=task.message,!msg.isEmpty,msg != task.stage,msg != milestoneLabel,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+            HStack(spacing:10) {
+                Image(systemName:task.state=="failed" || task.hasWarnings ? "exclamationmark.triangle.fill" : task.state=="completed" ? "checkmark.circle.fill" : "circle.dotted")
+                    .foregroundStyle(task.state=="failed" || task.hasWarnings ? Color.orange : WorkspacePalette.accent)
+                VStack(alignment:.leading,spacing:3) {
+                    Text(task.title).font(.headline)
+                    if let name=store.games.first(where:{$0.id==task.gameId})?.name {Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)}
+                }
+                Spacer()
+                StatusPill(title:task.stateName,symbol:task.active ? "circle.dotted" : "circle.fill",color:task.hasWarnings || task.state=="failed" ? .orange : .secondary)
+                if task.active {
+                    Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling").controlSize(.small)
+                } else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil || task.importPaths != nil {
+                    Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy).controlSize(.small)
+                }
+            }
+            if task.active {TaskProgressView(task:task,compact:true)}
             ForEach(task.diagnostics ?? []) {diagnostic in TaskDiagnosticCard(diagnostic:diagnostic)}
+            if task.stage != nil || task.message?.isEmpty == false || !(task.milestones ?? []).isEmpty {
+                CompactDisclosure(title:"任务详情",subtitle:task.active ? "阶段与构建信息" : "处理记录",symbol:"list.bullet.rectangle") {
+                    if let stage=task.stage {Text(L(stage)).font(.callout)}
+                    if let msg=task.message,!msg.isEmpty,msg != task.stage,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {
+                        Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                    if task.active,!(task.milestones ?? []).isEmpty {TaskProgressView(task:task)}
+                }
+            }
             if task.operation=="exportIPA",task.state=="completed",let path=task.outputPath {
                 Button(L("在访达中查看 IPA")) {store.reveal(URL(fileURLWithPath:path))}
             }
@@ -262,10 +319,10 @@ struct TaskCard: View {
                     if (task.outputFiles ?? []).contains(where:{URL(fileURLWithPath:$0).pathExtension.lowercased()=="nsp"}) {Button(L("导入生成的 NSP")){store.importConverted(task)}}
                 }
             }
-            HStack {Spacer();if task.active {Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling")} else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil || task.importPaths != nil {Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy)} }
-        }.padding(18).contentCard(18)
+        }
     }
 }
+
 struct TaskDiagnosticCard: View {
     @EnvironmentObject var store: Store
     let diagnostic: TaskDiagnostic
@@ -274,13 +331,16 @@ struct TaskDiagnosticCard: View {
             Label(L(diagnostic.summary),systemImage:diagnostic.isWarning ? "exclamationmark.triangle" : "xmark.octagon")
                 .font(.callout.bold()).foregroundStyle(diagnostic.isWarning ? .orange : .red)
             Text(L(diagnostic.suggestion)).font(.callout).textSelection(.enabled)
-            if let stage=diagnostic.stage,!stage.isEmpty {Text(L("失败阶段：")+L(stage)).font(.caption).foregroundStyle(.secondary)}
-            Text(diagnostic.code).font(.caption.monospaced()).foregroundStyle(.secondary)
-            if !diagnostic.detail.isEmpty {
-                DisclosureGroup(L("编译器输出（已脱敏）")) {
-                    ScrollView {Text(diagnostic.detail).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:160)
-                }
-            }
+            DisclosureGroup(L("诊断详情")) {
+                VStack(alignment:.leading,spacing:6) {
+                    Text(diagnostic.code).font(.caption.monospaced()).foregroundStyle(.secondary)
+                    if let stage=diagnostic.stage,!stage.isEmpty {Text(L("失败阶段：")+L(stage)).font(.caption).foregroundStyle(.secondary)}
+                    if !diagnostic.detail.isEmpty {
+                        Text(L("编译器输出（已脱敏）")).font(.caption).foregroundStyle(.secondary)
+                        ScrollView {Text(diagnostic.detail).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:160)
+                    }
+                }.padding(.top,6)
+            }.font(.caption)
             HStack {
                 Button(L("打开对应日志")) {store.reveal(store.diagnosticLogURL(diagnostic))}
                 Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
@@ -292,56 +352,94 @@ struct TaskDiagnosticCard: View {
 struct SettingsView: View {
     @EnvironmentObject var store: Store
     var body: some View {
-        Form {
-            Section(L("语言与外观")) { LanguagePicker(); AppearancePicker(); Text(L("界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。")).font(.caption).foregroundStyle(.secondary) }
-            Section(L("游戏语言")) {
-                GameLanguagePicker()
-                Text(L("与界面语言独立；可在游戏详情中单独设置启动语言。下次启动生效，无需重新准备或导入固件。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
+        WorkspacePage {
+            WorkspaceHeading(title:"设置",subtitle:"按你的习惯，准备下一次启动。",symbol:"slider.horizontal.3") {
+                Button(L("导出诊断包…"),action:store.exportDiagnostics).buttonStyle(.glass)
             }
-            Section(L("游戏库与玩家数据")) {
-                LabeledContent(L("存储位置"),value:store.preferences.library.isEmpty ? L("未选择") : store.preferences.library).textSelection(.enabled)
-                Button(L("选择或切换游戏库…"),action:store.chooseLibrary).disabled(store.executionBusy)
-                LabeledContent(L("玩家密钥"),value:L(store.keyStatus));Button(L("导入 prod.keys…"),action:store.importKeys).disabled(store.importingKeys)
-                Text(L("先准备环境，再选择游戏库、导入密钥和游戏。密钥通常只需导入一次，可供多款游戏共用；仅保存在本机私有目录，不随诊断包导出。")).font(.caption).foregroundStyle(.secondary)
-                Toggle(L("导入后自动准备支持的游戏"),isOn:Binding(get:{store.prepareAfterImport},set:{store.prepareAfterImport=$0}))
-                Text(L("仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。")).font(.caption).foregroundStyle(.secondary)
+            HStack(alignment:.top,spacing:16) {
+                GlassPanel(title:"语言与外观",symbol:"paintpalette") {
+                    VStack(alignment:.leading,spacing:6) {Text(L("语言")).font(.caption).foregroundStyle(.secondary);LanguagePicker().labelsHidden()}
+                    VStack(alignment:.leading,spacing:6) {Text(L("外观")).font(.caption).foregroundStyle(.secondary);AppearancePicker().labelsHidden()}
+                    Divider()
+                    GameLanguagePicker()
+                    CompactDisclosure(title:"语言说明",symbol:"character.bubble") {
+                        Text(L("界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。"))
+                        Text(L("与界面语言独立；可在游戏详情中单独设置启动语言。下次启动生效，无需重新准备或导入固件。所选语言需游戏自身支持。"))
+                    }.font(.caption).foregroundStyle(.secondary)
+                }
+                GlassPanel(title:"游戏库与玩家数据",symbol:"externaldrive") {
+                    HStack {
+                        Image(systemName:"folder").foregroundStyle(WorkspacePalette.accent)
+                        Text(store.preferences.library.isEmpty ? L("未选择") : URL(fileURLWithPath:store.preferences.library).lastPathComponent).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button(L("选择或切换游戏库…"),action:store.chooseLibrary).disabled(store.executionBusy).controlSize(.small)
+                    }
+                    HStack {
+                        Label(L(store.keyStatus),systemImage:"key").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(L("导入 prod.keys…"),action:store.importKeys).disabled(store.importingKeys).controlSize(.small)
+                    }
+                    Divider()
+                    Toggle(L("导入后自动准备支持的游戏"),isOn:Binding(get:{store.prepareAfterImport},set:{store.prepareAfterImport=$0})).toggleStyle(.switch).controlSize(.small)
+                    CompactDisclosure(title:"存储与导入说明",symbol:"folder.badge.gearshape") {
+                        LabeledContent(L("存储位置"),value:store.preferences.library.isEmpty ? L("未选择") : store.preferences.library).textSelection(.enabled)
+                        Text(L("先准备环境，再选择游戏库、导入密钥和游戏。密钥通常只需导入一次，可供多款游戏共用；仅保存在本机私有目录，不随诊断包导出。"))
+                        Text(L("仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。"))
+                    }.font(.caption).foregroundStyle(.secondary)
+                }
             }
-            Section(L("运行与构建环境")) {
-                EngineSettingsView()
-                TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).onSubmit {store.savePreferences();store.checkEnvironment()}
-                    .onChange(of:store.preferences.developerDir) {_,_ in store.checks=[]}
-                EnvironmentSummary()
-                ToolChecks()
-                ToolchainActions()
-                Text(L("准备游戏需要完整工具链；启动已准备好的游戏只需要标有“启动”的项目。首次安装请先完成全部检查。")).font(.caption).foregroundStyle(.secondary)
-            }
-            Section(L("控制与诊断")) {
-                Button(L("设置全局键鼠与手柄映射")) {store.inputGame=nil;store.editingInput=true}
-                Button(L("导出诊断包…"),action:store.exportDiagnostics)
-                Button(L("重新打开首次运行向导"),action:store.openOnboarding)
-            }
-            Section(L("关于璃游")) {
-                LabeledContent(L("璃游 LumaDock"),value:Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))
-                Text(L("独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
+            GlassPanel {
                 HStack {
-                    Text(L("运行引擎由玩家自行提供。"))
+                    Label(L("运行与构建环境"),systemImage:"cpu").font(.headline)
+                    Spacer()
+                    Button(L("重新检查")) {store.savePreferences();store.checkEnvironment()}.disabled(store.checkingEnvironment || store.executionBusy).controlSize(.small)
+                }
+                EnvironmentSummary()
+                CompactDisclosure(title:"环境详情与工具",subtitle:store.checks.isEmpty ? "Xcode · Metal · nxnative" : "\(store.checks.filter{!$0.ok}.count) 项检查待处理",symbol:"wrench.and.screwdriver") {
+                    ToolChecks()
+                    Divider()
+                    EnvironmentToolsView(showsRecheck:false)
+                }
+            }
+            GlassPanel {
+                ViewThatFits(in:.horizontal) {
+                    HStack(spacing:12) {
+                        Label(L("控制与诊断"),systemImage:"gamecontroller").font(.headline)
+                        Spacer()
+                        controlActions
+                    }
+                    VStack(alignment:.leading,spacing:12) {
+                        Label(L("控制与诊断"),systemImage:"gamecontroller").font(.headline)
+                        controlActions
+                    }
+                }.controlSize(.small)
+            }
+            GlassPanel {
+                CompactDisclosure(title:"关于璃游",subtitle:"LumaDock · \(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))",symbol:"info.circle") {
+                    Text(L("独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
                     Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}
                 }
             }
-        }.formStyle(.grouped).navigationTitle(L("设置"))
+        }.navigationTitle(L("设置"))
     }
+    @ViewBuilder private var controlActions:some View {
+        Button(L("设置全局键鼠与手柄映射")) {store.inputGame=nil;store.editingInput=true}
+        Button(L("重新打开首次运行向导"),action:store.openOnboarding)
+    }
+
 }
+
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
     @State private var showPassed=false
     private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","内置引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
     var body: some View {
         let passed=store.checks.filter(\.ok)
-        VStack(alignment:.leading,spacing:18) {
+        VStack(alignment:.leading,spacing:12) {
             checkGroups(store.checks.filter{!$0.ok})
             if !passed.isEmpty {
                 DisclosureGroup(isExpanded:$showPassed) {
-                    VStack(alignment:.leading,spacing:18) {checkGroups(passed)}.padding(.top,8)
+                    VStack(alignment:.leading,spacing:12) {checkGroups(passed)}.padding(.top,8)
                 } label: {
                     Label(L("已通过的检查（\(passed.count) 项）"),systemImage:"checkmark.circle.fill")
                         .font(.callout).foregroundStyle(.teal)
@@ -440,89 +538,42 @@ struct EnvironmentSummary: View {
         }.font(.callout)
     }
 }
-struct ToolchainActions: View {
-    @EnvironmentObject var store:Store
-    @State private var confirmUninstall = false
-    var body:some View {
-        VStack(alignment:.leading,spacing:12) {
-            HStack {
-                Button(L("在 App Store 获取 Xcode"),action:store.openXcodeStore)
-                Button(L("选择 Xcode.app…"),action:store.chooseXcode).disabled(store.checkingEnvironment || store.executionBusy)
-                Button(L("重新检查")) {store.savePreferences();store.checkEnvironment()}.disabled(store.checkingEnvironment || store.executionBusy)
-            }
-            Button(L("打开 Xcode 完成设置")){store.repairEnvironment("openXcode")}.disabled(!store.xcodeInstalled)
-            Button(L("环境安装说明")){store.openDocumentation(.environment)}
-            HStack {
-                Button(L("安装 Metal 编译组件")) {store.manageMetal(remove:false)}
-                    .disabled(!store.canManageToolchain || !store.xcodeInitialized || store.metalInstalled)
-                Button(L("卸载 Metal 编译组件…"),role:.destructive) {confirmUninstall=true}
-                    .disabled(!store.canManageToolchain || !store.metalInstalled || !store.canUninstallMetal)
-                    .help(store.canUninstallMetal ? L("卸载 Apple 管理的共享组件，可重新安装") : L("当前 Xcode 不支持命令行卸载组件"))
-            }
-            if let task=store.tasks.first(where:{$0.id==store.executionTask && ["installMetal","uninstallMetal"].contains($0.operation)}) {
-                VStack(alignment:.leading) {Text(task.title).font(.caption);TaskProgressView(task:task,compact:true)}
-            }
-        }
-        .alert(L("卸载 Metal 编译组件？"),isPresented:$confirmUninstall) {
-            Button(L("取消"),role:.cancel) {}
-            Button(L("卸载组件"),role:.destructive) {store.manageMetal(remove:true)}
-        } message: {
-            Text(L("这是 Xcode 管理的共享组件，卸载也会影响其他使用它的项目。卸载后无法准备或重新编译游戏，可随时重新安装。游戏文件、密钥和存档会保留。"))
-        }
-    }
-}
 struct EnvironmentSetupView: View {
     @EnvironmentObject var store:Store
     var body:some View {
-        VStack(alignment:.leading,spacing:16) {
-            Text(L("先准备 Mac 运行环境。需要 Apple Silicon、macOS 26 或更新系统、完整 Xcode 和 Metal 编译组件。检查通过后再导入玩家内容。")).foregroundStyle(.secondary)
+        VStack(alignment:.leading,spacing:14) {
             EnvironmentSummary()
-            EngineSettingsView()
-            DisclosureGroup(L("安装其他环境")) {
-                VStack(alignment:.leading,spacing:10) {
-                    Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。")).font(.callout).foregroundStyle(.secondary)
-                    Text(L("Python、Python 扩展、.NET 运行时、SPIRV-Cross、Zstandard 与 nxnative 随应用提供。首次准备工具无需单独下载引擎或安装 .NET SDK。")).font(.caption).foregroundStyle(.secondary)
+            EnvironmentToolsView()
+            // Failed requirements stay visible during setup so the next action is clear.
+            if store.checks.contains(where:{!$0.ok}) {ToolChecks()}
+            else {
+                CompactDisclosure(title:"环境检查详情",subtitle:"Xcode · Metal · nxnative",symbol:"checkmark.shield") {
+                    ToolChecks()
                 }
             }
-            TextField(L("Xcode Developer 目录"),text:$store.preferences.developerDir).textFieldStyle(.roundedBorder)
-                .onChange(of:store.preferences.developerDir) { _,_ in store.checks=[] }
-                .onSubmit {store.savePreferences();store.checkEnvironment()}
-            ToolchainActions()
-            Divider()
-            ToolChecks()
-            if store.environmentReady {Label(L("环境已就绪，可以继续选择游戏库。"),systemImage:"checkmark.circle.fill").foregroundStyle(.teal)}
+            CompactDisclosure(title:"安装其他环境",symbol:"questionmark.circle") {
+                Text(L("先准备 Mac 运行环境。需要 Apple Silicon、macOS 26 或更新系统、完整 Xcode 和 Metal 编译组件。检查通过后再导入玩家内容。"))
+                Text(L("1. 获取完整 Xcode，打开一次，完成许可与初始组件安装。\n2. 选择 Xcode.app 并重新检查，缺少 Metal 时点击安装。\n3. 展开每项“安装与修复方法”查看具体步骤，全部通过后继续。"))
+                Text(L("Python、Python 扩展、.NET 运行时、SPIRV-Cross、Zstandard 与 nxnative 随应用提供。首次准备工具无需单独下载引擎或安装 .NET SDK。"))
+            }.font(.caption).foregroundStyle(.secondary)
         }
     }
 }
-struct EngineSettingsView: View {
-    @EnvironmentObject var store:Store
-    var body:some View {
-        VStack(alignment:.leading,spacing:10) {
-            Text(L("内置 nxnative 引擎")).font(.headline)
-            Text(L("引擎随应用提供，无需单独下载。Switch Pro、Xbox 与 PS 手柄自动识别，无需配置按键映射。引擎更新随新版应用发布。")).font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Button(L("准备引擎工具"),action:store.prepareEngine).disabled(!store.canManageToolchain)
-            }
-            if let task=store.tasks.first(where:{$0.id==store.executionTask && $0.operation=="prepareEngine"}) {
-                VStack(alignment:.leading) {Text(L(task.stage ?? "准备引擎工具")).font(.caption);TaskProgressView(task:task)}
-            }
-        }
-    }
-}
+
 struct OnboardingView: View {
     @EnvironmentObject var store: Store
     private var step:Int { store.onboardingStep }
     let titles=[L("检查并安装环境"),L("选择游戏库"),L("导入 prod.keys"),L("添加游戏")]
     var body: some View {
-        VStack(alignment:.leading,spacing:20) {
+        VStack(alignment:.leading,spacing:16) {
             HStack(spacing:16) {
-                BrandMark(size:64)
+                BrandMark(size:48)
                 VStack(alignment:.leading,spacing:5) {
-                    Text(L("欢迎使用璃游")).font(.largeTitle.bold())
+                    Text(L("欢迎使用璃游")).font(.title2.bold())
                     Text(L("先准备环境，再导入密钥和游戏。")).foregroundStyle(.secondary)
                 }
             }
-            LanguagePicker().frame(maxWidth:460)
+            LanguagePicker().labelsHidden().frame(maxWidth:400)
             HStack {
                 ForEach(0..<4) { i in
                     HStack {
@@ -531,20 +582,18 @@ struct OnboardingView: View {
                         if i<3 {Image(systemName:"chevron.right").foregroundStyle(.tertiary)}
                     }
                 }
-            }.id(Localization.language)
-            Divider()
-            Text(L(titles[step])).font(.title2.bold())
+            }.padding(14).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).id(Localization.language)
             ScrollView {
-                VStack(alignment:.leading,spacing:16) {
+                GlassPanel(title:titles[step],symbol:["checkmark.shield","folder","key","plus.circle"][step]) {
                     if step==0 {
                         EnvironmentSetupView()
                     } else if step==1 {
                         Text(L("游戏文件会复制到此位置，支持外置硬盘。请为大型游戏预留充足空间。璃游不附带游戏、密钥或固件，所有内容均由玩家自行导入。")).foregroundStyle(.secondary)
-                        Button(L("选择游戏库文件夹…"),action:store.chooseLibrary).buttonStyle(.borderedProminent).tint(.teal)
+                        Button(L("选择游戏库文件夹…"),action:store.chooseLibrary).buttonStyle(.glassProminent)
                         Text(store.preferences.library.isEmpty ? L("尚未选择") : store.preferences.library).font(.callout).textSelection(.enabled)
                     } else if step==2 {
                         Text(L("先导入 prod.keys，应用才能读取游戏内容。通常只需导入一次，多款游戏可共用这份密钥集合。")).foregroundStyle(.secondary)
-                        Button(L("导入 prod.keys…"),action:store.importKeys).buttonStyle(.borderedProminent).tint(.teal).disabled(store.importingKeys)
+                        Button(L("导入 prod.keys…"),action:store.importKeys).buttonStyle(.glassProminent).disabled(store.importingKeys)
                         if let task=store.tasks.first(where:{$0.operation=="keys" && $0.active}) {TaskProgressView(task:task,compact:true)}
                         Label(L(store.keyStatus),systemImage:store.hasImportedKeys ? "checkmark.circle.fill" : "key").foregroundStyle(store.hasImportedKeys ? Color.teal : .secondary)
                         Text(L("导入时检查格式，首次读取游戏时验证解密能力。密钥仅保存在本机私有目录，源文件保持原样。")).font(.caption).foregroundStyle(.secondary)
@@ -557,7 +606,6 @@ struct OnboardingView: View {
                     }
                 }.frame(maxWidth:.infinity,alignment:.leading)
             }
-            Spacer()
             Divider()
             Text(L("可稍后在设置中继续。环境检查通过后才能导入和准备游戏。"))
                 .font(.caption).foregroundStyle(.secondary)
@@ -572,9 +620,9 @@ struct OnboardingView: View {
                 Button(step==3 ? L("添加游戏…") : L("继续")) {
                     if step<3 {store.onboardingStep+=1}
                     else {store.finishOnboarding(addGames:true)}
-                }.buttonStyle(.borderedProminent).tint(.teal).disabled(!store.environmentReady || step==1 && store.preferences.library.isEmpty || step>=2 && (!store.hasImportedKeys || store.importingKeys))
+                }.buttonStyle(.glassProminent).disabled(!store.environmentReady || step==1 && store.preferences.library.isEmpty || step>=2 && (!store.hasImportedKeys || store.importingKeys))
             }
-        }.padding(32) .frame(width:900,height:700).background(LibraryBackdrop())
+        }.padding(24).frame(width:860,height:660).background(LibraryBackdrop()).tint(WorkspacePalette.accent)
         .onAppear {store.checkEnvironmentAtStartup()}
         .onChange(of:store.hasImportedKeys) { _,ready in if !ready && step==3 {store.onboardingStep=2} }
         .alert(L("操作未完成"),isPresented:Binding(get:{store.error != nil},set:{if !$0 {store.error=nil}})) {

@@ -1,9 +1,9 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class ConversionTests:XCTestCase {
     private func fixture() throws -> (URL,Store) {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-conversion-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-conversion-"+UUID().uuidString)
         let resources=root.appendingPathComponent("resources")
         let worker=resources.appendingPathComponent("Worker")
         let python=resources.appendingPathComponent("Runtime/python/bin")

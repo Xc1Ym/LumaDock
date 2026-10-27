@@ -54,10 +54,10 @@ def module(path, name):
 
 def prepare_profile(c, st, up, registered, root, repo, env, selected, version):
     folder=root/'profiles'/registered.id
-    # Upstream initializes these modules in main(); LumaDock calls its stages directly.
+    # Upstream initializes these modules in main(); LumaNX calls its stages directly.
     sys.path.insert(0,str(repo/'dm/tools'))
-    up.nacp=module(repo/'dm/tools/nacp.py','lumadock_nacp')
-    up.pg=module(repo/'dm/games/profile_guess.py','lumadock_profile_guess')
+    up.nacp=module(repo/'dm/tools/nacp.py','lumanx_nacp')
+    up.pg=module(repo/'dm/games/profile_guess.py','lumanx_profile_guess')
     st.run(PROFILE_STAGE,[folder],lambda:up.derive_profile(registered,folder,version,selected,
         registered.words('modules')),milestone='profile')
     gp=type(registered)(folder)

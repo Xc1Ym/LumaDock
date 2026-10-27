@@ -1,9 +1,9 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class ImportFlowTests: XCTestCase {
     private func fixture(toolchainReady: Bool = true) throws -> (URL, Store) {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-flow-"+UUID().uuidString)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-flow-"+UUID().uuidString)
         let resources = root.appendingPathComponent("resources")
         let worker = resources.appendingPathComponent("Worker")
         try FileManager.default.createDirectory(at:worker,withIntermediateDirectories:true)

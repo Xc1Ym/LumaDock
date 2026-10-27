@@ -1,9 +1,9 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class RecoveryTests: XCTestCase {
     private func fixture() throws -> (URL,Store,Game) {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-recovery-ui-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-recovery-ui-"+UUID().uuidString)
         let resources=root.appendingPathComponent("resources")
         let worker=resources.appendingPathComponent("Worker")
         let python=resources.appendingPathComponent("Runtime/python/bin")

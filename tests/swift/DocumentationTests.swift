@@ -1,10 +1,10 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 final class DocumentationTests:XCTestCase {
     private var root:URL {URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()}
     func testGuideLocationsFollowTheAppAndLanguage() throws {
-        for resources in [URL(fileURLWithPath:"/Applications/LumaDock.app/Contents/Resources"),URL(fileURLWithPath:"/Volumes/中文 磁盘/Moved App.app/Contents/Resources")] {
+        for resources in [URL(fileURLWithPath:"/Applications/LumaNX.app/Contents/Resources"),URL(fileURLWithPath:"/Volumes/中文 磁盘/Moved App.app/Contents/Resources")] {
             for guide in [AppGuide.environment,.licenses] {
                 for language in ["en","zh-Hans"] {
                     XCTAssertTrue(guide.url(resources:resources,language:language).path.hasPrefix(resources.path+"/docs/"))

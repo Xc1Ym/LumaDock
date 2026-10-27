@@ -1,12 +1,12 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class DiagnosticsTests: XCTestCase {
     private func diagnostic(severity: String = "error", path: String? = nil) -> TaskDiagnostic {
         .init(code:"shader_compile_failed",severity:severity,summary:"Metal 着色器编译失败。",suggestion:"在设置中安装 Metal 编译组件，完成后重新检查环境并重试。",detail:"sample.metal:7: error: unknown type",stage:"转换并编译 Metal 着色器",logPath:path,component:"dmsh_build.py",exitCode:1)
     }
     func testFailureEventKeepsDiagnosticLogAndActionableAlert() throws {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-errors-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-errors-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         let log=root.appendingPathComponent("logs/shader.log").path
@@ -22,7 +22,7 @@ import XCTest
         store.showFailedTask();XCTAssertEqual(store.selection,"tasks");XCTAssertNil(store.errorDiagnostic)
     }
     func testResultCanRestoreDiagnosticsWithoutEarlierStreamingEvent() throws {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-result-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-result-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root);let value=diagnostic(severity:"warning")
         let object=try JSONSerialization.jsonObject(with:JSONEncoder().encode([value]))
@@ -34,7 +34,7 @@ import XCTest
     func testLegacyJobsDecodeAndLogLinksStayWithinManagedLogLocations() throws {
         let legacy=try JSONDecoder().decode(TaskRecord.self,from:Data(#"{"id":"old","operation":"build","state":"failed"}"#.utf8))
         XCTAssertNil(legacy.diagnostics)
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-log-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-log-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         let fallback=root.appendingPathComponent("logs")

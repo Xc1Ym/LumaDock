@@ -20,13 +20,13 @@ class PackageGuardTests(unittest.TestCase):
         self.root=Path(self.tmp.name).resolve();self.target=self.root/'App With Spaces.app'
         (self.target/'Contents/MacOS').mkdir(parents=True)
         (self.target/'sentinel').write_text('old working app')
-        self.staged=self.root/'staging/LumaDock.app';self.staged.mkdir(parents=True)
+        self.staged=self.root/'staging/LumaNX.app';self.staged.mkdir(parents=True)
         (self.staged/'sentinel').write_text('new validated app')
     def tearDown(self): self.tmp.cleanup()
     def ps(self,code=0,executables=''):
         return patch('package.subprocess.run',return_value=SimpleNamespace(returncode=code,stdout=executables))
     def test_native_app_or_runtime_child_blocks_replacement(self):
-        for path in ('Contents/MacOS/NSMac','Contents/Resources/Runtime/python/bin/python3.14','Contents/Resources/Runtime/bin/spirv-cross'):
+        for path in ('Contents/MacOS/LumaNX','Contents/Resources/Runtime/python/bin/python3.14','Contents/Resources/Runtime/bin/spirv-cross'):
             with self.subTest(path=path),self.ps(executables=str(self.target/path)+'\n'):
                 with self.assertRaisesRegex(RuntimeError,'running'): package.publish_app(self.staged,self.target)
                 self.assertEqual((self.target/'sentinel').read_text(),'old working app')
@@ -36,7 +36,7 @@ class PackageGuardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'Cannot check'): package.publish_app(self.staged,self.target)
         self.assertTrue((self.target/'sentinel').is_file())
     def test_other_app_with_same_name_does_not_block(self):
-        with self.ps(executables=str(self.root/'unrelated'/self.target.name/'Contents/MacOS/NSMac')):
+        with self.ps(executables=str(self.root/'unrelated'/self.target.name/'Contents/MacOS/LumaNX')):
             package.publish_app(self.staged,self.target)
         self.assertEqual((self.target/'sentinel').read_text(),'new validated app')
         self.assertEqual((self.root/'staging/previous.app/sentinel').read_text(),'old working app')
@@ -57,7 +57,7 @@ class PackageGuardTests(unittest.TestCase):
     def test_failed_staging_keeps_existing_target(self):
         source=self.root/'source';bin_dir=self.root/'bin';bin_dir.mkdir()
         (bin_dir/package.PRODUCT['executable']).write_text('synthetic executable')
-        for file in ('work/Runtime/versions.json','work/Runtime/converter/manifest.json','Assets/LumaDock.icns'):
+        for file in ('work/Runtime/versions.json','work/Runtime/converter/manifest.json','Assets/LumaNX.icns'):
             p=source/file;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('fixture')
         xcode=self.root/'Xcode.app/Contents/Developer';(xcode/'Platforms/MacOSX.platform').mkdir(parents=True)
         output=self.root/'separate output';target=output/(package.PRODUCT['name']+'.app');target.mkdir(parents=True)
@@ -65,7 +65,7 @@ class PackageGuardTests(unittest.TestCase):
         with patch.object(package,'ROOT',source),patch.object(package,'require_inactive'),patch('sys.argv',['package.py','--app-only','--skip-build','--output-dir',str(output)]),patch.dict(os.environ,DEVELOPER_DIR=str(xcode)),patch('package.subprocess.check_output',return_value=str(bin_dir)),patch('package.shutil.copytree',side_effect=OSError('simulated copy failure')):
             with self.assertRaisesRegex(OSError,'copy failure'):package.main()
         self.assertEqual((target/'sentinel').read_text(),'keep this app')
-        self.assertFalse(list(output.glob('.lumadock-package-*')))
+        self.assertFalse(list(output.glob('.lumanx-package-*')))
     @unittest.skipUnless(sys.platform=='darwin','macOS process path format')
     @unittest.skipUnless(shutil.which('cc'),'needs a C compiler')
     def test_real_running_bundle_executable_is_detected(self):

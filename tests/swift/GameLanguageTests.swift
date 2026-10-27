@@ -1,10 +1,10 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class GameLanguageTests: XCTestCase {
     func testDefaultAndOverridesPersistIndependentlyOfInterfaceLanguage() throws {
         let previous=Localization.preference;defer {Localization.preference=previous}
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-game-language-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-game-language-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         XCTAssertEqual(store.defaultGameLanguage,.simplifiedChinese)
@@ -34,7 +34,7 @@ import XCTest
     }
     func testUnknownStoredCodesFallBackWithoutLosingOtherPreferences() throws {
         let previous=Localization.preference;defer {Localization.preference=previous}
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-game-language-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-game-language-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         store.preferences.gameLanguage="zhHans"

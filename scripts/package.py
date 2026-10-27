@@ -94,15 +94,15 @@ def main():
     env['DEVELOPER_DIR']=str(selected)
     if not (ROOT/'work/Runtime/versions.json').is_file():raise RuntimeError('Run scripts/bundle_runtime.py first; a bundled runtime is required.')
     if not (ROOT/'work/Runtime/converter/manifest.json').is_file():raise RuntimeError('Bundled conversion backend is missing; rebuild the runtime.')
-    if not (ROOT/'Assets/LumaDock.icns').is_file():raise RuntimeError('Run swift scripts/make_icons.swift first.')
+    if not (ROOT/'Assets/LumaNX.icns').is_file():raise RuntimeError('Run swift scripts/make_icons.swift first.')
     if not args.skip_build:run(['swift','build','--disable-sandbox','--cache-path',ROOT/'work/spm-cache','-c','release'],cwd=ROOT,env=env)
     result=subprocess.check_output(['swift','build','--disable-sandbox','--cache-path',str(ROOT/'work/spm-cache'),'-c','release','--show-bin-path'],cwd=ROOT,env=env,text=True).strip()
     output.mkdir(parents=True,exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.lumadock-package-',dir=output) as directory:
+    with tempfile.TemporaryDirectory(prefix='.lumanx-package-',dir=output) as directory:
         app=pathlib.Path(directory)/(PRODUCT['name']+'.app')
         contents=app/'Contents';resources=contents/'Resources';(contents/'MacOS').mkdir(parents=True);resources.mkdir()
         shutil.copy2(pathlib.Path(result)/PRODUCT['executable'],contents/'MacOS'/PRODUCT['executable'])
-        info={'CFBundleName':PRODUCT['name'],'CFBundleDisplayName':PRODUCT['name'],'CFBundleIdentifier':PRODUCT['bundleIdentifier'],'CFBundleExecutable':PRODUCT['executable'],'CFBundlePackageType':'APPL','CFBundleShortVersionString':PRODUCT['version'],'CFBundleVersion':PRODUCT['build'],'CFBundleIconFile':'LumaDock.icns','LSMinimumSystemVersion':PRODUCT['minimumSystemVersion'],'LSApplicationCategoryType':'public.app-category.games','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':['en','zh-Hans'],'NSGameControllerUsageDescription':'Use connected controllers for input configuration and gameplay.'}
+        info={'CFBundleName':PRODUCT['name'],'CFBundleDisplayName':PRODUCT['name'],'CFBundleIdentifier':PRODUCT['bundleIdentifier'],'CFBundleExecutable':PRODUCT['executable'],'CFBundlePackageType':'APPL','CFBundleShortVersionString':PRODUCT['version'],'CFBundleVersion':PRODUCT['build'],'CFBundleIconFile':'LumaNX.icns','LSMinimumSystemVersion':PRODUCT['minimumSystemVersion'],'LSApplicationCategoryType':'public.app-category.games','NSHighResolutionCapable':True,'NSPrincipalClass':'NSApplication','CFBundleDevelopmentRegion':'en','CFBundleLocalizations':['en','zh-Hans'],'NSGameControllerUsageDescription':'Use connected controllers for input configuration and gameplay.'}
         (contents/'Info.plist').write_bytes(plistlib.dumps(info))
         ignore=shutil.ignore_patterns('__pycache__','*.pyc','.git','gen','bin','obj','dmhost')
         shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
@@ -112,12 +112,12 @@ def main():
         if not (ROOT/'work/EngineReader/manifest.json').is_file(): raise RuntimeError('Run scripts/bundle_engine.py first.')
         shutil.copytree(ROOT/'work/EngineReader',resources/'Engine/reader')
         shutil.copytree(ROOT/'docs',resources/'docs',ignore=shutil.ignore_patterns('screenshots'))
-        shutil.copytree(pathlib.Path(result)/'NSMac_NSMac.bundle',resources/'NSMac_NSMac.bundle')
-        for language,display in [('en','LumaDock'),('zh-Hans','璃游 LumaDock')]:
+        shutil.copytree(pathlib.Path(result)/'LumaNX_LumaNX.bundle',resources/'LumaNX_LumaNX.bundle')
+        for language,display in [('en','LumaNX'),('zh-Hans','璃游 LumaNX')]:
             folder=resources/(language+'.lproj');folder.mkdir()
             usage='Use connected controllers for input configuration and gameplay.' if language=='en' else '在输入配置和游戏中使用玩家连接的手柄。'
             (folder/'InfoPlist.strings').write_text('"NSGameControllerUsageDescription" = "'+usage+'";\n"CFBundleName" = "'+display+'";\n"CFBundleDisplayName" = "'+display+'";\n')
-        shutil.copy2(ROOT/'Assets/LumaDock.icns',resources/'LumaDock.icns')
+        shutil.copy2(ROOT/'Assets/LumaNX.icns',resources/'LumaNX.icns')
         for name in ('LICENSE','README.md','README.zh-CN.md','product.json'):shutil.copy2(ROOT/name,resources/name)
         # Sign every nested native executable/library before sealing the outer app.
         native=[p for p in app.rglob('*') if p.is_file() and not p.is_symlink() and macho(p)]

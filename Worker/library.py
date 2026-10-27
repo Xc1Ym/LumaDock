@@ -8,7 +8,7 @@ def setup(c):
     if not c.library.is_dir(): c.library.mkdir(parents=True)
     mark = c.library / '.nsmac-library.json'; info = read(mark)
     if info is None:
-        if any(p.name != '.DS_Store' for p in c.library.iterdir()): raise Failure('请选择空文件夹或已有璃游（NS Mac）游戏库，避免混入其他文件。')
+        if any(p.name != '.DS_Store' for p in c.library.iterdir()): raise Failure('请选择空文件夹或已有 LumaNX 游戏库，避免混入其他文件。')
         info = {'schema':1,'id':uuid.uuid4().hex}; atomic(mark,info)
     for name in ['sources','games','cache','saves','temp','mappings']: (c.library/name).mkdir(exist_ok=True)
     if not (c.library/'catalog.json').exists(): c.save_catalog({'schema':1,'games':[]})

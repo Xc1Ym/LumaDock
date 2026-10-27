@@ -15,7 +15,7 @@ import build
 
 class DLCBuildTests(unittest.TestCase):
     def pipeline(self, target, *, dlc=True, retry=False, base_extension='nsp'):
-        with tempfile.TemporaryDirectory(prefix="lumadock-dlc-中文's-") as directory:
+        with tempfile.TemporaryDirectory(prefix="lumanx-dlc-中文's-") as directory:
             root=Path(directory)
             c=Context(dict(operation='exportIPA' if target=='ios' else 'build',
                 privateRoot=str(root/'private'), library=str(root/'library'),

@@ -13,7 +13,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView {
             VStack(alignment:.leading,spacing:20) {
-                HStack(spacing:10) { BrandMark(); VStack(alignment:.leading,spacing:3) { Text(Brand.name).font(.title2.bold()); Text(L("Mac 游戏启动器")).font(.caption.weight(.medium)).tracking(1.2).foregroundStyle(.secondary) } }.padding(.top,16).padding(.leading,4)
+                HStack(spacing:10) { BrandMark(); VStack(alignment:.leading,spacing:3) { Text(Brand.name).font(.title2.bold()); Text(L("游戏构建与打包")).font(.caption.weight(.medium)).tracking(1.2).foregroundStyle(.secondary) } }.padding(.top,16).padding(.leading,4)
                 List(selection:$store.selection) {
                     Label(L("游戏库"),systemImage:"square.grid.2x2").tag("library")
                     Label(L("文件转换"),systemImage:"doc.zipper").tag("conversion")
@@ -23,7 +23,7 @@ struct ContentView: View {
                 VStack(alignment:.leading,spacing:6) {
                     Label(store.executionBusy ? L("任务进行中") : L("本地运行"),systemImage:store.executionBusy ? "circle.dotted" : "checkmark.shield")
                     Text(L("游戏与密钥由玩家自行导入")).font(.caption).foregroundStyle(.secondary)
-                    Text("LumaDock · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.7")).font(.caption2).foregroundStyle(.tertiary)
+                    Text("LumaNX · " + (Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "0.2.7")).font(.caption2).foregroundStyle(.tertiary)
                 }.font(.caption).padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16).padding(.bottom,16)
             }.padding(.horizontal,12).navigationSplitViewColumnWidth(min:205,ideal:225,max:270)
         } detail: {
@@ -415,8 +415,8 @@ struct SettingsView: View {
                 }.controlSize(.small)
             }
             GlassPanel {
-                CompactDisclosure(title:"关于璃游",subtitle:"LumaDock · \(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))",symbol:"info.circle") {
-                    Text(L("独立的社区启动器。基于 nxnative；与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
+                CompactDisclosure(title:"关于 LumaNX",subtitle:"LumaNX · \(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))",symbol:"info.circle") {
+                    Text(L("LumaNX 是 nxnative 的第三方图形界面，支持 Switch 游戏准备、macOS 启动及 iPhone / iPad 未签名 IPA 导出。与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
                     Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}
                 }
             }

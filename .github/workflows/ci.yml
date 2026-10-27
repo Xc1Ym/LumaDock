@@ -1,4 +1,4 @@
-name: LumaDock CI
+name: LumaNX CI
 
 on:
   push:
@@ -99,7 +99,7 @@ jobs:
           work/python-venv/bin/python -B scripts/check_shader_diagnostics.py
       - name: Import, setup, documentation, localization and appearance regression tests
         run: swift test --disable-sandbox --cache-path "$PWD/work/spm-cache" -c release
-      - name: Generate original app icons
+      - name: Export app icon formats
         run: swift scripts/make_icons.swift
       - name: Build portable runtime
         run: |
@@ -122,7 +122,7 @@ jobs:
           output = Path('work/ci-artifacts')
           output.mkdir()
           files = [Path('release') / (stem + suffix) for suffix in ('-arm64.dmg', '-source.zip')]
-          files += [Path('release/SHA256SUMS'), Path('release/distribution-audit.json'), Path('Assets/LumaDock.ico'), Path('Assets/LumaDock.icns')]
+          files += [Path('release/SHA256SUMS'), Path('release/distribution-audit.json'), Path('Assets/LumaNX.ico'), Path('Assets/LumaNX.icns')]
           for source in files:
               assert source.is_file(), source
               shutil.copy2(source, output / source.name)
@@ -130,7 +130,7 @@ jobs:
       - name: Upload verified build artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: LumaDock-arm64
+          name: LumaNX-arm64
           if-no-files-found: error
           retention-days: 14
           path: work/ci-artifacts/
@@ -147,7 +147,7 @@ jobs:
       - name: Download artifacts from successful Mac job
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: LumaDock-arm64
+          name: LumaNX-arm64
           path: artifacts
       - name: Verify checksums and prepare release notes
         env:
@@ -161,9 +161,9 @@ jobs:
           from pathlib import Path
           version = os.environ['RELEASE_VERSION']
           assert os.environ['RELEASE_TAG'] == 'v' + version
-          with zipfile.ZipFile('LumaDock-' + version + '-source.zip') as source:
-              notes = source.read('LumaDock/docs/RELEASE_NOTES.md')
-          dmg = Path('LumaDock-' + version + '-arm64.dmg')
+          with zipfile.ZipFile('LumaNX-' + version + '-source.zip') as source:
+              notes = source.read('LumaNX/docs/RELEASE_NOTES.md')
+          dmg = Path('LumaNX-' + version + '-arm64.dmg')
           checksum = hashlib.sha256(dmg.read_bytes()).hexdigest()
           notes += ('\n\n### DMG SHA-256\n\n```text\n' + checksum + '  ' + dmg.name + '\n```\n').encode()
           Path('../release-notes.md').write_bytes(notes)
@@ -181,20 +181,20 @@ jobs:
           import json, os, subprocess
           state = json.load(open('release-state.json'))
           assert state['isDraft'], 'Release is already published; use a new version'
-          expected = 'LumaDock-' + os.environ['RELEASE_VERSION'] + '-arm64.dmg'
+          expected = 'LumaNX-' + os.environ['RELEASE_VERSION'] + '-arm64.dmg'
           for asset in state['assets']:
               if asset['name'] != expected:
                   subprocess.run(['gh', 'release', 'delete-asset', os.environ['RELEASE_TAG'], '--yes', '--', asset['name']], check=True)
           PY
           else
-            gh release create "$RELEASE_TAG" --verify-tag --draft --title "LumaDock $RELEASE_VERSION" --notes-file release-notes.md
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "LumaNX $RELEASE_VERSION" --notes-file release-notes.md
           fi
           gh release upload "$RELEASE_TAG" \
-            "artifacts/LumaDock-$RELEASE_VERSION-arm64.dmg" --clobber
+            "artifacts/LumaNX-$RELEASE_VERSION-arm64.dmg" --clobber
           gh release view "$RELEASE_TAG" --json assets > release-assets.json
           python3 - <<'PY'
           import json, os
-          expected = 'LumaDock-' + os.environ['RELEASE_VERSION'] + '-arm64.dmg'
+          expected = 'LumaNX-' + os.environ['RELEASE_VERSION'] + '-arm64.dmg'
           assert [asset['name'] for asset in json.load(open('release-assets.json'))['assets']] == [expected], 'Release must contain only the verified DMG'
           PY
           gh release edit "$RELEASE_TAG" --notes-file release-notes.md --draft=false --latest

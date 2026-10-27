@@ -167,7 +167,7 @@ class WorkerTests(unittest.TestCase):
                 check.assert_not_called();run.assert_not_called()
 
     def test_launcher_and_worker_accept_the_same_switch_language_codes(self):
-        source=(ROOT/'Sources/NSMac/GameLanguage.swift').read_text()
+        source=(ROOT/'Sources/LumaNX/GameLanguage.swift').read_text()
         codes=set(re.findall(r'\b\w+\s*=\s*"([a-z]{2}(?:-[A-Za-z0-9]+)?)"',source))
         self.assertEqual(codes,build.GAME_LANGUAGES)
         self.assertEqual(len(codes),18)

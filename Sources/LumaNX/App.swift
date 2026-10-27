@@ -5,11 +5,11 @@ import AppKit
     func applicationShouldTerminate(_ sender:NSApplication)->NSApplication.TerminateReply {store?.terminate();return .terminateNow}
     func applicationShouldTerminateAfterLastWindowClosed(_ sender:NSApplication)->Bool {false}
 }
-@main struct NSMacApp: App {
+@main struct LumaNXApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject var store = Store()
     var body: some Scene {
-        WindowGroup(L("璃游 LumaDock")) {ContentView().environmentObject(store).environment(\.locale,Localization.locale).onAppear{delegate.store=store;store.applyAppearance()
+        WindowGroup(L("璃游 LumaNX")) {ContentView().environmentObject(store).environment(\.locale,Localization.locale).onAppear{delegate.store=store;store.applyAppearance()
             if CommandLine.arguments.contains("--layout-check") {
                 for delay in [0.5,2.0,5.0] { DispatchQueue.main.asyncAfter(deadline:.now()+delay) {
                     let rows=NSApp.windows.map {w in ["title":w.title,"frame":NSStringFromRect(w.frame),"content":NSStringFromRect(w.contentView?.bounds ?? .zero)]}

@@ -25,7 +25,7 @@ struct ConversionJob: Codable, Equatable {
     var mode:ConversionMode = .convert
     var target = "nsp"
     var paths:[String] = []
-    var outputDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads/LumaDock Conversions").path
+    var outputDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Downloads/LumaNX Conversions").path
     var level = 18
     var verify = true
     var validSelection:Bool { !paths.isEmpty && (mode != .merge || paths.count>1) && paths.allSatisfy{mode.extensions.contains(URL(fileURLWithPath:$0).pathExtension.lowercased())} }

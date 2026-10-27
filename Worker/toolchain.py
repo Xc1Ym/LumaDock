@@ -108,7 +108,7 @@ def inspect_environment(c):
         'import capstone,lz4.block,fontTools,json,importlib.metadata as m; '
         'from fontTools.ttLib import TTFont; '
         'assert next(capstone.Cs(capstone.CS_ARCH_ARM64,capstone.CS_MODE_ARM).disasm(bytes.fromhex("1f2003d5"),0)).mnemonic=="nop"; '
-        'assert lz4.block.decompress(lz4.block.compress(b"LumaDock"))==b"LumaDock"; TTFont(); '
+        'assert lz4.block.decompress(lz4.block.compress(b"LumaNX"))==b"LumaNX"; TTFont(); '
         'print(json.dumps({n:m.version(n) for n in ("capstone","lz4","fonttools")}))']) if python_ok else (False, '')
     try:
         actual = json.loads(output) if ok else {}
@@ -204,7 +204,7 @@ def inspect_environment(c):
             output = ''
         add('原生编译与本地签名', compiler_ok, '实际编译并链接 arm64 测试程序，验证 make、ar 和 codesign', REPAIR_XCODE, 'openXcode', 'apple', detail=output)
         if sdk_ok:
-            (scratch/'probe.metal').write_text('#include <metal_stdlib>\nusing namespace metal;\nkernel void lumadock_probe(device uint *out [[buffer(0)]],uint i [[thread_position_in_grid]]) { out[i]=i; }\n')
+            (scratch/'probe.metal').write_text('#include <metal_stdlib>\nusing namespace metal;\nkernel void lumanx_probe(device uint *out [[buffer(0)]],uint i [[thread_position_in_grid]]) { out[i]=i; }\n')
             ok, output = probe(c, ['/usr/bin/xcrun','--sdk','macosx','metal','-c',scratch/'probe.metal','-o',scratch/'probe.air'], timeout=30)
             if ok:
                 ok, output = probe(c, ['/usr/bin/xcrun','--sdk','macosx','metallib',scratch/'probe.air','-o',scratch/'probe.metallib'], timeout=30)
@@ -219,7 +219,7 @@ def inspect_environment(c):
     try:
         if library_id and read(target/'.nsmac-library.json',{}).get('id') != library_id:
             raise OSError('游戏库磁盘已断开或位置发生变化，请重新连接后重试。')
-        with tempfile.TemporaryDirectory(prefix='.lumadock-check-', dir=target) as directory:
+        with tempfile.TemporaryDirectory(prefix='.lumanx-check-', dir=target) as directory:
             path = Path(directory)/'execute-check'
             path.write_text('#!/bin/sh\nexit 0\n'); path.chmod(0o700)
             storage_ok, output = probe(c, [path])

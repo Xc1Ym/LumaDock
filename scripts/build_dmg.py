@@ -21,7 +21,7 @@ def build_dmg(app, output):
         raise SystemExit('Install maintainer tools first: python -m pip install -r requirements-build.txt') from exc
     app, output = Path(app).resolve(), Path(output).resolve()
     if not (app/'Contents/Info.plist').is_file():
-        raise ValueError('A complete signed LumaDock.app is required')
+        raise ValueError('A complete signed LumaNX.app is required')
     identity=plistlib.loads((app/'Contents/Info.plist').read_bytes())
     if app.name != PRODUCT['name']+'.app' or identity['CFBundleShortVersionString'] != PRODUCT['version']:
         raise ValueError('The installer application must match product.json')
@@ -35,7 +35,7 @@ def build_dmg(app, output):
         guides = work/'Read me'; guides.mkdir()
         for name in ('Getting-started.md','使用说明.md','Environment.md','环境要求.md','Third-party-licenses.md','第三方许可.md'):
             shutil.copy2(ROOT/'docs'/name, guides/name)
-        shutil.copy2(ROOT/'LICENSE', guides/'LumaDock-LICENSE.txt')
+        shutil.copy2(ROOT/'LICENSE', guides/'LumaNX-LICENSE.txt')
         shutil.copytree(ROOT/'docs/licenses',guides/'licenses')
         subprocess.run(['xcrun','swift',str(ROOT/'scripts/make_dmg_background.swift'),str(work),PRODUCT['version']],cwd=ROOT,env=env,check=True)
         settings = {
@@ -43,7 +43,7 @@ def build_dmg(app, output):
             # The supported macOS 26+ systems can mount this format directly.
             'format':'ULMO', 'filesystem':'HFS+',
             'files':[str(app),str(guides)], 'symlinks':{'Applications':'/Applications'},
-            'icon':str(ROOT/'Assets/LumaDock.icns'),
+            'icon':str(ROOT/'Assets/LumaNX.icns'),
             'background':str(work/'installer-background.tiff'),
             'icon_locations':{name:tuple(position) for name,position in LAYOUT['iconPositions'].items()},
             # Finder's title and optional global bottom bars must not cover the footer.
@@ -58,7 +58,7 @@ def build_dmg(app, output):
         }
         # Build beside the destination and replace it only after hdiutil validation.
         temporary = work/'installer.dmg'
-        dmgbuild.build_dmg(str(temporary),'LumaDock Installer',settings=settings)
+        dmgbuild.build_dmg(str(temporary),'LumaNX Installer',settings=settings)
         subprocess.run(['hdiutil','verify',str(temporary)],check=True)
         os.replace(temporary,output)
     return output
@@ -66,7 +66,7 @@ def build_dmg(app, output):
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--app',type=Path,default=ROOT/'release/LumaDock.app')
+    parser.add_argument('--app',type=Path,default=ROOT/'release/LumaNX.app')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args()
     print('Created:',build_dmg(args.app,args.output))

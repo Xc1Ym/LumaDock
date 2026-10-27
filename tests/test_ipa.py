@@ -37,7 +37,7 @@ def archive(path, *, platform='iPhoneOS', resources=True, corrupt=False):
 
 class IPATests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix="lumadock-ipa-中文's-")
+        self.temp=tempfile.TemporaryDirectory(prefix="lumanx-ipa-中文's-")
         self.root=Path(self.temp.name)
         self.engine=make_engine(self.root/'engine')
         for name in ipa.IOS_FILES:

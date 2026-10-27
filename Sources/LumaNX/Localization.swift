@@ -80,11 +80,11 @@ enum Localization {
     static var language: String { preference.resolved() }
     static var locale: Locale { Locale(identifier:language) }
     static let entries: [Entry] = {
-        let bundled = Bundle.main.resourceURL?.appendingPathComponent("NSMac_NSMac.bundle")
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("LumaNX_LumaNX.bundle")
         let bundle = bundled.flatMap { Bundle(url:$0) } ?? Bundle.module
         guard let path = bundle.url(forResource:"Localizable",withExtension:"json"),
               let data = try? Data(contentsOf:path), let entries = try? JSONDecoder().decode([Entry].self,from:data) else {
-            preconditionFailure("LumaDock localization resources are missing")
+            preconditionFailure("LumaNX localization resources are missing")
         }
         return entries
     }()

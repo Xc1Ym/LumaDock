@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class AppearanceTests: XCTestCase {
     func testSwitchingPersistsAndOnlyOverridesThisApplication() throws {
@@ -9,7 +9,7 @@ import AppKit
         let oldLanguage=Localization.preference
         let systemPreference=UserDefaults.standard.string(forKey:"AppleInterfaceStyle")
         defer { application.appearance=previous;Localization.preference=oldLanguage }
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-appearance-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-appearance-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         XCTAssertEqual(store.appearance,.system)
@@ -29,7 +29,7 @@ import AppKit
     func testLegacyPreferencesAndUnknownAppearanceUseSystem() throws {
         let previous=NSApp?.appearance;let oldLanguage=Localization.preference
         defer {NSApp?.appearance=previous;Localization.preference=oldLanguage}
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-old-appearance-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-old-appearance-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         store.preferences.appearance="unknown-future-option"

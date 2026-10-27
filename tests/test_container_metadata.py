@@ -26,7 +26,7 @@ def package(kind='base', version=0, title=TITLE, base=TITLE):
 
 class ContainerMetadataTests(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory(prefix='lumadock-container-')
+        self.tmp=tempfile.TemporaryDirectory(prefix='lumanx-container-')
         self.root=Path(self.tmp.name)
         self.c=Context(dict(operation='import',privateRoot=str(self.root/'private'),
             library=str(self.root/'library'),engineDir=str(make_engine(self.root/'engine'))))
@@ -159,9 +159,9 @@ class ContainerSelectionTests(unittest.TestCase):
         run([reader,'keys','shared.xci','-','/tmp/v0.partial'])
         run([reader,'keys','shared.xci','shared.xci','/tmp/v65536.partial'])
         run([reader,'keys','--aoc','shared.xci','/tmp/aoc.partial/2'])
-        self.assertEqual(calls[0][-2:],[f'--lumadock-title={TITLE}','--lumadock-version=0'])
-        self.assertEqual(calls[1][-2:],[f'--lumadock-title={TITLE}','--lumadock-version=65536'])
-        self.assertEqual(calls[2][-2:],['--lumadock-title=0100000000011002','--lumadock-version=42'])
+        self.assertEqual(calls[0][-2:],[f'--lumanx-title={TITLE}','--lumanx-version=0'])
+        self.assertEqual(calls[1][-2:],[f'--lumanx-title={TITLE}','--lumanx-version=65536'])
+        self.assertEqual(calls[2][-2:],['--lumanx-title=0100000000011002','--lumanx-version=42'])
         run(['/usr/bin/python3','shader.py'])
         self.assertEqual(calls[-1],['/usr/bin/python3','shader.py'])
     def test_unrecognized_extraction_output_fails_before_running(self):
@@ -174,10 +174,10 @@ class ContainerSelectionTests(unittest.TestCase):
             path.write_text('static class P { static int Main(string[] a) { var b=OpenNsp(ks, a[1]); var u=OpenNsp(ks, a[2]); return 0; } void Aoc() { var p=OpenNsp(ks, nsp); } }')
             engine.adapt_snapshot(root)
             code=path.read_text()
-            self.assertIn('LumaDockSelected(ks, a[1], "base")',code)
-            self.assertIn('LumaDockSelected(ks, a[2], "update")',code)
-            self.assertIn('LumaDockSelected(ks, nsp, "dlc")',code)
-            self.assertIn('a = LumaDockArgs(a)',code)
+            self.assertIn('LumaNXSelected(ks, a[1], "base")',code)
+            self.assertIn('LumaNXSelected(ks, a[2], "update")',code)
+            self.assertIn('LumaNXSelected(ks, nsp, "dlc")',code)
+            self.assertIn('a = LumaNXArgs(a)',code)
 
 
 if __name__=='__main__': unittest.main()

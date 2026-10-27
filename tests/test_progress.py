@@ -17,7 +17,7 @@ import library
 
 class ProgressTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='lumadock-progress-');self.root=Path(self.temp.name).resolve()
+        self.temp=tempfile.TemporaryDirectory(prefix='lumanx-progress-');self.root=Path(self.temp.name).resolve()
         self.request=dict(schema=1,operation='diagnostics',privateRoot=str(self.root/'private'),library=str(self.root/'library'))
         self.c=Context(self.request);self.c.library.mkdir()
     def tearDown(self):self.temp.cleanup()

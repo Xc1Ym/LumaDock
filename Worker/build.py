@@ -120,7 +120,7 @@ def container_runner(c, g):
                 match=re.fullmatch(r'v([0-9]+)(?:\.partial)?',Path(args[4]).name)
                 if not match: raise Failure('无法识别游戏元数据，请检查密钥、文件完整性和文件类型。')
                 version=int(match[1])
-            args=[*args,f'--lumadock-title={title:016X}',f'--lumadock-version={version}']
+            args=[*args,f'--lumanx-title={title:016X}',f'--lumanx-version={version}']
         return c.run(args,*positional,**keywords)
     return run
 
@@ -144,7 +144,7 @@ def prepare(c,g,target='macos'):
         env=environment(c,env)[0]
     chain_tools(c,repo,env,root)
     atomic(root/'identity.json',identity)
-    spec=importlib.util.spec_from_file_location('nsmac_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
+    spec=importlib.util.spec_from_file_location('lumanx_upstream',repo/'scripts/build_ipa_from_nsp.py'); up=importlib.util.module_from_spec(spec); spec.loader.exec_module(up)
     sys.path.insert(0,str(repo/'dm/games')); import game
     game.HERE=repo/'dm/games'; gp=game.load(g['id'])
     if dynamic and strategy['mode']=='registered' and strategy['version']!=gp.get('package'):

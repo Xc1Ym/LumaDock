@@ -209,7 +209,7 @@ def _convert(c, value, inputs, output, *, keys=None, persist_output=True):
     keys=keys if keys is not None else key_path(c)
     info=status(c,keys=keys);mode=value['mode'];target=value['target']
     needed='compressionReady' if mode in ('compress','decompress') else 'conversionReady'
-    if not info[needed]: fail(c,'conversion_backend_missing','转换后端不可用。','重新安装完整的 LumaDock 应用，内置转换组件缺失或损坏。')
+    if not info[needed]: fail(c,'conversion_backend_missing','转换后端不可用。','重新安装完整的 LumaNX 应用，内置转换组件缺失或损坏。')
     if not info['keysReady']: fail(c,'conversion_keys_missing','转换密钥不可用。','导入自己的有效 prod.keys；转换密钥独立保存，不会覆盖已有游戏库密钥。')
     root=backend_root(c);python=c.runtime/'python/bin/python3'
     output.mkdir(parents=True,exist_ok=True)
@@ -269,9 +269,9 @@ def _convert(c, value, inputs, output, *, keys=None, persist_output=True):
                 if not candidates: fail(c,'conversion_no_output','转换工具没有生成有效产物。','检查自己的密钥与输入格式，查看任务日志中的转换错误后重试。')
                 produced.extend(candidates)
             c.begin('校验并导出转换产物',len(items)+3,count)
-            final=output/('LumaDock-'+uuid.uuid4().hex[:12])
+            final=output/('LumaNX-'+uuid.uuid4().hex[:12])
             # Copy on the destination disk, then rename the whole result directory atomically.
-            with tempfile.TemporaryDirectory(prefix='.lumadock-',dir=output) as staged:
+            with tempfile.TemporaryDirectory(prefix='.lumanx-',dir=output) as staged:
                 stage=Path(staged)/'result';stage.mkdir();names=set();report=[]
                 for path in produced:
                     name=path.name;counter=2

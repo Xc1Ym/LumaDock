@@ -112,6 +112,7 @@ final class WorkerOutput: @unchecked Sendable {
         let args = CommandLine.arguments
         if let overrideRoot { privateRoot = overrideRoot }
         else if let i = args.firstIndex(of:"--data-root"), args.count > i+1 { privateRoot = URL(fileURLWithPath:args[i+1]) }
+        // Preserve the pre-rename application data directory for existing installations.
         else { privateRoot = FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("NSMac") }
         if let overrideResources { resources = overrideResources }
         else if let r = Bundle.main.resourceURL, Bundle.main.bundleURL.pathExtension == "app" || FileManager.default.fileExists(atPath:r.appendingPathComponent("Worker/main.py").path) { resources = r }
@@ -182,7 +183,7 @@ final class WorkerOutput: @unchecked Sendable {
         // Source checkout support is explicit; installed apps never borrow a system Python.
         let developer = resources.appendingPathComponent("work/Runtime/python/bin/python3")
         if FileManager.default.fileExists(atPath:resources.appendingPathComponent("Package.swift").path), FileManager.default.isExecutableFile(atPath:developer.path) { return developer }
-        throw NSError(domain:"LumaDock",code:1,userInfo:[NSLocalizedDescriptionKey:L("内置 Python 缺失或不可执行，请重新安装完整应用。")])
+        throw NSError(domain:"LumaNX",code:1,userInfo:[NSLocalizedDescriptionKey:L("内置 Python 缺失或不可执行，请重新安装完整应用。")])
     }
     func failEnvironmentBootstrap(_ detail:String) {
         checkingEnvironment = false; environmentReportComplete = false; environmentCallbacks = []
@@ -206,7 +207,7 @@ final class WorkerOutput: @unchecked Sendable {
             guard app.pathExtension == "app", FileManager.default.fileExists(atPath:app.path) else { openXcodeStore(); return }
             NSWorkspace.shared.open(app)
         case "installMetal": manageMetal(remove:false)
-        case "reinstall": NSWorkspace.shared.open(URL(string:"https://github.com/Xc1Ym/LumaDock/releases/latest")!)
+        case "reinstall": NSWorkspace.shared.open(URL(string:"https://github.com/Xc1Ym/LumaNX/releases/latest")!)
         case "systemUpdate": NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Software-Update-Settings.extension")!)
         case "library": chooseLibrary()
         default: break
@@ -545,7 +546,7 @@ final class WorkerOutput: @unchecked Sendable {
             panel.message = L("生成用于 iPhone / iPad 的未签名游戏包；安装时需自行签名。")
             panel.prompt = L("生成 IPA")
             panel.allowedContentTypes = [UTType(filenameExtension:"ipa") ?? .data]
-            panel.nameFieldStringValue = "LumaDock-\(game.id).ipa"
+            panel.nameFieldStringValue = "LumaNX-\(game.id).ipa"
             guard panel.runModal() == .OK, let url = panel.url else { return }
             output = url
         }
@@ -616,7 +617,7 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func showFailedTask() {selection="tasks";showOnboarding=false;error=nil}
     func exportDiagnostics() {
-        let p = NSSavePanel(); p.prompt = L("保存"); p.nameFieldStringValue = L("NSMac-诊断.zip"); guard p.runModal() == .OK, let url = p.url else { return }
+        let p = NSSavePanel(); p.prompt = L("保存"); p.nameFieldStringValue = L("LumaNX-诊断.zip"); guard p.runModal() == .OK, let url = p.url else { return }
         worker("diagnostics",extra:["path":url.path]) { _ in self.reveal(url) }
     }
     func input(for game: Game?) -> InputConfig {

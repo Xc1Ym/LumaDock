@@ -1,4 +1,4 @@
-// LumaDock's metadata protocol extension. Compiled only in a private snapshot
+// LumaNX's metadata protocol extension. Compiled only in a private snapshot
 // of the selected nxnative reader; the engine itself is never distributed here.
 using System;
 using System.Collections.Generic;
@@ -16,7 +16,7 @@ using LibHac.Tools.FsSystem;
 using LibHac.Tools.FsSystem.NcaUtils;
 
 static partial class P {
-    static byte[] LumaDockRead(IFileSystem fs, string path) {
+    static byte[] LumaNXRead(IFileSystem fs, string path) {
         using var file = new UniqueRef<IFile>();
         fs.OpenFile(ref file.Ref, path.ToU8Span(), OpenMode.Read).ThrowIfFailure();
         file.Get.GetSize(out long size).ThrowIfFailure();
@@ -27,7 +27,7 @@ static partial class P {
         return result;
     }
     // Keep content IDs: selecting by NCA type alone loses updates in merged containers.
-    static Dictionary<string,Nca> LumaDockContainer(KeySet keys, string path) {
+    static Dictionary<string,Nca> LumaNXContainer(KeySet keys, string path) {
         IFileSystem fs;
         var storage = new LocalStorage(path, FileAccess.Read);
         byte[] magic = new byte[4]; storage.Read(0x100, magic).ThrowIfFailure();
@@ -56,19 +56,19 @@ static partial class P {
         }
         return contents.ToDictionary(x => x.Key, x => new Nca(keys,x.Value), StringComparer.OrdinalIgnoreCase);
     }
-    sealed class LumaDockContent {
+    sealed class LumaNXContent {
         public ulong Title, Base;
         public uint Version;
         public string Kind;
         public List<Nca> Ncas = new List<Nca>();
     }
-    static List<LumaDockContent> LumaDockContents(Dictionary<string,Nca> container) {
-        var result = new List<LumaDockContent>();
+    static List<LumaNXContent> LumaNXContents(Dictionary<string,Nca> container) {
+        var result = new List<LumaNXContent>();
         foreach (var meta in container.Values.Where(x => x.Header.ContentType == NcaContentType.Meta)) {
             var fs = meta.OpenFileSystem(NcaSectionType.Data, IntegrityCheckLevel.ErrorOnInvalid);
             foreach (var entry in fs.EnumerateEntries("*", SearchOptions.RecurseSubdirectories)) {
                 if (!entry.Name.EndsWith(".cnmt", StringComparison.OrdinalIgnoreCase)) continue;
-                byte[] raw = LumaDockRead(fs,entry.FullPath);
+                byte[] raw = LumaNXRead(fs,entry.FullPath);
                 if (raw.Length < 0x20) throw new IOException("Invalid CNMT");
                 string kind = raw[12] switch { 0x80 => "base", 0x81 => "update", 0x82 => "dlc", _ => null };
                 if (kind == null) continue;
@@ -76,7 +76,7 @@ static partial class P {
                 int offset = 0x20 + extended;
                 if (offset + count * 0x38 > raw.Length || (kind != "base" && extended < 8)) throw new IOException("Short CNMT");
                 ulong title = BitConverter.ToUInt64(raw,0);
-                var content = new LumaDockContent { Title=title, Base=kind == "base" ? title : BitConverter.ToUInt64(raw,0x20),
+                var content = new LumaNXContent { Title=title, Base=kind == "base" ? title : BitConverter.ToUInt64(raw,0x20),
                     Version=BitConverter.ToUInt32(raw,8), Kind=kind };
                 for (int i=0; i<count; i++) {
                     string id = Convert.ToHexString(raw,offset+i*0x38+0x20,16).ToLowerInvariant();
@@ -89,28 +89,28 @@ static partial class P {
         if (result.Count == 0) throw new IOException("No application metadata");
         return result;
     }
-    static ulong? LumaDockTitle;
-    static uint? LumaDockVersion;
-    static string[] LumaDockArgs(string[] args) {
+    static ulong? LumaNXTitle;
+    static uint? LumaNXVersion;
+    static string[] LumaNXArgs(string[] args) {
         var kept = new List<string>();
         foreach (string arg in args) {
-            if (arg.StartsWith("--lumadock-title=")) LumaDockTitle = Convert.ToUInt64(arg.Substring("--lumadock-title=".Length),16);
-            else if (arg.StartsWith("--lumadock-version=")) LumaDockVersion = uint.Parse(arg.Substring("--lumadock-version=".Length));
+            if (arg.StartsWith("--lumanx-title=")) LumaNXTitle = Convert.ToUInt64(arg.Substring("--lumanx-title=".Length),16);
+            else if (arg.StartsWith("--lumanx-version=")) LumaNXVersion = uint.Parse(arg.Substring("--lumanx-version=".Length));
             else kept.Add(arg);
         }
         return kept.ToArray();
     }
-    static List<Nca> LumaDockSelected(KeySet keys, string path, string kind) {
-        if (!LumaDockTitle.HasValue || !LumaDockVersion.HasValue) throw new IOException("Missing content selection");
-        var candidates = LumaDockContents(LumaDockContainer(keys,path));
-        return candidates.Single(x => x.Kind == kind && (kind == "dlc" ? x.Title : x.Base) == LumaDockTitle.Value
-            && x.Version == (kind == "base" ? 0 : LumaDockVersion.Value)).Ncas;
+    static List<Nca> LumaNXSelected(KeySet keys, string path, string kind) {
+        if (!LumaNXTitle.HasValue || !LumaNXVersion.HasValue) throw new IOException("Missing content selection");
+        var candidates = LumaNXContents(LumaNXContainer(keys,path));
+        return candidates.Single(x => x.Kind == kind && (kind == "dlc" ? x.Title : x.Base) == LumaNXTitle.Value
+            && x.Version == (kind == "base" ? 0 : LumaNXVersion.Value)).Ncas;
     }
-    static int LumaDockInspect(string[] args) {
+    static int LumaNXInspect(string[] args) {
         try {
             var keys = ExternalKeyReader.ReadKeyFile(args[0]);
             var packages = new List<object>();
-            foreach (var content in LumaDockContents(LumaDockContainer(keys,args[2]))) {
+            foreach (var content in LumaNXContents(LumaNXContainer(keys,args[2]))) {
                 string name = "", display = "";
                 var control = Pick(content.Ncas, NcaContentType.Control);
                 if (control != null) {

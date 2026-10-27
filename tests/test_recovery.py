@@ -19,7 +19,7 @@ TITLE='0100000000010000'
 
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory(prefix='lumadock-recovery-')
+        self.temp=tempfile.TemporaryDirectory(prefix='lumanx-recovery-')
         self.root=Path(self.temp.name)
         self.c=Context(dict(operation='backupSave',privateRoot=str(self.root/'private'),
                             library=str(self.root/'中文 游戏库'),gameId=TITLE))

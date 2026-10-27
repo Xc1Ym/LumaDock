@@ -1,5 +1,5 @@
 import XCTest
-@testable import NSMac
+@testable import LumaNX
 
 @MainActor final class ProgressTests: XCTestCase {
     func testProgressUsesMeasuredCountersAndClampsOutOfRangeValues() {
@@ -11,7 +11,7 @@ import XCTest
         task.total=100;task.done=Double.infinity;XCTAssertNil(task.progressFraction)
     }
     func testMessagesAndDiagnosticsKeepProgressButNewStageResetsIt() {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-progress-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-progress-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         store.tasks=[.init(id:"build",operation:"build",state:"running",done:40,total:100,unit:"B")]
@@ -27,7 +27,7 @@ import XCTest
         XCTAssertNil(store.tasks[0].done)
     }
     func testGlobalProgressCoversLongOperationsAndExcludesRunningGamesAndQueue() {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-active-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-active-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         let operations=["import","prepareEngine","build","exportIPA","preflight","installMetal","uninstallMetal","diagnostics","clean","keys","setup"]
@@ -37,7 +37,7 @@ import XCTest
         XCTAssertEqual(Set(store.activeTasks.map(\.operation)),Set(operations))
     }
     func testNativeFailurePersistsItsDiagnostic() throws {
-        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumadock-native-"+UUID().uuidString)
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent("lumanx-native-"+UUID().uuidString)
         defer {try? FileManager.default.removeItem(at:root)}
         let store=Store(privateRoot:root)
         let diagnostic=store.nativeDiagnostic(code:"worker_start_failed",summary:"failed",detail:root.path)

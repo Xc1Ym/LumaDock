@@ -42,7 +42,7 @@ class DistributionTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError, msg=name):
                     audit(root)
                 path.unlink()
-            (root/'LumaDock.icns').write_bytes(b'icon')
+            (root/'LumaNX.icns').write_bytes(b'icon')
             self.assertEqual(len(audit(root)), 1)
             bundled=root/'Runtime/converter/NSC_BUILDER/ztools/squirrel.py'
             bundled.parent.mkdir(parents=True,exist_ok=True);bundled.write_text('original fixture')
@@ -55,7 +55,7 @@ class DistributionTests(unittest.TestCase):
             for name in ('work/key.txt', 'Worker/backups/snapshot/data/slot.dat', 'Runtime/lib.txt', 'game.nsp', '../outside.txt','docs/game.XCZ','Sources/NSC_BUILDER/squirrel.py','Sources/nsz/__init__.py'):
                 archive = pathlib.Path(directory)/'test.zip'
                 with zipfile.ZipFile(archive, 'w') as output:
-                    for required in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico'):
+                    for required in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaNX.ico'):
                         output.writestr(PRODUCT['name']+'/'+required,'fixture')
                     output.writestr(PRODUCT['name']+'/'+name, 'fixture')
                 with self.assertRaises(AssertionError, msg=name):
@@ -66,7 +66,7 @@ class DistributionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             archive=pathlib.Path(directory)/'test.zip'
             with zipfile.ZipFile(archive,'w') as output:
-                for name in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaDock.ico'):
+                for name in ('README.md','README.zh-CN.md','LICENSE','.github/workflows/ci.yml','Assets/LumaNX.ico'):
                     output.writestr(PRODUCT['name']+'/'+name,'fixture')
                 output.writestr(PRODUCT['name']+'/docs/screenshots/game-cover.jpg','private artwork')
             with self.assertRaises(AssertionError): verify_source(archive)

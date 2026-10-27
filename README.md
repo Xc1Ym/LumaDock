@@ -43,7 +43,7 @@ Compatibility depends on the selected engine and game version. Successful prepar
 
 ## Screenshots
 
-LumaNX 0.2.14 in light appearance with an empty test library; no player data or game content.
+LumaNX 0.2.15 in light appearance with an empty test library; no player data or game content.
 
 <img src="docs/screenshots/library-en.jpg" width="1000" alt="LumaNX game library">
 

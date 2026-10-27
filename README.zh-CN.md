@@ -43,7 +43,7 @@ IPA 导出额外需要 Xcode 的 **iOS 平台**和 **XcodeGen**（`brew install 
 
 ## 界面预览
 
-LumaNX 0.2.14 浅色外观与空白测试游戏库，不含玩家数据或游戏内容。
+LumaNX 0.2.15 浅色外观与空白测试游戏库，不含玩家数据或游戏内容。
 
 <img src="docs/screenshots/library-zh.jpg" width="1000" alt="璃游游戏库">
 

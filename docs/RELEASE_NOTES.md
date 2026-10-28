@@ -8,6 +8,8 @@
 - **Automatic bundled-engine initialization.** The packaged engine and reader initialize their private cache on first use. Manual repair remains under **More tools → Repair bundled engine**. Failed initialization does not retry in a loop.
 - **Native controller build check.** Includes the main-branch correction that links the controller regression harness with its upstream motion dependencies.
 
+- **Updated bundled engine.** Includes nxnative `76c545320666b07b225ae8e11a8c5d8b46273862` and the 0.2.16 extraction/reader compatibility and verified build-copy signing fixes.
+
 ## Installation and validation
 
 Download **LumaNX-0.2.17-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the application. The application identifier and existing libraries, saves and settings are retained.
@@ -25,6 +27,8 @@ The release workflow runs Python and Swift regression tests, native controller a
 - **增加键盘快捷键。** ⌘Q 完全退出，包括向导、映射与恢复窗口；⌘, 打开设置；⌘O 添加游戏；⇧⌘K 导入密钥；⌘R 刷新游戏库；⌘1/2/3 切换游戏库、文件转换和准备任务。
 - **内置引擎自动初始化。** 安装包首次使用时自动初始化私有引擎与读取器缓存，手动修复收进“更多工具 → 修复内置引擎”；初始化失败不会循环重试。
 - **修复原生手柄构建检查。** 包含主线对手柄回归程序的链接修正，补齐上游运动输入依赖。
+
+- **同步内置引擎。** 包含 nxnative `76c545320666b07b225ae8e11a8c5d8b46273862`，以及 0.2.16 的提取/读取器兼容和构建副本签名修复。
 
 下载 **LumaNX-0.2.17-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换应用。应用标识、现有游戏库、存档与设置保持兼容。
 

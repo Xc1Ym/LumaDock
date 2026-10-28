@@ -149,7 +149,7 @@ def adapt_snapshot(repo):
         # The base/update can share one XCI. Select their CNMT content IDs before
         # the upstream extractor picks Program/Control/Data NCAs.
         for index,kind in ((1,'base'),(2,'update')):
-            text, count = re.subn(r'OpenNsp\(ks,\s*a\['+str(index)+r'\]\)',
+            text, count = re.subn(r'OpenNsp\(ks,\s*a\['+str(index)+r'\](?:,\s*ContentMetaType\.Application)?\)',
                 'LumaNXSelected(ks, a['+str(index)+'], "'+kind+'")',text,count=1)
             if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         text, count = re.subn(r'OpenNsp\(ks,\s*nsp\)', 'LumaNXSelected(ks, nsp, "dlc")',text,count=1)

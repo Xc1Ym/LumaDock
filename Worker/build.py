@@ -110,6 +110,13 @@ def ensure_chain_header(c,root,repo,env,tc,gp=None):
 def container_runner(c, g):
     def run(args, *positional, **keywords):
         if Path(args[0]).name == 'nx_extract' and Path(args[0]) == c.nx() and len(args)>=5 and str(args[2]) != '--inspect':
+            # The launcher installs, validates and exports directory-based RomFS.
+            # New upstream stages request images; use the reader's supported
+            # folder mode until the complete launcher pipeline supports images.
+            if '--romfs-image' in args:
+                args=[a for a in args if a != '--romfs-image']
+                if str(args[2]) == '--aoc':
+                    args[4]=Path(args[4]).with_suffix('')
             if str(args[2]) == '--aoc':
                 index=int(Path(args[4]).name)
                 title=int(g['id'],16)+0x1000+index

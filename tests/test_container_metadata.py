@@ -3,6 +3,7 @@
 All game data here is synthetic. Real player files never enter test fixtures.
 """
 import contextlib
+import importlib.util
 import io
 from pathlib import Path
 import sys
@@ -168,6 +169,43 @@ class ContainerSelectionTests(unittest.TestCase):
         c=SimpleNamespace(nx=lambda:Path('/nx_extract'),run=lambda *a:self.fail('must not run'))
         with self.assertRaises(Failure):
             build.container_runner(c,{'id':TITLE})([Path('/nx_extract'),'keys','base','-','/tmp/unknown'])
+    def test_image_requests_preserve_launcher_folder_layout_and_dlc_selection(self):
+        calls=[];reader=Path('/private/reader/nx_extract')
+        c=SimpleNamespace(nx=lambda:reader,run=lambda args,*a,**kw:calls.append(args))
+        game={'id':TITLE,'packages':[package('dlc',42,'0100000000011002')]}
+        run=build.container_runner(c,game)
+        run([reader,'keys','base.xci','update.nsp','/tmp/v65536.partial','--romfs-image'])
+        run([reader,'keys','--aoc','shared.xci','/tmp/aoc.partial/2.img','--romfs-image'])
+        self.assertNotIn('--romfs-image',calls[0])
+        self.assertEqual(calls[0][4],'/tmp/v65536.partial')
+        self.assertEqual(calls[0][-2:],[f'--lumanx-title={TITLE}','--lumanx-version=65536'])
+        self.assertNotIn('--romfs-image',calls[1])
+        self.assertEqual(Path(calls[1][4]),Path('/tmp/aoc.partial/2'))
+        self.assertEqual(calls[1][-2:],['--lumanx-title=0100000000011002','--lumanx-version=42'])
+    def test_bundled_extraction_stages_keep_launcher_romfs_and_dlc_directories(self):
+        repo=Path(__file__).resolve().parents[1]/'Engine/nxnative'
+        with tempfile.TemporaryDirectory() as temp, patch.object(sys,'path',list(sys.path)), contextlib.redirect_stdout(io.StringIO()):
+            root=Path(temp);logs=root/'logs';logs.mkdir()
+            source=root/'synthetic.xci';source.write_bytes(b'synthetic container')
+            reader=Path('/private/reader/nx_extract');calls=[]
+            def extract(args,*a,**kw):
+                calls.append(args)
+                self.assertNotIn('--romfs-image',args)
+                out=Path(args[4]);out.mkdir(parents=True)
+                if str(args[2]) == '--aoc': (out/'dlc.txt').write_text('synthetic DLC')
+                else:
+                    (out/'ExeFS').mkdir();(out/'ExeFS/main').write_bytes(b'synthetic NSO')
+                    (out/'RomFS').mkdir();(out/'RomFS/marker').write_text('synthetic RomFS')
+            c=SimpleNamespace(nx=lambda:reader,run=extract)
+            game={'id':TITLE,'packages':[package('dlc',42,'0100000000011002')]}
+            spec=importlib.util.spec_from_file_location('lumanx_extraction_test',repo/'scripts/build_ipa_from_nsp.py')
+            up=importlib.util.module_from_spec(spec);spec.loader.exec_module(up)
+            up.PROG=up.Progress('off');up.run=build.container_runner(c,game)
+            up.extract(reader,root/'synthetic.keys',root/'extract','v0',source,None,None,logs,{'romfs_marker':'marker'})
+            up.extract_aoc(reader,root/'synthetic.keys',repo,root,int(TITLE,16),{'dlc':[(int('0100000000011002',16),42,source)]},logs)
+            self.assertTrue((root/'extract/v0/RomFS/marker').is_file())
+            self.assertTrue((root/'aoc/2/dlc.txt').is_file())
+            self.assertEqual(calls[-1][-2:],['--lumanx-title=0100000000011002','--lumanx-version=42'])
     def test_adapter_routes_each_extraction_to_cnmt_selection(self):
         with tempfile.TemporaryDirectory() as temp:
             root=make_engine(Path(temp)/'engine');path=root/'dm/tools/nx_extract/Program.cs'
@@ -178,6 +216,18 @@ class ContainerSelectionTests(unittest.TestCase):
             self.assertIn('LumaNXSelected(ks, a[2], "update")',code)
             self.assertIn('LumaNXSelected(ks, nsp, "dlc")',code)
             self.assertIn('a = LumaNXArgs(a)',code)
+    def test_bundled_reader_adapter_preserves_exact_selection_with_upstream_filter(self):
+        repo=Path(__file__).resolve().parents[1]/'Engine/nxnative'
+        with tempfile.TemporaryDirectory() as temp:
+            root=make_engine(Path(temp)/'engine')
+            for name in ('dm/tools/nx_extract/Program.cs','dm/gfx/tools/dmsh_chain.py'):
+                (root/name).write_text((repo/name).read_text())
+            engine.adapt_snapshot(root)
+            path=root/'dm/tools/nx_extract/Program.cs';code=path.read_text()
+            for source,kind in (('a[1]','base'),('a[2]','update'),('nsp','dlc')):
+                self.assertIn(f'LumaNXSelected(ks, {source}, "{kind}")',code)
+            engine.adapt_snapshot(root)
+            self.assertEqual(path.read_text(),code)
 
 
 if __name__=='__main__': unittest.main()

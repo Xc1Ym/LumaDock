@@ -34,7 +34,7 @@ No `tex_flush_upload` (a minute's boot saw it flush 32 CPU-filled textures with 
 
 ### The game's own interval controller
 
-Used at `DM_FPS_TARGET=0` and for the interval the framework keeps while the VFR override holds. `DM_FRAME_STEP=legacy`, which ran this method on its own, was removed in 79d82f7b.
+Used at `DM_FPS_TARGET=0` and for the interval the framework keeps while the VFR override holds. DM_FRAME_STEP=legacy, which ran this method on its own, was removed in 79d82f7b.
 
 - `sead::GameFrameworkNx`'s main loop (`main+0x112660c`, framework +0x267 = 1) runs a dynamic interval: from the last frame's time it computes how many vsyncs were needed (rounded up), clamps that to [2, 3] (the maximum from the interval controller +0xc, built at `main+0x1126c04`), steps up after three overrunning frames and down one level every six frames, and sets the result through `setWaitVsyncInterval` (vtable +0x130, `main+0x11269b8`). `ksys::VFR` is initialized with a constant base interval of 2 (`main+0x127e740` → `VFR::init` `main+0x151d2d0`) and every frame `VFR::updateInterval` (`main+0x151d3d0`, called at `main+0xcf9ad4` / `main+0x1281044`) takes the framework's interval, a frame ratio of interval / 2. The game's time step follows its frame interval, so the speed is right at a steady 60, 30 or 20.
 - Five cuts lift its floor from 2 to 1: the candidate floor (`main+0x112670c` `fmov s0,s11` → `fmov s0,s10`, `main+0x1126710` `cmp w27,#2` → `#1`), the step-down target recorded when stepping up (`main+0x112665c` `mov w24,#3` → `#2`, `main+0x1126748` `cmp w8,#3` → `#2`) and the step-down stop (`main+0x1126794` `cmp w9,#3` → `#2`). Probes confirmed it: interval 1 with ratio 0.5, and back to 2 with ratio 1 on a long frame. The zeldaret/botw decompilation (`VFR.cpp`) gave the semantics; 1.9.0's addresses were found by the constants (`60 / interval`, the `fmov s11, #2.0` floor).
@@ -184,12 +184,17 @@ Before publishing, the fixes were integrated with main's pipeline archive and GP
 
 ## Found on this game
 
+- **Resolved build guard and cache isolation; rendering cause open:** [Tested tools and compiler-specific shader caches](../../../docs/reference/shaders.md#tested-tools-and-compiler-specific-shader-caches).
+
 General host changes first needed here; each applies to every game:
 
 - **Shared performance work, checked independently of prewarm data:** [CPU deswizzle copies use slice and row offsets](../../../docs/reference/nvn-objects.md#cpu-deswizzle-copies-use-slice-and-row-offsets) and [Host symbol indexes avoid repeated name scans](../../../docs/reference/services.md#host-symbol-indexes-avoid-repeated-name-scans). [PR #261](https://github.com/seedds/nxnative/pull/261) reports M2 iPad Pro gameplay on update 1.9.0; local verification covers synthetic correctness and CPU microbenchmarks, without a new game/device run.
 - **Final #158/#213 gameplay validation:** [Current results](#final-synchronization-and-pass-validation-2026-10-26-current) distinguish the retained pass savings from the timing gains not demonstrated on this Mac.
 
+- **Live controller motion** (`motion_fusion.h`, `motion_apple.h`, `dm_motion_set`): [Live controller motion](../../../docs/reference/services.md#live-controller-motion). Motion aiming works with Motion Controls on, on a Mac M3 Max, macOS 26, with a DualSense over Bluetooth (base game and 1.9.0).
 - **Resolved: the IPA omitted pulling libraries with `pso_mtl4 on`, and explicitly including them failed under macOS Bash 3.2.** See [Pulling vertex inputs](../../../docs/reference/rendering.md#pulling-vertex-inputs).
+- **Resolved: no rumble on Xbox and DualShock 4-style controllers (Mac)** (`haptics_apple.m`): [Controller haptic engines without advanced players](../../../docs/reference/services.md#controller-haptic-engines-without-advanced-players), [DualShock 4 rumble through its effects report](../../../docs/reference/services.md#dualshock-4-rumble-through-its-effects-report). The charged attack's 0.07 is still not felt on an Xbox controller's motors (open there).
+- **No sound on an iPhone set to silent** (`front_ios_audio_session`): [The ring / silent switch muted the game on iOS](../../../docs/reference/audio.md#the-ring--silent-switch-muted-the-game-on-ios); the device check is open.
 - **Upscaling in the present** (`fx_encode`, `DM_PRESENT_UPSCALE`): [The present upscales through MetalFX](../../../docs/reference/rendering.md#the-present-upscales-through-metalfx).
 - **Thermal cap; resolved movie recovery and acquire/present races** (`thermal_capped`, `DM_THERMAL_CAP`): [A thermally serious iPhone holds 30 fps](../../../docs/reference/frame-rate.md#a-thermally-serious-iphone-holds-30-fps).
 - **Resolved in the host: frame-step recovery after a 30 fps cap**: [The frame step after a 30 fps cap ends](../../../docs/reference/frame-rate.md#the-frame-step-after-a-30-fps-cap-ends). Modelled with the measured iPhone GPU times; recovery on the device has not been observed here.
@@ -220,3 +225,4 @@ General host changes first needed here; each applies to every game:
 - The VFR override's `the game fixes its own step` path has not been reached on the Mac.
 - `game.tsv` still says "In bring-up", and its memory comment "until measured".
 - 05's `DM_PROBE_POLL` paragraph cites `PlacementMgr` in `main+0x5aaac0` as the one thread in guest code "for that flag" without naming the game; `PlacementMgr` is this game's.
+- Motion on iOS (a controller's gyro, and the phone's own while no controller supplies fresh samples) has not been tested on a device. Source arbitration, concurrent startup and upright orientation were corrected during review and are covered by unit tests; see [Live controller motion](../../../docs/reference/services.md#live-controller-motion). Motion shrines from issue #389 still need a device gameplay check.

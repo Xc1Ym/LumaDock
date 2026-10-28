@@ -6,7 +6,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-module_t g_mod[MAX_MOD];
+static module_t test_modules[1];
+module_t *g_mod = test_modules;
 int g_nmod;
 static int writes;
 void dm_guest_write_prepare(void *p, size_t n) { (void)p; assert(n == 4); writes++; }

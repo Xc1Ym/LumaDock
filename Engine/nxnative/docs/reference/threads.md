@@ -4,6 +4,14 @@ Guest threads, their synchronization and how the host schedules them. Each entry
 
 ## Thread creation and cores
 
+### Publishing a new thread's scheduler fields
+
+- **Symptom:** TSan reports `thread_main` writing `host_work` while `thr_runnable` reads it during a same-core yield (`t_notify_sched`, issue #411).
+- **Cause:** `CreateThread` had already linked the object into `g_all`, but its pthread initialized `host_work`, the Mach port and QoS without the scheduler lock `G`. `StartThread` could make the object runnable before those writes completed.
+- **Fix:** initialize those shared fields and read the starting priority under `G`. `CreateThread` publishes the pthread handle and registry link together after `pthread_create` returns, rather than letting that call write a published field. The initial main thread obtains its QoS before publication; the priority getter/setter and deferred QoS updates also hold `G`. Readers keep the same lock, with no added startup wait, timeout or game rule.
+- **Check:** the real start/exit and native-wait paths in `t_notify_sched`, both preemption modes, run under TSan with the `thr_runnable` suppression removed. The unsuppressed original reported the startup race. Changing priority before start and consuming the deferred update at a real gate also exposed the unlocked priority setter; the extended test covers that path with `DM_QOS_MAP=1`.
+- **Found on:** host unit tests; no particular game's hang was attributed to this race.
+
 ### Starting a higher-priority thread on the caller's core
 
 - **Symptom:** a parent returns from `StartThread` before a newly runnable higher-priority child pinned to its core finishes its work (deterministic regression, not attributed to a game failure).
@@ -88,6 +96,14 @@ Guest threads, their synchronization and how the host schedules them. Each entry
 - **Fix:** type 3 compares the 64-bit value (`hle_thread.c`).
 - **Found on:** [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md) (SDK 19.3.11): Z-A does not call it, but the SDK has it.
 
+### Unity's stream buffer handshake loses a wake-up on Apple cores
+
+- **Symptom:** boot stops before or soon after the first frame with the CPU at 0% and every guest thread waiting on a condition variable: the main thread in `nn::os::AcquireSemaphore` after posting a command to `UnityGfxDeviceWorker`, the worker in `AcquireSemaphore` too, one condition wait after it (`wait #` one higher); 3 of 5 Mac runs, at random points.
+- **Cause:** a memory-order race in the game's code, not a host bug. Unity 2018.4's `ThreadedStreamBuffer` (the ring buffer every Unity worker thread is fed through) wakes a sleeping side with a Dekker handshake: the reader that finds nothing sets "reader sleeping" with a store-release and loads the write position again before sleeping on its semaphore; a writer stores the write position with a store-release and then checks that flag (and the mirror pair for a writer short of space). The second access of each side is a plain `ldr`, and AArch64 lets a plain load complete before an earlier store-release is visible, so both sides can read the old value and neither signals. The Switch's Cortex-A57 allows it too, but Apple cores hit it within seconds.
+- **Fix:** a per-build cut turns each of those loads into a load-acquire (`ldar`), which a store-release before it orders after the store (eight sites in that build's `patches.py`); 14 of 14 runs boot and keep presenting.
+- **Found on:** [FINAL FANTASY CRYSTAL CHRONICLES Remastered Edition](../../dm/games/0100CE4010AAC000/README.md) 1.0.0 and 1.0.3 (Unity 2018.4.2f1, SDK 8.2.1; its `patches.py`: 1.0.0 `main+0x1e425b0` and the stream functions after it, the same sites +0x25380 in 1.0.3).
+- **Check:** another Unity title that stops this way: look for `stlr` followed by a plain `ldr` of the other word in its `ThreadedStreamBuffer` (the functions around the `AcquireSemaphore` the worker waits in).
+
 ### Late PhysX task destructor after the unlock
 
 - **Symptom:** a PhysX worker crashes in a task's `removeReference` with a null task manager, right as the game switches to 30 fps (`pc=main+0x10ccf28`, `lr=main+0x13c236c`); on the iPhone and in 2 of 5 Mac runs, in every Mac run with 12 busy loops loading the CPU.
@@ -123,6 +139,14 @@ The yield back-off (`DM_YIELD_BACKOFF`) and the rewriter's spin waits (`patch_ns
 - **Found on:** [Animal Crossing: New Horizons](../../dm/games/01006F8002326000/README.md): a black screen with the plane icon for 77 s after the opening movie, `SaveProc` at about 2,600 yields a second, its grid walks over the new island (`main+0x157d020`) yielding once per cell; also about 40 s of the same at boot. The island now shows about 10 s after the movie, as with `DM_YIELD_BACKOFF=0`. Polls that keep their registers: [Fire Emblem: Three Houses](../../dm/games/010055D009F78000/README.md), [Super Mario Galaxy 2](../../dm/games/0100FD8022DAA000/README.md).
 - **Check:** check such a change on [The Legend of Zelda: Breath of the Wild](../../dm/games/01007EF00011E000/README.md) outdoors: its `PlacementMgr` and `RadarMgr` turned out to yield per item too, and a `sched_yield` on each of their 200,000 yields a second cost a third of a core more than the back-off had; with no host call, CPU energy fell instead (numbers in [development.md](../development.md) "Yield loops").
 - **Note:** a temporary log of which of x19–x28 move at each yield, per thread, is what told the two kinds apart.
+
+### A wait at two yields is not progress
+
+- **Symptom:** one guest thread keeps a host core at 100% with about a billion yields a minute (`SVC 0xb` in `DM_HLECOUNT`), none of them a back-off sleep, while the game itself plays normally.
+- **Cause:** the loop waits at two yields whose callee-saved registers differ, so each yield looked as if the loop had moved on since the last one, and returned at once. Hades' `NetworkPollThread` (`main+0x27aaa0`) yields between its passes with w23 = 0, and in each pass yields while the nifm request is on hold with w23 = 2,000, its retry count.
+- **Fix:** a yield is progress only when x19–x28 differ from both of the last two yields (`thr_yield` in `hle_thread.c`): a loop that comes back to the registers of the yield before last is waiting, and the run goes on to the back-off. Counters and cursors (Animal Crossing's grid walk, Breath of the Wild's batches) never come back, so they still return at once.
+- **Found on:** [Hades](../../dm/games/0100535012974000/README.md), with [Network requests stay on hold before they settle](services.md#network-requests-stay-on-hold-before-they-settle). Neither change alone was enough: in 60 s of its smoke route the process used 117 s of CPU on `main`, 119 s with only the nifm change (627 million submits, a pass now ended at the second query) and 122 s with only this one (1.38 billion queries, the 50 ms hold still timed out). With both it used 62 s, as with the poll thread's yields turned into sleeps: 216,000 yields, most of them back-off sleeps.
+- **Check:** a temporary per-thread count of the yields only this rule keeps in a run, and of the back-off sleeps those runs then took, on boots and play of other games: Tears of the Kingdom's main thread and ModuleSystem workers about 0.1% of their yields (761 of 926,116 on the main thread in 120 s) and no back-off sleep; Breath of the Wild outdoors at most 7 per thread in 150 s, no back-off sleep; Three Houses up to 95 per thread, Donkey Kong Country: Tropical Freeze about 1,000 on the main thread, neither with a back-off sleep from them; Kirby at most 1; Celeste, BALL x PIT, Bayonetta and Ghost Trick none. Their frame rates matched `main` in runs that kept the window's focus (a run whose window loses focus to another app drops to about 30 fps, on `main` as well).
 
 ## Events and notifications
 

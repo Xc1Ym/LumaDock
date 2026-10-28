@@ -14,6 +14,8 @@ def audit(root):
     files=[]
     sys.path.insert(0,str(ROOT/'Worker'))
     from bundled_engine import verify_bundle
+    from engine import inspect_source
+    from types import SimpleNamespace
     engine_roots=list(root.glob('**/Resources/Engine/nxnative'))
     for engine_root in engine_roots:
         verify_bundle(engine_root)
@@ -22,6 +24,8 @@ def audit(root):
             record=json.loads((reader_root/'manifest.json').read_text())
             actual={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in reader_root.iterdir() if p.is_file() and p.name!='manifest.json'}
             if not actual or actual!=record.get('files') or any(p.is_dir() or p.is_symlink() for p in reader_root.iterdir()):raise RuntimeError('Bundled reader integrity check failed')
+            info=inspect_source(SimpleNamespace(engine=engine_root,resource=engine_root.parents[1]))
+            if record.get('fingerprint')!=info['fingerprint']:raise RuntimeError('Bundled reader does not match packaged engine')
     banned={'.nsp','.xci','.nsz','.xcz','.ipa','.keys','.metallib','.patched.bin'}
     for p in root.rglob('*'):
         if not p.is_file():continue
@@ -75,6 +79,7 @@ def verify_app_runtime(app,env):
     smoke_env=dict(env,PATH=os.pathsep.join([str(runtime/'bin'),str(runtime/'python/bin'),'/usr/bin','/bin','/usr/sbin','/sbin']),PYTHONNOUSERSITE='1')
     code="import capstone,lz4.block,fontTools,pathlib,shutil,subprocess,sys; p=shutil.which('spirv-cross'); assert p and pathlib.Path(p).parent==pathlib.Path(sys.argv[1]), 'Bundled spirv-cross missing'; subprocess.run(['spirv-cross','--revision'],check=True,stdout=subprocess.DEVNULL); print('Packaged Python and spirv-cross child OK')"
     run([runtime/'python/bin/python3','-B','-I','-c',code,runtime/'bin'],env=smoke_env)
+    run([resources/'Engine/nxnative/dm/gfx/tools/spirv_cross_bin/spirv-cross','--revision'],env=smoke_env,stdout=subprocess.DEVNULL)
     run(['codesign','--verify','--deep','--strict',app])
 
 
@@ -108,7 +113,8 @@ def main():
         shutil.copytree(ROOT/'Worker',resources/'Worker',ignore=ignore)
         shutil.copytree(ROOT/'work/Runtime',resources/'Runtime',symlinks=True,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
         compact_runtime(resources/'Runtime')
-        shutil.copytree(ROOT/'Engine/nxnative',resources/'Engine/nxnative')
+        if not (ROOT/'work/engine-resources/Engine/nxnative/manifest.json').is_file(): raise RuntimeError('Run scripts/bundle_engine.py first.')
+        shutil.copytree(ROOT/'work/engine-resources/Engine/nxnative',resources/'Engine/nxnative')
         if not (ROOT/'work/EngineReader/manifest.json').is_file(): raise RuntimeError('Run scripts/bundle_engine.py first.')
         shutil.copytree(ROOT/'work/EngineReader',resources/'Engine/reader')
         shutil.copytree(ROOT/'docs',resources/'docs',ignore=shutil.ignore_patterns('screenshots'))
@@ -122,8 +128,8 @@ def main():
         # Sign every nested native executable/library before sealing the outer app.
         native=[p for p in app.rglob('*') if p.is_file() and not p.is_symlink() and macho(p)]
         for p in sorted(native,key=lambda p:len(p.parts),reverse=True):
-            # Keep the pinned engine and reader hashes stable. Their .NET apphosts
-            # already carry valid ad-hoc signatures from the upstream/SDK build.
+            # Engine tools were signed in a build copy before reader preparation;
+            # keep its manifest and the matching reader fingerprint stable here.
             if p.is_relative_to(resources/'Engine'):
                 run(['codesign','--verify','--strict',p])
             else: run(['codesign','--force','--sign','-',p],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

@@ -138,7 +138,7 @@ def inspect_environment(c):
         nx_ok = reader is not None and 'usage: nx_extract <prod.keys>' in output
     except (Failure, OSError, ValueError):
         nx_ok=False; output=''
-    add('NSP 读取组件', nx_ok, '引擎读取工具已就绪' if nx_ok else '请先准备引擎工具', TOOLS_HELP, 'prepareEngine', 'engine', detail=output, location=reader)
+    add('NSP 读取组件', nx_ok, '引擎读取工具已就绪' if nx_ok else '内置引擎尚未完成初始化', TOOLS_HELP, 'prepareEngine', 'engine', detail=output, location=reader)
     xlate = c.engine/'dm/gfx/tools/dmsh_xlate_bin/dmsh_xlate' if info else None
     ok, output = probe(c, [xlate, '--source-sha']) if xlate else (False,'')
     try:

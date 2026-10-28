@@ -4,7 +4,7 @@ Setup and Settings use the same checks. They run once per app launch; opening Se
 
 ## Bundled nxnative engine
 
-nxnative sources, the shader translator and a compiled LibHac metadata reader are included in the app. Click **Prepare engine tools** to verify and copy them into a private cache. Packaged apps need no engine download, .NET SDK or NuGet restore. Source builds still require the .NET 10 SDK on the builder.
+nxnative sources, the shader translator and a compiled LibHac metadata reader are included in the app. The app verifies and initializes its private engine cache automatically on first use. If initialization fails, choose **More tools → Repair bundled engine** and check again. Packaged apps need no engine download, .NET SDK or NuGet restore. Source builds still require the .NET 10 SDK on the builder.
 
 The source manifest records the upstream commit and file hashes. Old external-directory preferences are superseded by the bundled engine. App updates change the engine identity; prepare games again to build a new host, while previously successful runtimes remain available. Source and app resources stay read-only.
 

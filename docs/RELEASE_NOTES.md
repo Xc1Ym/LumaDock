@@ -1,39 +1,37 @@
-# LumaNX 0.2.16
+# LumaNX 0.2.17
 
 ## Changes
 
-- **Updated bundled nxnative engine.** Includes upstream fixes for shader compilation and pipeline archive recovery, texture and geometry handling, shader-cache reuse, controller motion and haptics, audio and presentation. Updated from `40e6baede556` to `76c545320666`; the full revision is recorded in `Engine/nxnative/manifest.json`.
-- **Restored daily engine verification (PR #23).** The native controller harness now links IOKit, supplies the motion callbacks and monotonic clock required by the new front end, and checks motion cleanup on focus loss and disconnect. Candidate engines still pass the complete verification workflow before being imported.
-- **Existing controller mapping retained.** The LumaNX Nintendo / Xbox / PlayStation face-button policy is reapplied to the updated engine.
-- **Kept extraction compatible with the launcher.** New upstream image requests use the reader's supported directory mode for launcher preparation and IPA export; base, update and DLC selection still uses exact content metadata. The reader adapter also accepts the upstream application filter. Regression tests exercise the bundled extraction stages with synthetic data.
+- **A quieter game sidebar.** Ready games show their running version and launch action. Expand **Manage game** for launch language, keyboard/mouse/controller mapping, save backups and version rollback, the save folder, preparation, IPA export, and cleanup/removal. Technical identifiers, compatibility and imported content are in a separate collapsed **Game details** section.
+- **Launch language in one row.** Choosing a language shows a brief confirmation for the next launch. Repeated changes restart the toast timer; reselecting the current value does not save or notify again.
+- **macOS keyboard shortcuts.** ⌘Q quits the application, including from setup, mapping and recovery sheets; ⌘, opens Settings; ⌘O adds games; ⇧⌘K imports keys; ⌘R refreshes the library; ⌘1/2/3 switches between Library, File conversion and Preparation tasks.
+- **Automatic bundled-engine initialization.** The packaged engine and reader initialize their private cache on first use. Manual repair remains under **More tools → Repair bundled engine**. Failed initialization does not retry in a loop.
+- **Native controller build check.** Includes the main-branch correction that links the controller regression harness with its upstream motion dependencies.
 
-- **Signed bundled shader tool.** The universal SPIRV-Cross tool is ad-hoc signed in a build copy, with a matching engine manifest and reader fingerprint; the checked-in source snapshot stays intact.
+- **Updated bundled engine.** Includes nxnative `76c545320666b07b225ae8e11a8c5d8b46273862` and the 0.2.16 extraction/reader compatibility and verified build-copy signing fixes.
 
 ## Installation and validation
 
-Download **LumaNX-0.2.16-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the app in Applications. Keep your library, saves and successful caches; prepare the updated engine tools and reprepare affected games to use the new engine.
+Download **LumaNX-0.2.17-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the application. The application identifier and existing libraries, saves and settings are retained.
 
 Requires Apple Silicon and macOS 26+. Uses **ad-hoc signing and is not notarized**. Game preparation requires full Xcode with Metal; IPA export also requires the iOS platform and XcodeGen.
 
-The candidate-build and release-tag workflows gate publication on Python and Swift regression tests, native controller and engine checks, Metal diagnostics, unsigned synthetic iOS packaging, portable runtime bundling, app signing, DMG validation, source audits and runtime relocation. The published DMG is taken from the successful release-tag build.
-
-Validation uses synthetic fixtures and compile checks; it does not establish real-game compatibility, physical-controller behavior or iOS device behavior. No games, keys, firmware or player data are included. Bundled dependencies retain their licenses.
+The release workflow runs Python and Swift regression tests, native controller and engine checks, Metal diagnostics, unsigned synthetic iOS packaging, portable runtime bundling, app signing, DMG/source audits and runtime relocation before publishing the DMG. These checks do not establish full-game or iOS-device compatibility. This release does not include the separate upstream Chinese-language compatibility PR. No games, keys, firmware or player data are included; bundled dependencies retain their licenses.
 
 ---
 
 ## 中文说明
 
-- **更新内置 nxnative 引擎。** 纳入上游着色器编译与管线归档恢复、纹理和几何处理、着色器缓存复用、手柄体感与震动、音频及画面呈现等改动。引擎从 `40e6baede556` 更新至 `76c545320666`，完整版本记录在 `Engine/nxnative/manifest.json`。
-- **恢复每日引擎验证（PR #23）。** 原生手柄测试补齐 IOKit 链接、体感回调与单调时钟，并检查失焦和断连时的体感清理。候选引擎仍需通过完整验证流程才能同步入库。
-- **保留现有手柄映射。** 更新引擎后继续应用 LumaNX 的 Nintendo / Xbox / PlayStation 面键规则。
-- **适配新版提取接口。** 启动器准备和 IPA 导出继续使用读取器支持的目录模式，兼容上游的新镜像请求；主游戏、更新和 DLC 仍按准确内容元数据选择。读取器适配同时兼容上游新增的应用类型过滤，并以合成数据调用内置引擎提取阶段进行回归验证。
+- **重新设计游戏详情。** 已准备游戏默认显示运行版本和启动按钮；展开“管理游戏”后统一访问启动语言、键鼠与手柄映射、存档备份与版本回滚、存档目录、重新检查并准备、IPA 导出及清理移除。Title ID、兼容性和导入内容收进独立、默认折叠的“游戏详情”。
+- **语言选择保持单行。** 修改后通过短暂提示告知下次启动生效，连续修改会重新计时；重复选择当前语言不会再次保存或提示。
+- **增加键盘快捷键。** ⌘Q 完全退出，包括向导、映射与恢复窗口；⌘, 打开设置；⌘O 添加游戏；⇧⌘K 导入密钥；⌘R 刷新游戏库；⌘1/2/3 切换游戏库、文件转换和准备任务。
+- **内置引擎自动初始化。** 安装包首次使用时自动初始化私有引擎与读取器缓存，手动修复收进“更多工具 → 修复内置引擎”；初始化失败不会循环重试。
+- **修复原生手柄构建检查。** 包含主线对手柄回归程序的链接修正，补齐上游运动输入依赖。
 
-- **补齐内置着色器工具签名。** 在构建副本中为通用 SPIRV-Cross 工具补齐临时签名，同时生成匹配的引擎清单与读取器标识；仓库原始快照保持不变。
+- **同步内置引擎。** 包含 nxnative `76c545320666b07b225ae8e11a8c5d8b46273862`，以及 0.2.16 的提取/读取器兼容和构建副本签名修复。
 
-下载 **LumaNX-0.2.16-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换“应用程序”中的副本。保留游戏库、存档和成功缓存；准备更新后的引擎工具，并重新准备受影响游戏以使用新版引擎。
+下载 **LumaNX-0.2.17-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换应用。应用标识、现有游戏库、存档与设置保持兼容。
 
 要求 Apple Silicon、macOS 26 及以上；采用临时签名，尚未公证。准备游戏需完整 Xcode 与 Metal，导出 IPA 另需 iOS 平台与 XcodeGen。
 
-候选构建和版本标签流水线以 Python / Swift 回归、原生手柄与引擎检查、Metal 诊断、合成未签名 iOS 包、可搬移运行库封装、应用签名、DMG 校验、源码审计及运行库搬移作为发布门禁；公开 DMG 来自成功的版本标签构建。
-
-验证使用合成数据和编译检查，不代表真实游戏、实体手柄或 iOS 真机验收。不附带游戏、密钥、固件或玩家数据，内置依赖保留各自许可。
+标签流水线在发布前完成 Python/Swift 回归、原生手柄与引擎检查、Metal 诊断、合成未签名 iOS 包、运行库封装、应用签名、DMG/源码审计及搬移校验。这些检查不代表完整游戏或 iOS 真机验收。本次不包含单独提交给上游的中文语言兼容 PR。不附带游戏、密钥、固件或玩家数据，内置依赖保留各自许可。

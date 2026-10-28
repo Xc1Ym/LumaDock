@@ -45,10 +45,6 @@ struct EnvironmentToolsView: View {
     }
 
     @ViewBuilder private var primaryActions: some View {
-        Button(action: store.prepareEngine) {
-            Label(L("准备引擎工具"), systemImage: "hammer")
-        }.buttonStyle(EnvironmentActionStyle(prominent: true)).disabled(!store.canManageToolchain)
-
         Button(action: store.chooseXcode) {
             Label(L("选择 Xcode.app…"), systemImage: "folder")
         }.buttonStyle(EnvironmentActionStyle()).disabled(store.checkingEnvironment || store.executionBusy)
@@ -63,6 +59,8 @@ struct EnvironmentToolsView: View {
             }.buttonStyle(EnvironmentActionStyle()).disabled(store.checkingEnvironment || store.executionBusy)
         }
         Menu {
+            Button(L("修复内置引擎"),action:store.prepareEngine).disabled(!store.canManageToolchain)
+            Divider()
             Section("Xcode") {
                 Button(L("在 App Store 获取 Xcode"), action: store.openXcodeStore)
                 Button(L("打开 Xcode 完成设置")) { store.repairEnvironment("openXcode") }

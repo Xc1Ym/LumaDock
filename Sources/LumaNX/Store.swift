@@ -30,6 +30,7 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var environmentReportComplete = false
     private var environmentCallbacks: [()->Void] = []
     private var requestedStartupEnvironmentCheck = false
+    private var attemptedBundledEngineInitialization = false
     private var lastWorkerEvent: [String:Date] = [:]
     private var documentationWindow:NSWindow?
     @Published var canUninstallMetal = false
@@ -45,8 +46,9 @@ final class WorkerOutput: @unchecked Sendable {
     @Published var showOnboarding = false
     @Published var onboardingStep = 0
     private var addGamesAfterOnboarding = false
-    private var quitAfterOnboardingDismissal: (@MainActor () -> Void)?
+    private var quitAfterSheetDismissal: (@MainActor () -> Void)?
     @Published var editingInput = false
+    @Published var showingRecovery = false
     @Published var inputGame: Game?
     @Published var globalInput = InputConfig.standard
     @Published var queue: [String] = []
@@ -102,10 +104,13 @@ final class WorkerOutput: @unchecked Sendable {
         gameLanguageOverride(for:id) ?? defaultGameLanguage
     }
     func setGameLanguage(_ language:GameLanguage?, for id:String) {
+        guard gameLanguageOverride(for:id) != language else {return}
         var overrides = preferences.gameLanguages ?? [:]
         overrides[id] = language?.rawValue
         preferences.gameLanguages = overrides.isEmpty ? nil : overrides
         savePreferences()
+        let name=language?.name ?? L("跟随默认（\(defaultGameLanguage.name)）")
+        notice="启动语言已设为\(name)，下次启动生效。"
     }
     var selected: Game? { games.first { $0.id == selectedGame } }
     init(privateRoot overrideRoot: URL? = nil, resources overrideResources: URL? = nil) {
@@ -173,6 +178,13 @@ final class WorkerOutput: @unchecked Sendable {
         self.canUninstallMetal = r["canUninstallMetal"] as? Bool == true
         self.engineSupportsInput = (r["engineInfo"] as? [String:Any])?["inputConfig"] as? Bool == true
         self.checkingEnvironment = false
+        if !self.attemptedBundledEngineInitialization,!self.executionBusy,
+           FileManager.default.isReadableFile(atPath:self.resources.appendingPathComponent("Engine/reader/manifest.json").path),
+           self.checks.contains(where:{$0.name=="NSP 读取组件" && !$0.ok && $0.action=="prepareEngine"}) {
+            self.attemptedBundledEngineInitialization=true
+            self.executionTask=self.worker("prepareEngine")
+            return
+        }
         let callbacks = self.environmentCallbacks; self.environmentCallbacks = []
         callbacks.forEach { $0() }
         if self.environmentReady { self.startNext() }
@@ -280,7 +292,7 @@ final class WorkerOutput: @unchecked Sendable {
     func deferOnboarding() {
         // Dismissing setup never marks prerequisites as satisfied or opens import.
         addGamesAfterOnboarding = false
-        quitAfterOnboardingDismissal = nil
+        quitAfterSheetDismissal = nil
         showOnboarding = false
     }
     func quitApplication(terminate: (@MainActor () -> Void)? = nil) {
@@ -288,16 +300,26 @@ final class WorkerOutput: @unchecked Sendable {
         addGamesAfterOnboarding = false
         // AppKit can ignore terminate while a sheet is attached. Wait for SwiftUI
         // to finish dismissing it, then use the normal delegate/worker shutdown.
-        guard showOnboarding else { quit(); return }
-        quitAfterOnboardingDismissal = quit
-        showOnboarding = false
-    }
-    func onboardingDismissed() {
-        if let quit = quitAfterOnboardingDismissal {
-            quitAfterOnboardingDismissal = nil
-            quit()
+        guard showOnboarding || editingInput || showingRecovery else {
+            let sheets = NSApp?.windows.compactMap(\.attachedSheet) ?? []
+            guard !sheets.isEmpty else { quit(); return }
+            for sheet in sheets {sheet.sheetParent?.endSheet(sheet)}
+            DispatchQueue.main.async {quit()}
             return
         }
+        quitAfterSheetDismissal = quit
+        showOnboarding = false
+        editingInput = false
+        showingRecovery = false
+    }
+    func applicationSheetDismissed() {
+        if let quit = quitAfterSheetDismissal {
+            quitAfterSheetDismissal = nil
+            quit()
+        }
+    }
+    func onboardingDismissed() {
+        if quitAfterSheetDismissal != nil {applicationSheetDismissed();return}
         if addGamesAfterOnboarding { addGamesAfterOnboarding = false; chooseGames() }
     }
     func importKeys() {

@@ -19,7 +19,26 @@ import AppKit
         .defaultSize(width:1240,height:800)
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(replacing:.newItem) {Button(L("导入密钥…"),action:store.importKeys);Button(L("添加游戏…"),action:store.chooseGames).keyboardShortcut("o")}
+            CommandGroup(replacing:.appTermination) {
+                Button(L("退出璃游")) {store.quitApplication()}.keyboardShortcut("q",modifiers:.command)
+            }
+            CommandGroup(replacing:.appSettings) {
+                Button(L("设置…")) {store.selection="settings"}.keyboardShortcut(",",modifiers:.command)
+                    .disabled(store.showOnboarding || store.editingInput)
+            }
+            CommandGroup(replacing:.newItem) {
+                Button(L("导入密钥…"),action:store.importKeys).keyboardShortcut("k",modifiers:[.command,.shift])
+                Button(L("添加游戏…"),action:store.chooseGames).keyboardShortcut("o",modifiers:.command)
+                Divider()
+                Button(L("刷新游戏库")) {store.refresh()}.keyboardShortcut("r",modifiers:.command)
+                    .disabled(store.preferences.library.isEmpty || store.refreshingLibrary)
+            }
+            CommandGroup(after:.sidebar) {
+                Divider()
+                Button(L("游戏库")) {store.selection="library"}.keyboardShortcut("1",modifiers:.command)
+                Button(L("文件转换")) {store.selection="conversion"}.keyboardShortcut("2",modifiers:.command)
+                Button(L("准备任务")) {store.selection="tasks"}.keyboardShortcut("3",modifiers:.command)
+            }
             CommandGroup(after:.appInfo){Button(L("导出诊断包…"),action:store.exportDiagnostics)}
         }
     }

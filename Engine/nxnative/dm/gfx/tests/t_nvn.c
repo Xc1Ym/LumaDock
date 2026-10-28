@@ -7,9 +7,10 @@ _Atomic uint64_t dm_present_ns;   // when the last present was made (hle_thread.
 #include <time.h>
 void *front_metal_layer(void) { return NULL; }   // no window in unit tests: present only counts
 module_t *module_of(const void *p) { (void)p; return NULL; }   // no guest modules in unit tests
-module_t g_mod[MAX_MOD]; int g_nmod;                            // host symbols that crash.c depends on
+module_t *g_mod; int g_nmod;                            // host symbols that crash.c depends on
 void svc_thread_dump(void) {}
 int dm_guest_as_contains(uintptr_t address) { (void)address; return 0; } // Tests use host-thread stacks.
+void dm_vi_layer_crop(int c[4]) { c[0] = c[1] = c[2] = c[3] = 0; }   // no vi layer crop in unit tests (hle_vi.c)
 void crash_install(void);
 void nvn_present_config(int hz, int display_mode);
 #include <fcntl.h>
@@ -56,6 +57,26 @@ static size_t tex_size(int fmt, int w, int h, int flags, size_t *align) {
 }
 
 int main(void) {
+    // Engine-native limiters have no FPS state page. Their launcher cap must
+    // still pace presents and select the display-link rate in display mode.
+    { win_t w={.interval=1};nvn_present_config(60,1);dm_fps_state=NULL;
+      setenv("DM_FPS_TARGET","30",1);g_present_cap=-1;
+      EXPECT("native 30 cap: display interval",2,present_itv(&w));
+      EXPECT("native 30 cap: period ns",33333333,present_period(&w));
+      EXPECT("native 30 cap: display-link target",30,nvn_game_fps());
+      EXPECT("native cap does not enable frame-step stubs",0,fstep_on());
+      setenv("DM_FPS_TARGET","60",1);g_present_cap=-1;
+      EXPECT("native 60 cap: period ns",16666666,present_period(&w));
+      EXPECT("native 60 cap: display-link target",60,nvn_game_fps());
+      setenv("DM_FPS_TARGET","0",1);g_present_cap=-1;w.interval=2;
+      EXPECT("no cap preserves display pacing",1,present_itv(&w));nvn_present_config(60,0);
+      EXPECT("no cap preserves game pacing",2,present_itv(&w));
+      _Alignas(8) uint8_t state[64]={0};float cap=60;memcpy(state,&cap,4);dm_fps_state=state;
+      EXPECT("stub state takes precedence over env",60,fps_present_cap());
+      *(uint32_t *)(state+4)=1;
+      EXPECT("stub movie flag retains 30 cap",30,fps_present_cap());
+      dm_fps_state=NULL;unsetenv("DM_FPS_TARGET");g_present_cap=-1;nvn_present_config(0,0);
+    }
     crash_install();   // the same SIGSEGV / SIGBUS handling as production (the page-fault hook is dispatched from within it)
     // 1. Bootstrap address lookup: bootstrap gets GetProcAddress, then uses it to get all the names
     PFNNVNBOOTSTRAPLOADERPROC boot = (PFNNVNBOOTSTRAPLOADERPROC)h_nvnBootstrapLoader;
@@ -78,6 +99,19 @@ int main(void) {
     P(nvnDeviceGetInteger)(&dev, (NVNdeviceInfo)0x30, &v); EXPECT("newest GPU code minor", 16, v);
     P(nvnDeviceGetInteger)(&dev, (NVNdeviceInfo)0x2F, &v); EXPECT("oldest GPU code major", 1, v);
     P(nvnDeviceGetInteger)(&dev, (NVNdeviceInfo)0x31, &v); EXPECT("oldest GPU code minor", 5, v);
+
+    NVNsamplerBuilder sb; NVNsampler sampler;
+    P(nvnSamplerBuilderSetDefaults)(&sb);
+    const uint32_t opaque_black[4] = {0, 0, 0, 1};
+    P(nvnSamplerBuilderSetBorderColorui)(&sb, opaque_black);
+    P(nvnSamplerInitialize)(&sampler, &sb);
+    EXPECT("unsigned integer border alpha is numeric", 1, ((samp_t *)&sampler)->p.border[3] == 1.f);
+    P(nvnSamplerFinalize)(&sampler);
+    const int opaque_white[4] = {1, 1, 1, 1};
+    P(nvnSamplerBuilderSetBorderColori)(&sb, opaque_white);
+    P(nvnSamplerInitialize)(&sampler, &sb);
+    EXPECT("signed integer border RGB is numeric", 1, ((samp_t *)&sampler)->p.border[0] == 1.f && ((samp_t *)&sampler)->p.border[2] == 1.f);
+    P(nvnSamplerFinalize)(&sampler);
 
     // 3. Memory pool: GPU address = the storage address given by the game
     static uint8_t poolmem[1 << 20] __attribute__((aligned(4096)));
@@ -470,6 +504,9 @@ int main(void) {
     EXPECT("texture width", 1280, P(nvnTextureGetWidth)(&sc[0]));
     NVNtexture *scp[2] = {&sc[0], &sc[1]};
     NVNwindowBuilder wb; NVNwindow win; P(nvnWindowBuilderSetDevice)(&wb, &dev); P(nvnWindowBuilderSetDefaults)(&wb);
+    NVNtexture *missing_first[2] = {NULL, &sc[1]};
+    P(nvnWindowBuilderSetTextures)(&wb, 2, missing_first);
+    EXPECT("WindowInitialize with null first texture", 1, P(nvnWindowInitialize)(&win, &wb));
     P(nvnWindowBuilderSetTextures)(&wb, 2, scp); EXPECT("WindowInitialize succeeds", 1, P(nvnWindowInitialize)(&win, &wb));
     int idx[4];
     for (int f = 0; f < 4; f++) {
@@ -633,6 +670,48 @@ int main(void) {
         }
         EXPECT("WriteTexels region write byte-identical to a whole-level round trip (15 cases)", 0, bad); EXPECT("WriteTexels region case count", 15, n);
         P(nvnMemoryPoolFinalize)(&wtp);
+    }
+
+    // 6c3. GPU copies mirrored into the destination's storage (nvn_tex_mirror_t2t / nvn_tex_mirror_b2t, the streamer's level copies): a region of a level copied from a texture of other
+    //      dimensions (another block height) and a whole level, byte-identical to "decode the source level → patch the destination level → re-encode", with the rest of the pool untouched;
+    //      RGBA8 and BC1; the same regions from a linear buffer with a padded row stride
+    {
+        static uint8_t mmem[1 << 18] __attribute__((aligned(16384)));
+        NVNmemoryPoolBuilder mb; NVNmemoryPool mp; P(nvnMemoryPoolBuilderSetDevice)(&mb, &dev); P(nvnMemoryPoolBuilderSetDefaults)(&mb);
+        P(nvnMemoryPoolBuilderSetStorage)(&mb, mmem, sizeof mmem); P(nvnMemoryPoolBuilderSetFlags)(&mb, 0x24); P(nvnMemoryPoolInitialize)(&mp, &mb);
+        struct { int fmt, sw, dw; int rg[2][6]; } cs[] = {   // source sw×sw with 3 levels, destination dw×dw with 4 levels at pool offset 0x20000; regions (sx, sy, dx, dy, w, h): level 0 → 1, then level 1 → 2
+            {NVN_FORMAT_RGBA8, 32, 64, {{8, 4, 4, 8, 16, 12}, {0, 0, 0, 0, 16, 16}}},
+            {NVN_FORMAT_RGBA_DXT1, 64, 128, {{8, 4, 4, 8, 16, 12}, {0, 0, 0, 0, 32, 32}}},
+        };
+        int bad = 0, n = 0; uint32_t seed = 777;
+        for (unsigned c = 0; c < sizeof cs / sizeof cs[0]; c++) {
+            NVNtextureBuilder b; NVNtexture s, d; P(nvnTextureBuilderSetDevice)(&b, &dev); P(nvnTextureBuilderSetDefaults)(&b); P(nvnTextureBuilderSetTarget)(&b, NVN_TEXTURE_TARGET_2D); P(nvnTextureBuilderSetFormat)(&b, cs[c].fmt);
+            P(nvnTextureBuilderSetSize3D)(&b, cs[c].sw, cs[c].sw, 1); P(nvnTextureBuilderSetLevels)(&b, 3); P(nvnTextureBuilderSetStorage)(&b, &mp, 0); P(nvnTextureInitialize)(&s, &b);
+            P(nvnTextureBuilderSetSize3D)(&b, cs[c].dw, cs[c].dw, 1); P(nvnTextureBuilderSetLevels)(&b, 4); P(nvnTextureBuilderSetStorage)(&b, &mp, 0x20000); P(nvnTextureInitialize)(&d, &b);
+            const tex_t *ts = (const tex_t *)&s, *td = (const tex_t *)&d; int bw, bh, bpb = nvn_fmt_bpb(cs[c].fmt, &bw, &bh);
+            for (int k = 0; k < 2; k++) {
+                static uint8_t want[1 << 18], slin[1 << 16], dlin[1 << 16], src[1 << 16];
+                unsigned sl = (unsigned)k, dl = (unsigned)k + 1; int sx = cs[c].rg[k][0], sy = cs[c].rg[k][1], dx = cs[c].rg[k][2], dy = cs[c].rg[k][3], w = cs[c].rg[k][4], h = cs[c].rg[k][5];
+                size_t slp = (size_t)(((cs[c].sw >> sl) + bw - 1) / bw) * bpb, dlp = (size_t)(((cs[c].dw >> dl) + bw - 1) / bw) * bpb, wbb = (size_t)((w + bw - 1) / bw) * bpb, hbb = (size_t)(h + bh - 1) / bh;
+                NVNcopyRegion sr = {sx, sy, 0, w, h, 1}, dr = {dx, dy, 0, w, h, 1};
+                for (size_t i = 0; i < sizeof mmem; i++) mmem[i] = (uint8_t)(seed = seed * 1103515245u + 12345u) >> 3;
+                memcpy(want, mmem, sizeof mmem);
+                nvn_deswizzle(&ts->d, sl, 0, ts->mem, slin, slp); nvn_deswizzle(&td->d, dl, 0, td->mem, dlin, dlp);
+                for (size_t r = 0; r < hbb; r++) memcpy(dlin + ((size_t)dy / bh + r) * dlp + (size_t)(dx / bw) * bpb, slin + ((size_t)sy / bh + r) * slp + (size_t)(sx / bw) * bpb, wbb);
+                nvn_swizzle(&td->d, dl, 0, dlin, dlp, want + 0x20000);
+                n++; if (nvn_tex_mirror_t2t(ts, sl, 0, &sr, td, dl, 0, &dr) || memcmp(want, mmem, sizeof mmem)) bad++;
+                for (size_t i = 0; i < sizeof mmem; i++) mmem[i] = (uint8_t)(seed = seed * 1103515245u + 12345u) >> 3;
+                memcpy(want, mmem, sizeof mmem);
+                size_t row = wbb + 16; for (size_t i = 0; i < row * hbb; i++) src[i] = (uint8_t)(seed = seed * 1103515245u + 12345u) >> 5;
+                nvn_deswizzle(&td->d, dl, 0, td->mem, dlin, dlp);
+                for (size_t r = 0; r < hbb; r++) memcpy(dlin + ((size_t)dy / bh + r) * dlp + (size_t)(dx / bw) * bpb, src + r * row, wbb);
+                nvn_swizzle(&td->d, dl, 0, dlin, dlp, want + 0x20000);
+                n++; if (nvn_tex_mirror_b2t(td, dl, 0, &dr, src, row, row * hbb) || memcmp(want, mmem, sizeof mmem)) bad++;
+            }
+            P(nvnTextureFinalize)(&s); P(nvnTextureFinalize)(&d);
+        }
+        EXPECT("copies mirrored into the destination's storage, byte-identical to a level round trip (8 cases)", 0, bad); EXPECT("copy mirror case count", 8, n);
+        P(nvnMemoryPoolFinalize)(&mp);
     }
 
     // 6d. Lifecycle: in-flight GPU work is 0 when suspend returns; submits are blocked during suspend and let through after resume

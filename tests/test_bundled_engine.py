@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -10,10 +11,12 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'Worker'))
+sys.path.insert(0, str(ROOT/'scripts'))
 from core import Context, Failure, digest
 from bundled_engine import inventory, verify_bundle
 import engine
 from engine_fixture import make_engine
+from bundle_engine import stage_signed_engine
 
 
 class BundledEngineTests(unittest.TestCase):
@@ -74,6 +77,27 @@ class BundledEngineTests(unittest.TestCase):
         record = verify_bundle(ROOT/'Engine/nxnative')
         self.assertGreater(len(record['files']), 1000)
         self.assertIn('dm/third_party/ryujinx/LICENSE.txt', record['files'])
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Requires macOS code signing')
+    def test_unsigned_native_tool_is_signed_only_in_build_copy(self):
+        source=self.root/'fixture.c';source.write_text('int main(void) { return 0; }')
+        tool=self.source/'dm/tools/native-fixture'
+        subprocess.run(['xcrun','clang','-arch','arm64','-arch','x86_64',source,'-o',tool],check=True,capture_output=True)
+        subprocess.run(['codesign','--remove-signature',tool],check=True,capture_output=True)
+        self.record['files']=inventory(self.source)
+        (self.source/'manifest.json').write_text(json.dumps(self.record))
+        original=tool.read_bytes();before=(self.source/'manifest.json').read_bytes()
+        output=self.root/'signed/Engine/nxnative'
+        stage_signed_engine(self.source,output)
+        self.assertEqual(tool.read_bytes(),original)
+        self.assertEqual((self.source/'manifest.json').read_bytes(),before)
+        record=verify_bundle(output);rel='dm/tools/native-fixture'
+        self.assertEqual(record['adHocSignedFiles'][rel],digest(tool))
+        self.assertNotEqual(record['files'][rel],digest(tool))
+        subprocess.run(['codesign','--verify','--strict',output/rel],check=True,capture_output=True)
+        subprocess.run([output/rel],check=True)
+        moved=Context(dict(operation='prepareEngine',resources=str(output.parents[1]),privateRoot=str(self.root/'signed-private')))
+        self.assertNotEqual(engine.inspect_source(moved)['fingerprint'],engine.inspect_source(self.c)['fingerprint'])
 
 
 if __name__ == '__main__': unittest.main()

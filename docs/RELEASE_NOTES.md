@@ -7,6 +7,8 @@
 - **Existing controller mapping retained.** The LumaNX Nintendo / Xbox / PlayStation face-button policy is reapplied to the updated engine.
 - **Kept extraction compatible with the launcher.** New upstream image requests use the reader's supported directory mode for launcher preparation and IPA export; base, update and DLC selection still uses exact content metadata. The reader adapter also accepts the upstream application filter. Regression tests exercise the bundled extraction stages with synthetic data.
 
+- **Signed bundled shader tool.** The universal SPIRV-Cross tool is ad-hoc signed in a build copy, with a matching engine manifest and reader fingerprint; the checked-in source snapshot stays intact.
+
 ## Installation and validation
 
 Download **LumaNX-0.2.16-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the app in Applications. Keep your library, saves and successful caches; prepare the updated engine tools and reprepare affected games to use the new engine.
@@ -25,6 +27,8 @@ Validation uses synthetic fixtures and compile checks; it does not establish rea
 - **恢复每日引擎验证（PR #23）。** 原生手柄测试补齐 IOKit 链接、体感回调与单调时钟，并检查失焦和断连时的体感清理。候选引擎仍需通过完整验证流程才能同步入库。
 - **保留现有手柄映射。** 更新引擎后继续应用 LumaNX 的 Nintendo / Xbox / PlayStation 面键规则。
 - **适配新版提取接口。** 启动器准备和 IPA 导出继续使用读取器支持的目录模式，兼容上游的新镜像请求；主游戏、更新和 DLC 仍按准确内容元数据选择。读取器适配同时兼容上游新增的应用类型过滤，并以合成数据调用内置引擎提取阶段进行回归验证。
+
+- **补齐内置着色器工具签名。** 在构建副本中为通用 SPIRV-Cross 工具补齐临时签名，同时生成匹配的引擎清单与读取器标识；仓库原始快照保持不变。
 
 下载 **LumaNX-0.2.16-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换“应用程序”中的副本。保留游戏库、存档和成功缓存；准备更新后的引擎工具，并重新准备受影响游戏以使用新版引擎。
 

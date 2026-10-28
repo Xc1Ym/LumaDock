@@ -1,4 +1,4 @@
-# LumaNX 0.2.16
+# LumaNX 0.2.17
 
 ## Changes
 
@@ -10,7 +10,7 @@
 
 ## Installation and validation
 
-Download **LumaNX-0.2.16-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the application. The application identifier and existing libraries, saves and settings are retained.
+Download **LumaNX-0.2.17-arm64.dmg** and verify the SHA-256 below. Quit the app and active tasks before replacing the application. The application identifier and existing libraries, saves and settings are retained.
 
 Requires Apple Silicon and macOS 26+. Uses **ad-hoc signing and is not notarized**. Game preparation requires full Xcode with Metal; IPA export also requires the iOS platform and XcodeGen.
 
@@ -26,7 +26,7 @@ The release workflow runs Python and Swift regression tests, native controller a
 - **内置引擎自动初始化。** 安装包首次使用时自动初始化私有引擎与读取器缓存，手动修复收进“更多工具 → 修复内置引擎”；初始化失败不会循环重试。
 - **修复原生手柄构建检查。** 包含主线对手柄回归程序的链接修正，补齐上游运动输入依赖。
 
-下载 **LumaNX-0.2.16-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换应用。应用标识、现有游戏库、存档与设置保持兼容。
+下载 **LumaNX-0.2.17-arm64.dmg**，按下方 SHA-256 校验，退出应用及任务后替换应用。应用标识、现有游戏库、存档与设置保持兼容。
 
 要求 Apple Silicon、macOS 26 及以上；采用临时签名，尚未公证。准备游戏需完整 Xcode 与 Metal，导出 IPA 另需 iOS 平台与 XcodeGen。
 

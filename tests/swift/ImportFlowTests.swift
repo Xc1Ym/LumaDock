@@ -24,6 +24,12 @@ elif r['operation']=='import':
     result={'imports':json.loads((root/'imports.json').read_text())}
 elif r['operation']=='preflight':
     result={'checks':[{'name':'Fixture tools','ok':json.loads((root/'tools.json').read_text()),'message':'fixture'}]}
+    if (root/'automatic-engine.json').exists():
+        result={'checks':[{'name':'NSP 读取组件','ok':(root/'engine-initialized').exists(),'message':'fixture','action':'prepareEngine'}]}
+elif r['operation']=='prepareEngine':
+    if (root/'automatic-engine.json').exists() and json.loads((root/'automatic-engine.json').read_text()):
+        (root/'engine-initialized').write_text('fixture ready')
+    result={}
 else:
     result={}
 print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'completed','result':result}),flush=True)
@@ -326,6 +332,44 @@ print(json.dumps({'schema':1,'taskId':r['taskId'],'type':'result','state':'compl
         store.quitApplication {terminations+=1}
         XCTAssertEqual(terminations,2,"Without a sheet, quit is immediate")
         await cleanup(root,store)
+    }
+    func testQuitFromGameToolsWaitsForSheetDismissal() async throws {
+        let (root,store)=try fixture()
+        store.showOnboarding=false
+        var terminations=0
+        for recovery in [false,true] {
+            store.editingInput = !recovery
+            store.showingRecovery = recovery
+            let previous=terminations
+            store.quitApplication {terminations+=1}
+            XCTAssertFalse(store.editingInput)
+            XCTAssertFalse(store.showingRecovery)
+            XCTAssertEqual(terminations,previous,"Quit must wait until the game tools sheet detaches")
+            store.applicationSheetDismissed()
+            XCTAssertEqual(terminations,previous+1)
+            store.applicationSheetDismissed()
+            XCTAssertEqual(terminations,previous+1,"Dismissal must consume the pending quit request")
+        }
+        await cleanup(root,store)
+    }
+    func testBundledEngineInitializesAutomaticallyOnceAndRechecksBeforeCompleting() async throws {
+        for succeeds in [true,false] {
+            let (root,store)=try fixture(toolchainReady:false)
+            try configure(root,games:[],imports:[])
+            let reader=root.appendingPathComponent("resources/Engine/reader")
+            try FileManager.default.createDirectory(at:reader,withIntermediateDirectories:true)
+            try Data("{}".utf8).write(to:reader.appendingPathComponent("manifest.json"))
+            try JSONSerialization.data(withJSONObject:succeeds,options:.fragmentsAllowed).write(to:root.appendingPathComponent("automatic-engine.json"))
+            var completions=0
+            store.checkEnvironment {completions+=1}
+            try await waitUntil {completions==1 && !store.checkingEnvironment && !store.executionBusy}
+            XCTAssertEqual(store.environmentReady,succeeds)
+            XCTAssertEqual(operations(root).filter{$0["operation"] as? String == "prepareEngine"}.count,1)
+            store.checkEnvironment {completions+=1}
+            try await waitUntil {completions==2 && !store.checkingEnvironment}
+            XCTAssertEqual(operations(root).filter{$0["operation"] as? String == "prepareEngine"}.count,1,"A broken bundle must not trigger an initialization loop")
+            await cleanup(root,store)
+        }
     }
     func testMetalRemovalIsBlockedWhileBusyAndRechecksAfterMockRemoval() async throws {
         let (root,store)=try fixture()

@@ -53,7 +53,7 @@ struct ContentView: View {
         .frame(minWidth:1100,minHeight:720)
         .onAppear {store.checkEnvironmentAtStartup()}
         .sheet(isPresented:$store.showOnboarding,onDismiss:store.onboardingDismissed) { OnboardingView().environmentObject(store) }
-        .sheet(isPresented:$store.editingInput) { InputEditor(game:store.inputGame, initial:store.input(for:store.inputGame)).environmentObject(store) }
+        .sheet(isPresented:$store.editingInput,onDismiss:store.applicationSheetDismissed) { InputEditor(game:store.inputGame, initial:store.input(for:store.inputGame)).environmentObject(store) }
         .alert(L("操作未完成"),isPresented:Binding(get:{!store.showOnboarding && store.error != nil},set:{if !$0 && !store.showOnboarding {store.error=nil}})) {
             let diagnostic=store.errorDiagnostic
             Button(L("知道了"),role:.cancel) {store.error=nil}
@@ -62,7 +62,10 @@ struct ContentView: View {
                 Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
             } else {Button(L("打开日志")) {store.reveal(store.diagnosticLogURL(nil))}}
         } message: {Text(store.failureMessage)}
-        .overlay(alignment:.top) { if let notice = store.notice { HStack { Image(systemName:"checkmark.circle.fill").foregroundStyle(Brand.accent); Text(L(notice)); Button {store.notice=nil} label:{Image(systemName:"xmark")}.buttonStyle(.plain).accessibilityLabel(L("关闭提示")) }.padding().glassSurface().padding().onAppear {DispatchQueue.main.asyncAfter(deadline:.now()+6){store.notice=nil}} } }
+        .overlay(alignment:.top) { if let notice = store.notice { HStack { Image(systemName:"checkmark.circle.fill").foregroundStyle(Brand.accent); Text(L(notice)); Button {store.notice=nil} label:{Image(systemName:"xmark")}.buttonStyle(.plain).accessibilityLabel(L("关闭提示")) }.padding().glassSurface().padding().task(id:notice) {
+            do {try await Task.sleep(nanoseconds:6_000_000_000)} catch {return}
+            if store.notice==notice {store.notice=nil}
+        } } }
     }
     var library: some View {
         HStack(spacing:16) {
@@ -94,7 +97,6 @@ struct ContentView: View {
                                 VStack(alignment:.leading,spacing:8) {
                                     Text(game.name).font(.headline).lineLimit(2)
                                     Text(game.display.isEmpty ? L("版本待识别") : game.display).font(.caption).foregroundStyle(.secondary)
-                                    Text(game.compatibilityName).font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Image(systemName:game.ready == true ? "checkmark.circle.fill" : "arrow.down.circle").foregroundStyle(game.ready == true ? .teal : .secondary)
@@ -156,7 +158,8 @@ struct GameDetail: View {
     let game:Game
     @State private var cleanKind="cache"
     @State private var confirmClean=false
-    @State private var showingRecovery=false
+    @State private var managementExpanded=false
+    @State private var detailsExpanded=false
     var body:some View {
         ScrollView {
         VStack(alignment:.leading,spacing:14) {
@@ -164,26 +167,30 @@ struct GameDetail: View {
                 GameCover(game:game).frame(width:76,height:76).clipShape(RoundedRectangle(cornerRadius:12)).accessibilityHidden(true)
                 VStack(alignment:.leading,spacing:6) {
                     Text(game.name).font(.headline).lineLimit(3).fixedSize(horizontal:false,vertical:true)
-                    Text(game.display).font(.callout).foregroundStyle(.secondary)
-                    Text(game.compatibilityName).font(.caption.bold()).foregroundStyle(.orange)
+                    Text(displayedVersion).font(.callout).foregroundStyle(.secondary)
                 }
             }
-            Text(game.id).font(.caption.monospaced()).foregroundStyle(.secondary)
-            if game.needsPreparation==true {Text(L("新增内容或引擎更新尚未准备；启动将使用上次成功版本。")).font(.caption).foregroundStyle(.orange)}
-            GameLanguagePicker(gameId:game.id)
-            Text(L("下次启动生效，无需重新准备。所选语言需游戏自身支持。")).font(.caption).foregroundStyle(.secondary)
-            if game.ready==true {
-                LabeledContent(L("当前运行版本"),value:game.runtimeVersion?.isEmpty == false ? game.runtimeVersion! : L("版本待识别"))
-                Button {store.launch(game)} label:{Label(L("启动游戏"),systemImage:"play.fill").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(store.executionBusy || !store.queue.isEmpty)
+            if game.needsPreparation==true {
+                Label(L("有更新待准备"),systemImage:"arrow.triangle.2.circlepath").font(.caption).foregroundStyle(.secondary)
+                    .help(L("新增内容或引擎更新尚未准备；启动将使用上次成功版本。"))
             }
-            Button {store.enqueue(game)} label:{Label(game.ready==true ? L("重新检查并准备") : L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable)
-            Button {store.generateIPA(game)} label:{Label(L("生成 IPA…"),systemImage:"iphone.and.arrow.forward").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large).disabled(!game.buildable || store.executionBusy || !store.queue.isEmpty)
-                .help(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。"))
-            Button {store.inputGame=game;store.editingInput=true} label:{Label(L("键鼠与手柄映射"),systemImage:"keyboard").frame(maxWidth:.infinity)}.buttonStyle(.bordered).controlSize(.large)
-            Divider()
-                VStack(alignment:.leading,spacing:8) {
+            if game.ready==true {
+                Button {store.launch(game)} label:{Label(L("启动游戏"),systemImage:"play.fill").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(store.executionBusy || !store.queue.isEmpty)
+            } else {
+                Button {store.enqueue(game)} label:{Label(L("准备运行文件"),systemImage:"hammer").frame(maxWidth:.infinity)}.buttonStyle(.glassProminent).controlSize(.large).disabled(!game.buildable)
+                if !(game.missing ?? []).isEmpty {
+                    Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                        .help((game.missing ?? []).map {L($0)}.joined(separator:"\n"))
+                }
+            }
+            gameTools
+            DisclosureGroup(isExpanded:$detailsExpanded) {
+                VStack(alignment:.leading,spacing:12) {
+                    LabeledContent("Title ID") {Text(game.id).font(.caption.monospaced()).textSelection(.enabled)}
+                    LabeledContent(L("兼容性"),value:game.compatibilityName)
+                    if game.ready==true {LabeledContent(L("当前运行版本"),value:displayedVersion)}
                     if !(game.missing ?? []).isEmpty {
-                        Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.headline).foregroundStyle(.orange)
+                        Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.subheadline).foregroundStyle(.orange)
                         ForEach(game.missing ?? [],id:\.self){Text(L($0)).font(.caption)}
                         Text(L("当前 nxnative 配置要求指定版本及着色器素材；这与 DLC 或本体是否完整无关。")).font(.caption).foregroundStyle(.secondary)
                         Divider()
@@ -203,29 +210,112 @@ struct GameDetail: View {
                             }.foregroundStyle(.secondary)
                         }.padding(.horizontal,10).padding(.vertical,7).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
                     }
-                }.frame(maxWidth:.infinity,alignment:.leading)
+                }.font(.callout).padding(12).frame(maxWidth:.infinity,alignment:.leading)
                 .id(Localization.language)
-            Divider()
-            Button(L("存档备份与版本回滚…")) {showingRecovery=true}
-            Button(L("在访达中查看存档")) {
-                let url=store.libraryURL.appendingPathComponent("saves/\(game.id)")
-                try? FileManager.default.createDirectory(at:url,withIntermediateDirectories:true);store.reveal(url)
-            }
-            DisclosureGroup(L("管理游戏")) {
-                VStack(alignment:.leading,spacing:10) {
-                    if game.id=="01007EF00011E000" {Button(L("迁移已有旷野之息构建…")){store.migrate(game)}}
-                    Button(L("移出游戏库（保留文件与存档）")){store.remove(game)}
-                    Button(L("清理构建缓存…"),role:.destructive){cleanKind="cache";confirmClean=true}
-                    Button(L("删除托管 NSP 副本…"),role:.destructive){cleanKind="sources";confirmClean=true}
-                }.padding(.vertical,8)
-            }.disabled(store.executionBusy)
+            } label:{GameToolLabel(title:"游戏详情",symbol:"info.circle")}
+                .disclosureGroupStyle(GameToolDisclosureStyle()).buttonStyle(GameToolButtonStyle())
         }.padding(20)
         }
-        .sheet(isPresented:$showingRecovery) {GameRecoveryView(game:game).environmentObject(store)}
+        .onChange(of:game.id) {managementExpanded=false;detailsExpanded=false}
+        .sheet(isPresented:$store.showingRecovery,onDismiss:store.applicationSheetDismissed) {GameRecoveryView(game:game).environmentObject(store)}
         .alert(cleanKind=="sources" ? L("删除托管 NSP 副本？") : L("清理构建缓存？"),isPresented:$confirmClean) {
             Button(L("取消"),role:.cancel){}
             Button(L("确认清理"),role:.destructive){store.clean(game,kind:cleanKind)}
         } message:{Text(L("仅处理托管副本；原始文件、存档和上次成功的运行版本保留。其他游戏仍在引用的共享文件会保留。"))}
+    }
+    private var displayedVersion:String {
+        if game.ready==true,let version=game.runtimeVersion,!version.isEmpty {return version}
+        return game.display.isEmpty ? L("版本待识别") : game.display
+    }
+    private var gameTools:some View {
+        DisclosureGroup(isExpanded:$managementExpanded) {
+            VStack(spacing:0) {
+                toolDivider
+                GameLanguagePicker(gameId:game.id)
+                toolDivider
+                Button {store.inputGame=game;store.editingInput=true} label: {
+                    GameToolLabel(title:"键鼠与手柄映射",symbol:"keyboard",accessory:"chevron.right")
+                }
+                toolDivider
+                Button {store.showingRecovery=true} label: {
+                    GameToolLabel(title:"存档备份与版本回滚…",symbol:"clock.arrow.circlepath",accessory:"chevron.right")
+                }
+                toolDivider
+                Button {
+                    let url=store.libraryURL.appendingPathComponent("saves/\(game.id)")
+                    try? FileManager.default.createDirectory(at:url,withIntermediateDirectories:true);store.reveal(url)
+                } label: {
+                    GameToolLabel(title:"在访达中查看存档",symbol:"folder",accessory:"arrow.up.forward")
+                }
+                toolDivider
+                if game.ready==true {
+                    Button {store.enqueue(game)} label:{GameToolLabel(title:"重新检查并准备",symbol:"hammer",accessory:"chevron.right")}
+                        .disabled(!game.buildable)
+                    toolDivider
+                }
+                Button {store.generateIPA(game)} label:{GameToolLabel(title:"生成 IPA…",symbol:"iphone.and.arrow.forward",accessory:"chevron.right")}
+                    .disabled(!game.buildable || store.executionBusy || !store.queue.isEmpty)
+                    .help(L("导出 iPhone / iPad 未签名包；需 Xcode iOS 平台及 XcodeGen。"))
+                toolDivider
+                if game.id=="01007EF00011E000" {
+                    Button {store.migrate(game)} label:{GameToolLabel(title:"迁移已有旷野之息构建…",symbol:"arrow.down.doc",accessory:"chevron.right")}
+                        .disabled(store.executionBusy)
+                    toolDivider
+                }
+                DisclosureGroup {
+                    VStack(alignment:.leading,spacing:4) {
+                        Button {store.remove(game)} label:{GameToolLabel(title:"移出游戏库（保留文件与存档）",symbol:"minus.circle")}
+                        Button(role:.destructive) {cleanKind="cache";confirmClean=true} label:{GameToolLabel(title:"清理构建缓存…",symbol:"trash",destructive:true)}
+                        Button(role:.destructive) {cleanKind="sources";confirmClean=true} label:{GameToolLabel(title:"删除托管 NSP 副本…",symbol:"trash",destructive:true)}
+                    }.padding(6).background(.primary.opacity(0.025))
+                } label: {
+                    GameToolLabel(title:"清理与移除",symbol:"trash")
+                }.disclosureGroupStyle(GameToolDisclosureStyle()).disabled(store.executionBusy)
+            }
+        } label:{GameToolLabel(title:"管理游戏",symbol:"slider.horizontal.3")}
+        .disclosureGroupStyle(GameToolDisclosureStyle()).buttonStyle(GameToolButtonStyle())
+        .background(Brand.accent.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
+        .clipShape(RoundedRectangle(cornerRadius:14))
+        .overlay {RoundedRectangle(cornerRadius:14).strokeBorder(.primary.opacity(0.07))}
+    }
+    private var toolDivider:some View {Divider().padding(.leading,44)}
+}
+private struct GameToolLabel:View {
+    let title:String
+    let symbol:String
+    var accessory:String?=nil
+    var destructive=false
+    var body:some View {
+        HStack(spacing:10) {
+            Image(systemName:symbol).font(.system(size:15,weight:.medium)).foregroundStyle(destructive ? Color.red : Brand.accent).frame(width:20)
+            Text(L(title)).font(.callout.weight(.medium)).fixedSize(horizontal:false,vertical:true)
+                .foregroundStyle(destructive ? Color.red : Color.primary)
+            Spacer(minLength:4)
+            if let accessory {Image(systemName:accessory).font(.system(size:10,weight:.semibold)).foregroundStyle(.tertiary)}
+        }.padding(.horizontal,12).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+    }
+}
+private struct GameToolButtonStyle:ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering=false
+    func makeBody(configuration:Configuration)->some View {
+        configuration.label
+            .background(Brand.accent.opacity(configuration.isPressed ? 0.14 : hovering && isEnabled ? 0.07 : 0))
+            .opacity(isEnabled ? 1 : 0.45)
+            .onHover {hovering=$0}
+    }
+}
+private struct GameToolDisclosureStyle:DisclosureGroupStyle {
+    func makeBody(configuration:Configuration)->some View {
+        VStack(spacing:0) {
+            Button {withAnimation(.easeInOut(duration:0.18)){configuration.isExpanded.toggle()}} label: {
+                configuration.label.overlay(alignment:.trailing) {
+                    Image(systemName:"chevron.right").font(.system(size:10,weight:.semibold)).foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0)).padding(.trailing,12)
+                }
+            }.accessibilityValue(configuration.isExpanded ? L("已展开") : L("已折叠"))
+            if configuration.isExpanded {configuration.content}
+        }
     }
 }
 struct TasksView: View {
@@ -667,9 +757,10 @@ struct GameLanguagePicker: View {
         if gameId == nil { picker }
         else {
             HStack(spacing:10) {
-                Text(L("启动语言")).font(.caption).foregroundStyle(.secondary).fixedSize()
-                picker.labelsHidden().frame(minWidth:0,maxWidth:.infinity)
-            }
+                Image(systemName:"character.bubble").font(.system(size:15,weight:.medium)).foregroundStyle(Brand.accent).frame(width:20)
+                Text(L("启动语言")).font(.callout.weight(.medium)).fixedSize()
+                picker.labelsHidden().lineLimit(1).frame(maxWidth:.infinity)
+            }.padding(12)
         }
     }
 }

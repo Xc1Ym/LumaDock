@@ -16,7 +16,7 @@ from core import Failure, atomic, digest, profiles, read
 
 HELP = 'nxnative 随应用内置。组件缺失或校验失败时，请重新安装完整璃游；游戏构建使用私有副本。'
 SDK_HELP = '首次准备引擎读取工具需要 Microsoft .NET 10 SDK（macOS Arm64），只有运行时不够。安装官方 SDK 后重新检查；已有完整工具缓存时不再需要 SDK。安装方法见环境安装说明。'
-TOOLS_HELP = '点击“准备引擎工具”，将内置引擎与读取器复制到私有缓存。源码开发时首次编译读取器需要 .NET 10 SDK。'
+TOOLS_HELP = '内置引擎首次使用时自动初始化，无需下载或手动准备。初始化失败时，可从“更多工具”选择“修复内置引擎”；组件缺失或版本不匹配时需重新安装完整应用。源码开发时首次编译读取器需要 .NET 10 SDK。'
 EXCLUDED = {'.git', 'bin', 'obj', 'gen', '__pycache__', 'cache', 'logs'}
 ROOTS = {'dm', 'scripts', 'LICENSE'}
 PRIVATE_SUFFIXES = {'.nsp', '.xci', '.nsz', '.keys', '.ipa', '.metallib', '.pyc'}

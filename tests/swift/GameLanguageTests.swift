@@ -26,6 +26,7 @@ import XCTest
         XCTAssertEqual(restarted.defaultGameLanguage,.korean)
         restarted.setGameLanguage(nil,for:"g1")
         XCTAssertNil(restarted.gameLanguageOverride(for:"g1"))
+        XCTAssertEqual(L(restarted.notice ?? ""),"Launch language set to Use default (Korean). Applies on the next launch.")
         XCTAssertEqual(restarted.gameLanguage(for:"g1"),.korean)
         XCTAssertEqual(Store(privateRoot:root).gameLanguage(for:"g1"),.korean)
         XCTAssertTrue(store.processes.isEmpty)

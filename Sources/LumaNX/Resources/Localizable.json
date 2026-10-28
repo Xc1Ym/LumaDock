@@ -3338,5 +3338,53 @@
   {
     "source": "环境检查详情",
     "en": "Environment check details"
+  },
+  {
+    "source": "设置…",
+    "en": "Settings…"
+  },
+  {
+    "source": "刷新游戏库",
+    "en": "Refresh library"
+  },
+  {
+    "source": "已展开",
+    "en": "Expanded"
+  },
+  {
+    "source": "已折叠",
+    "en": "Collapsed"
+  },
+  {
+    "source": "清理与移除",
+    "en": "Cleanup and removal"
+  },
+  {
+    "source": "游戏详情",
+    "en": "Game details"
+  },
+  {
+    "source": "兼容性",
+    "en": "Compatibility"
+  },
+  {
+    "source": "有更新待准备",
+    "en": "Updates awaiting preparation"
+  },
+  {
+    "source": "启动语言已设为{0}，下次启动生效。",
+    "en": "Launch language set to {0}. Applies on the next launch."
+  },
+  {
+    "source": "修复内置引擎",
+    "en": "Repair bundled engine"
+  },
+  {
+    "source": "内置引擎尚未完成初始化",
+    "en": "Bundled engine initialization is incomplete"
+  },
+  {
+    "source": "内置引擎首次使用时自动初始化，无需下载或手动准备。初始化失败时，可从“更多工具”选择“修复内置引擎”；组件缺失或版本不匹配时需重新安装完整应用。源码开发时首次编译读取器需要 .NET 10 SDK。",
+    "en": "The bundled engine initializes automatically on first use, with no download or manual preparation. If initialization fails, choose Repair bundled engine under More tools. Reinstall the complete app if components are missing or mismatched. Source development requires the .NET 10 SDK to compile the reader initially."
   }
 ]

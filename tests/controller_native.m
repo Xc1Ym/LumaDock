@@ -1,6 +1,7 @@
 // Exercise the actual nxnative Mac front end with Apple's writable snapshots.
 #include "front_mac.m"
 #include <assert.h>
+#include <time.h>
 
 int g_swkbd_min_chars;
 static uint64_t received[DM_PLAYERS];
@@ -17,6 +18,18 @@ void dm_gfx_suspend(int s) {(void)s;}
 void dm_haptics_apple_init(void) {}
 void dm_haptics_apple_controller(int p,GCController *c) {(void)p;(void)c;}
 void dm_haptics_apple_shutdown(void) {}
+// The front end now publishes GameController and passive HID motion to the
+// service layer. Keep those sinks in the harness, like the pad/haptics sinks
+// above; the host's own tests cover sensor fusion and HID packet decoding.
+void dm_motion_set(int p,const float acc[3],const float rot[3]) {(void)p;(void)acc;(void)rot;}
+void dm_motion_set_hid(int p,const float acc[3],const float rot[3],uint64_t ns) {(void)p;(void)acc;(void)rot;(void)ns;}
+static unsigned motion_clears[DM_PLAYERS], hid_motion_clears[DM_PLAYERS];
+void dm_motion_clear(int p) {assert(p>=0&&p<DM_PLAYERS);motion_clears[p]++;}
+void dm_motion_clear_hid(int p) {assert(p>=0&&p<DM_PLAYERS);hid_motion_clears[p]++;}
+uint64_t now_ns(void) {
+    struct timespec t;assert(clock_gettime(CLOCK_MONOTONIC_RAW,&t)==0);
+    return (uint64_t)t.tv_sec*1000000000ull+(uint64_t)t.tv_nsec;
+}
 
 // Snapshot controllers have no product identity. Override identity only; keep
 // Apple's real GCExtendedGamepad elements and the production pad_read path.
@@ -75,9 +88,19 @@ int main(void) {
         [pad.buttonA setValue:1];[pad.buttonB setValue:1];[pad.leftTrigger setValue:1];[pad.rightShoulder setValue:1];
         [pad.leftThumbstick setValueForXAxis:.75 yAxis:-.5];pad_read(pad);
         assert(received[p]==(DM_BTN_A|DM_BTN_B|DM_BTN_ZL|DM_BTN_R));assert(axes[p][0]>0&&axes[p][1]<0);
+#if __has_include("motion_pro_mac.h")
+        // Simulate an assigned passive motion source without opening HID devices.
+        g_pro_player=p;
+#endif
         input_release();assert(received[p]==0&&axes[p][0]==0);pad_read(pad);assert(received[p]==0);
+#if __has_include("motion_pro_mac.h")
+        assert(hid_motion_clears[p]>0);
+#endif
         g_input_on=1;pad_read(pad);assert(received[p]&DM_BTN_A);
         pads_changed(c);assert(received[p]==0&&axes[p][0]==0);assert(g_held[p]==nil);
+#if __has_include("motion_apple.h")
+        assert(motion_clears[p]>0);
+#endif
         puts("PASS: native GameController face buttons, combos, axes, focus and disconnect cleanup");
     }
     return 0;

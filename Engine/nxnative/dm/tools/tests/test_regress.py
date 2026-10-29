@@ -157,6 +157,46 @@ class Regress(unittest.TestCase):
         quit0 = [dict(base[0], exit=0)]   # the game ended by itself before the route did: a failure even with exit status 0
         self.assertTrue(any('exited before the end' in x for x in regress.smoke_diff(base, quit0, route)[0]['NEW-FAIL']))
 
+    def test_route_capture_frame(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / 'smoke.tsv'
+            f.write_text('save\tnew\nsecs\t40\n')
+            self.assertIsNone(regress.read_route(f)['capture'])
+            f.write_text('save\tnew\nsecs\t40\ncapture\t3000\n')
+            self.assertEqual(regress.read_route(f)['capture'], 3000)
+
+    def test_parse_replays(self):
+        live, other = 'a' * 64, 'b' * 64
+        text = (f'replay 1: digest {live} == live {live} (1920x1080 format 70); submit CPU 1 ms\nMATCH: the replayed frame equals the live frame\n'
+                f'replay 2: 97 pixels differ from the live frame (largest byte difference 46, x 1648-1676 y 739-746)\n'
+                f'replay 2: digest {other} != live {live} (1920x1080 format 70); submit CPU 1 ms\n'
+                f'replay 3: digest {other} != live {live} (1920x1080 format 70)\n2 of 3 fresh replays match the live frame (within 100 pixels)\n')
+        r = regress.parse_replays(text)
+        self.assertEqual([x['index'] for x in r], [1, 2, 3])
+        self.assertEqual((r[0]['same'], r[0]['pixels']), (True, 0))
+        self.assertEqual((r[1]['same'], r[1]['pixels'], r[1]['largest'], r[1]['box']), (False, 97, 46, [1648, 1676, 739, 746]))
+        self.assertIsNone(r[2]['pixels'])   # a capture without the live pixels: compared by digest only
+
+    def test_replay_grade(self):
+        live = 'a' * 64
+        def res(*px, exit=None, red=()):
+            xs = [{'digest': live if p == 0 else f'{p:064x}', 'same': p == 0, 'live': live, 'pixels': p, 'largest': 9 if p else 0, 'box': [0, 1, 0, 1] if p else None} for p in px]
+            return {'exit': exit if exit is not None else 0 if all(p <= 120 for p in px) else 1, 'replays': xs, 'red': list(red)}
+        lv, known = regress.replay_grade(res(0, 0, 0), res(0, 0, 0), 0)
+        self.assertFalse(any(lv.values()), lv)
+        lv, known = regress.replay_grade(res(0, 97), res(124, 157), 124)   # a noisy capture: other frames within the tolerance (twice the noise) are no change
+        self.assertFalse(any(lv.values()), lv)
+        lv, known = regress.replay_grade(res(0, 0), res(0, 3), 0)   # an exact one: any other frame is a regression
+        self.assertTrue(lv['REGRESSION'], lv)
+        lv, known = regress.replay_grade(res(0, 97), res(0, 500), 124)
+        self.assertTrue(lv['REGRESSION'], lv)
+        lv, known = regress.replay_grade(res(500), res(600), 124)   # beyond the tolerance in both: known, the difference shown
+        self.assertFalse(lv['REGRESSION']); self.assertTrue(known and lv['CHANGED'])
+        lv, known = regress.replay_grade(res(0), res(exit=2, red=['[RED] nvn_replay: program #3 ...']), 0)
+        self.assertTrue(any('capture' in x for x in lv['ERROR']), lv)
+        lv, known = regress.replay_grade(res(0), res(exit=-11), 0)
+        self.assertTrue(lv['NEW-FAIL'], lv)
+
     def test_status_order(self):
         self.assertEqual(regress.worst('PASS', 'CHANGED', 'REGRESSION'), 'REGRESSION'); self.assertEqual(regress.worst('NEW-FAIL', 'ERROR'), 'ERROR')
 

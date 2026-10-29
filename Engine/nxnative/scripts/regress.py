@@ -9,6 +9,8 @@
 #        python3 scripts/regress.py usage    [--rev REV] [--games ID,...] [--write]                            (a game's usage manifest, dm/games/<id>/usage.tsv: dm/tools/usage.py)
 #        python3 scripts/regress.py impact   <base>..<head> | <commit>                                         (the games whose manifests hold what the change touches)
 #        python3 scripts/regress.py list                                                                       (the games found, their routes, stored baselines and last green chain)
+#        python3 scripts/regress.py capture  [--rev REV] [--games ID,...] [--repeat N]                     (each route's capture frame, and its replay noise)
+#        python3 scripts/regress.py replay   [--baseline REV] [--candidate REV|worktree] [--games ID,...] [--repeat N]   (those captures replayed by two revisions)
 #   check / baseline --record: for each repository profile with status PASS or CHANGED and successful boot runs (no run_failures, even known ones) write dm/games/<id>/validated.tsv of
 #   this checkout: the chain it was last green on, one row per mode (quick, full), the latest of each. `key <TAB> value` rows under a comment header; the value is `field=value` words:
 #     quick <TAB> chain=157e1b96c8da commit=4f2a9c01d3+dirty date=2026-10-27 machine=Mac14,6 macos=26.1
@@ -38,7 +40,14 @@
 #    and starts the game on its archive; --quick runs the chain checks and a 60 s boot without the prebuild (DM_PSO_PREBUILD=0).
 #    A route, dm/games/<id>/smoke.tsv, key <TAB> value lines: save (a folder relative to the NSP folder, `run` = <id>_build/run/save, `new` = empty), keys (DM_KEYS), secs (full run),
 #    quick (quick run, default 60), reach (<frame>@<seconds>: the frame number the game must have presented by then), window (<start> <TAB> <length>: the frame-time window),
-#    shots (comma-separated seconds), hang (seconds without a frame, default 20), prebuild (on / off: the full mode's prebuild, default on for an NVN game).
+#    shots (comma-separated seconds), hang (seconds without a frame, default 20), prebuild (on / off: the full mode's prebuild, default on for an NVN game), capture (the frame `capture` records).
+# 4. Replay (`replay`, an NVN game with a capture; GPU, no game run): the game's current capture (DM_NVN_CAPTURE, made by `capture` from the route's `capture` frame with the wall clock,
+#    DM_PSO_HYBRID=0 and no prebuild) replayed --repeat times by each revision's dm/gfx/tests/nvn_replay, with that revision's shader libraries (DM_MSL_DIR, DM_NVN_SHMAP on the replayer's
+#    command line, so a capture made on another chain still replays while every program's bindings match). `capture` stores the frame's noise beside it in
+#    <NSP folder>/<id>-work/regress/captures/ (<tree>-f<frame>.nvncap and .json, current.json names the one in use): the most pixels any of --repeat fresh replays differs from the live frame.
+#    A candidate replay beyond the tolerance (TOL replay_noise_x times the noise; none for an exact capture) while the baseline's stay within it is a REGRESSION, a capture a revision cannot replay
+#    (record layout or shader bindings changed: nvn_replay exits 2) is an ERROR asking for a new capture. report.json: games.<id>.replay = {"capture": {frame, tree, chain, noise_px, date},
+#    "baseline" / "candidate": {"exit", "secs", "busy", "red", "replays": [{"digest" (16 hex), "same", "pixels", "largest", "box"}]}}; capture: games.<id>.capture.
 # 3. Baselines: `baseline` records the runs of a revision in <NSP folder>/<id>-work/regress/baselines/<commit>/; `check` compares with the one of the baseline revision and records it first when there is none.
 #
 # report.json (beside report.md, in --out, default <root>/reports/<date-time>-<command>/):
@@ -85,7 +94,8 @@ HEAVY_EXE = {'clang', 'make', 'xcodebuild', 'ld', 'ld64', 'swift-frontend', 'dot
 HEAVY_PY = r'(dmsh_build|shader_split|own_compilers|patch_nso|vk_shaders)\.py'   # (the shared measuring rule)
 # Tolerances, from runs of one revision against itself (docs/development.md, The regression harness)
 TOL = {'fps_pct': 10.0, 'p99_pct': 30.0, 'p99_ms': 4.0, 'footprint_pct': 15.0, 'footprint_mb': 300.0, 'prepare_s': 10.0, 'prepare_x': 1.5, 'prebuild_x': 1.5, 'prebuild_s': 30.0,
-       'dhash_bits': 12, 'rgb_diff': 12.0}
+       'dhash_bits': 12, 'rgb_diff': 12.0,
+       'replay_noise_x': 2.0}   # a replay may differ from the live frame in this many times the pixels capture measured (a few replays see less than the whole spread: Breath of the Wild 154, then 157)
 
 
 class HarnessError(Exception):
@@ -269,7 +279,7 @@ class Game:
 
 
 def read_route(f):
-    r = {'save': 'run', 'keys': '', 'secs': 90.0, 'quick': 60.0, 'reach': None, 'window': None, 'shots': [], 'hang': 20.0, 'prebuild': 'on'}
+    r = {'save': 'run', 'keys': '', 'secs': 90.0, 'quick': 60.0, 'reach': None, 'window': None, 'shots': [], 'hang': 20.0, 'prebuild': 'on', 'capture': None}
     for ln in f.read_text().splitlines():
         if not ln.strip() or ln.startswith('#'): continue
         c = ln.split('\t'); k, v = c[0].strip(), [x.strip() for x in c[1:]]
@@ -278,6 +288,7 @@ def read_route(f):
         elif k == 'reach': n, _, t = v[0].partition('@'); r[k] = (int(n), float(t))
         elif k == 'window': r[k] = (float(v[0]), float(v[1]))
         elif k == 'shots': r[k] = sorted(float(x) for x in v[0].split(',') if x)
+        elif k == 'capture': r[k] = int(v[0])
         elif k in ('save', 'keys', 'prebuild'): r[k] = v[0]
         else: raise HarnessError(f'{f}: unknown key {k!r}')
     return r
@@ -762,13 +773,13 @@ def smoke_context(g, art, route, a, hardware):
                                  'no_hud': a.no_hud, 'runs': a.runs, 'prebuild_limit': a.prebuild_limit, 'prebuild_hang': a.prebuild_hang}))
 
 
-def smoke_run(g, tree, art, route, quick, outdir, a):
-    """One run of the route: the prebuild (full mode), then the game, under the watchdog → RUN (see the header)"""
-    host, modules, lib, prof = art['host'], art['modules'], art['lib'], art['profile']
-    secs = route['quick'] if quick else route['secs']
+def run_env(g, art, route, outdir, a):
+    """A fresh run folder (a copy of the route's save, an empty temp) and the host's environment for it → (env, the save it started from)"""
+    lib, prof = art['lib'], art['profile']
     shutil.rmtree(outdir, ignore_errors=True); outdir.mkdir(parents=True)
     save, temp = outdir / 'save', outdir / 'temp'
     src_save = save_source(g, route)
+    if src_save and not src_save.is_dir(): raise HarnessError(f'the route\'s save {src_save} does not exist (dm/games/{g.id}/smoke.tsv, save)')
     if src_save: shutil.copytree(src_save, save, symlinks=True)
     else: save.mkdir()
     temp.mkdir()
@@ -779,6 +790,14 @@ def smoke_run(g, tree, art, route, quick, outdir, a):
         if not (prof / 'pso_pairs.tsv').is_file() and (g.build / 'shader/pso_pairs.tsv').is_file(): env['DM_PSO_PAIRS'] = str(g.build / 'shader/pso_pairs.tsv')
     if (g.build / 'aoc').is_dir(): env['DM_AOC_DIR'] = str(g.build / 'aoc')
     for kv in a.env: k, _, v = kv.partition('='); env[k] = v
+    return env, src_save
+
+
+def smoke_run(g, tree, art, route, quick, outdir, a):
+    """One run of the route: the prebuild (full mode), then the game, under the watchdog → RUN (see the header)"""
+    host, modules = art['host'], art['modules']
+    secs = route['quick'] if quick else route['secs']
+    env, src_save = run_env(g, art, route, outdir, a)
     res = {'secs': secs, 'host': art['host_key'], 'modules': art['modules_key'], 'save': save_digest(src_save)}
     prebuild = g.kind == 'nvn' and not quick and route['prebuild'] == 'on'
     if prebuild:   # the pipeline prebuild into <run>/pso_archive, as the NSP script's Mac build and the Mac app's prepare step run it
@@ -820,13 +839,13 @@ def smoke_run(g, tree, art, route, quick, outdir, a):
     return res
 
 
-def run_watched(cmd, env, cwd, log, a, limit, hang, kind, what, shots=(), frames=None):
-    """Runs one host process under the watchdog, holding the measuring lock and keeping the display on; stops it after limit seconds"""
+def run_watched(cmd, env, cwd, log, a, limit, hang, kind, what, shots=(), frames=None, until=None):
+    """Runs one host process under the watchdog, holding the measuring lock and keeping the display on; stops it after limit seconds, or once its log has a line matching until"""
     check_disk(a.min_free_gb)
     busy = not wait_idle(a.wait_idle)
     take_lock(a.lock, what)
     p = caf = None; t0w = time.time(); t0 = time.monotonic()
-    st = {'max_frame': -1, 'first': None, 'last_new': None, 'hang': None, 'peak': 0, 'presents': [], 'pos': 0, 'logpos': 0, 'frame_t': []}
+    st = {'max_frame': -1, 'first': None, 'last_new': None, 'hang': None, 'peak': 0, 'presents': [], 'pos': 0, 'logpos': 0, 'frame_t': [], 'upos': 0, 'until': None}
     try:
         (cwd / 'ctl').write_text('')
         with open(log, 'w') as lf: p = subprocess.Popen([str(c) for c in cmd], cwd=cwd, env=env, stdout=lf, stderr=subprocess.STDOUT)
@@ -835,6 +854,11 @@ def run_watched(cmd, env, cwd, log, a, limit, hang, kind, what, shots=(), frames
         while p.poll() is None:
             el = time.monotonic() - t0
             if el >= limit: break
+            if until and log.is_file():
+                with open(log, errors='replace') as fh:
+                    fh.seek(st['upos']); chunk = fh.read(); cut = chunk.rfind('\n') + 1; st['upos'] += len(chunk[:cut].encode())
+                m = re.search(until, chunk[:cut])
+                if m: st['until'] = m.group(0); break
             while todo and el >= todo[0]:
                 with open(cwd / 'ctl', 'a') as c: c.write(f'shot {cwd}/shot_{todo.pop(0):g}s.png\n')
             new = False
@@ -882,7 +906,8 @@ def run_watched(cmd, env, cwd, log, a, limit, hang, kind, what, shots=(), frames
             if e <= t: best = n
         return best
     return {'exit': rc, 'hang_at_s': st['hang'], 'first_frame_s': round(st['first'], 1) if st['first'] is not None else None, 'max_frame': st['max_frame'],
-            'peak_mb': round(st['peak'] / 1048576) if st['peak'] else None, 'presents': st['presents'], 'frame_at': frame_at, 't0': t0w, 'wall': round(time.monotonic() - t0, 1), 'busy': busy}
+            'peak_mb': round(st['peak'] / 1048576) if st['peak'] else None, 'presents': st['presents'], 'frame_at': frame_at, 't0': t0w, 'wall': round(time.monotonic() - t0, 1), 'busy': busy,
+            'until': st['until']}
 
 
 # ---------------------------------------------------------------- comparing runs
@@ -976,7 +1001,11 @@ def artifacts(tree, g, a, rewrite):
     m, out = chain_build(tree, g, a)
     host, hkey, _ = host_for(tree, g, a.jobs)
     mods, mkey = modules_for(tree, g, rewrite, a.jobs)
-    # the tables the host reads beside the shader map (pso_manifest.tsv, the pair lists, ...): the tree's, with c1_full.tsv and cb_extent.tsv as the chain build made them
+    return {'manifest': m, 'lib': out, 'profile': profile_tables(tree, g, m, out), 'host': host, 'host_key': hkey, 'modules': mods, 'modules_key': mkey}
+
+
+def profile_tables(tree, g, m, out):
+    """The tables the host reads beside the shader map (pso_manifest.tsv, the pair lists, ...): the tree's, with c1_full.tsv and cb_extent.tsv as the chain build made them"""
     prof = game_root(g) / 'profile' / f'{tree.id}-{m["key"]}'
     if not (prof / '.done').is_file():
         prof.mkdir(parents=True, exist_ok=True)
@@ -984,7 +1013,7 @@ def artifacts(tree, g, a, rewrite):
         for f in (out / 'profile').glob('*.tsv') if g.kind == 'nvn' else []:
             if f.name in ('c1_full.tsv', 'cb_extent.tsv'): shutil.copyfile(f, prof / f.name)
         (prof / '.done').write_text('')
-    return {'manifest': m, 'lib': out, 'profile': prof, 'host': host, 'host_key': hkey, 'modules': mods, 'modules_key': mkey}
+    return prof
 
 
 def depth_zero(g, tree):
@@ -1105,6 +1134,172 @@ def cmd_check(a, smoke=True):
     result = finish(rep, a)
     record_validated(a, rep, cand, games)
     return result
+
+
+# ---------------------------------------------------------------- frame capture and replay (DM_NVN_CAPTURE, dm/gfx/tests/nvn_replay)
+
+def capture_dir(g):
+    return game_root(g) / 'captures'
+
+
+def replayer_for(tree, g, a):
+    """dm/gfx/tests/nvn_replay of a revision, built for this game (it includes the tree's replay layer and profile header)"""
+    dst = game_root(g) / 'replayer' / tree.id / 'nvn_replay'
+    if dst.is_file(): return dst
+    say(f'  {g.id}: building the replayer of {tree.id}')
+    logs = game_root(g) / 'tmp'; logs.mkdir(parents=True, exist_ok=True); env = g.env(tree)
+    for d, target in (('dm/host', 'game_profile'), ('dm/gfx/tests', 'nvn_replay')):   # the profile header first: the tests' rule keeps a stale one
+        log = logs / f'replayer-{tree.id}-{g.id}-{target}.log'
+        rc, _ = run_heavy(['make', '-C', tree.path / d, f'GAME={g.id}', target], log, tree.path, env, a, f'{g.id} {target}')
+        if rc: raise HarnessError(f'{g.id}: the replayer of {tree.id} does not build (see {log})')
+    dst.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(tree.path / 'dm/gfx/tests/nvn_replay', dst)
+    return dst
+
+
+REPLAY_DIGEST = re.compile(r'^replay (\d+): digest ([0-9a-f]{64}) (==|!=) live ([0-9a-f]{64})', re.M)
+REPLAY_PIXELS = re.compile(r'^replay (\d+): (\d+) pixels differ from the live frame \(largest byte difference (\d+), x (\d+)-(\d+) y (\d+)-(\d+)\)', re.M)
+
+
+def parse_replays(text):
+    """nvn_replay's output → [{index, digest, same, live, pixels, largest, box}] (pixels None: a replay that equals the live frame, or a capture without the live pixels)"""
+    px = {int(m[1]): (int(m[2]), int(m[3]), [int(m[4]), int(m[5]), int(m[6]), int(m[7])]) for m in REPLAY_PIXELS.finditer(text)}
+    out = []
+    for m in REPLAY_DIGEST.finditer(text):
+        k = int(m[1]); p = px.get(k)
+        out.append({'index': k, 'digest': m[2], 'same': m[3] == '==', 'live': m[4], 'pixels': 0 if m[3] == '==' else p[0] if p else None,
+                    'largest': p[1] if p else 0, 'box': p[2] if p else None})
+    return out
+
+
+def replay_runs(binary, cap, lib, prof, n, maxpx, g, a, what):
+    """n fresh replays of a capture against a revision's replay layer and its shader libraries (given on the command line, they win over the capture's own settings)"""
+    env = dict(os.environ, DM_MSL_DIR=str(lib), DM_NVN_SHMAP=str(prof / 'shader_map.tsv'), TMPDIR=str(game_root(g) / 'tmp') + '/')
+    check_disk(a.min_free_gb)
+    busy = not wait_idle(a.wait_idle)
+    take_lock(a.lock, what)
+    log = game_root(g) / 'tmp' / f'replay-{Path(binary).parent.name}-{g.id}.log'
+    try:
+        t0 = time.monotonic()
+        r = subprocess.run([str(binary), str(cap), '--repeat', str(n), '--max-pixels', str(maxpx)], cwd=cap.parent, env=env, capture_output=True, text=True, errors='replace')
+        secs = round(time.monotonic() - t0, 1)
+    finally:
+        if a.lock and bench.lock_holder(a.lock) == os.getpid(): a.lock.unlink(missing_ok=True)
+    text = r.stdout + r.stderr; log.write_text(text)
+    red = list(dict.fromkeys(normalize_red(ln[ln.index('[RED]'):]) for ln in text.splitlines() if '[RED] nvn_replay' in ln))
+    return {'exit': r.returncode, 'replays': parse_replays(text), 'red': red, 'secs': secs, 'busy': busy, 'log': str(log)}
+
+
+def replay_ok(res, noise):   # every replay equals the live frame or differs in at most noise pixels
+    return res['exit'] in (0, 1) and len(res['replays']) > 0 and all(x['same'] or (x['pixels'] is not None and x['pixels'] <= noise) for x in res['replays'])
+
+
+def public_replay(res):   # numbers and digests only (no paths)
+    return {'exit': res['exit'], 'secs': res['secs'], 'busy': res['busy'], 'red': res['red'],
+            'replays': [{'digest': x['digest'][:16], 'same': x['same'], 'pixels': x['pixels'], 'largest': x['largest'], 'box': x['box']} for x in res['replays']]}
+
+
+def replay_tolerance(noise):   # pixels a replay may differ from the live frame: none for a capture whose replays all equal it, else a margin over the measured noise
+    return int(noise * TOL['replay_noise_x'])
+
+
+def replay_grade(base, cand, noise):
+    """→ ({level: [reason]}, [known]) for the candidate's replays of one capture, against the live frame within the tolerance of the capture's noise (a capture that replays exactly
+    has none); which of the frames within it a noisy capture gives is chance, so they are not compared with the baseline's"""
+    tol = replay_tolerance(noise)
+    lv, known = collections.defaultdict(list), []
+    worst_px = lambda r: max((x['pixels'] or 0 for x in r['replays']), default=0)
+    if cand['exit'] == 2 or base['exit'] == 2:
+        who = 'candidate' if cand['exit'] == 2 else 'baseline'
+        why = ((cand if who == 'candidate' else base)['red'] or ['exit status 2'])[0]
+        lv['ERROR'].append(f'the {who} cannot replay the capture ({why}): record a new one with regress.py capture')
+        return lv, known
+    if cand['exit'] not in (0, 1) or not cand['replays']:
+        (known if base['exit'] not in (0, 1) else lv['NEW-FAIL']).append(f"the candidate's replay stopped (exit {cand['exit']}, {len(cand['replays'])} replays)")
+        return lv, known
+    cok, bok = replay_ok(cand, tol), replay_ok(base, tol)
+    if not cok:
+        x = max(cand['replays'], key=lambda x: x['pixels'] or 0)
+        text = f"{x['pixels']} pixels differ from the live frame (largest byte difference {x['largest']}, box {x['box']}); the capture's noise is {noise}, the tolerance {tol}"
+        if bok: lv['REGRESSION'].append(text)
+        else: known.append(f'the baseline differs beyond the tolerance too ({worst_px(base)} pixels)'); lv['CHANGED'].append(text)
+
+    return lv, known
+
+
+def capture_meta(g):
+    cur = capture_dir(g) / 'current.json'
+    if not cur.is_file(): return None
+    name = json.loads(cur.read_text())['name']
+    meta = json.loads((capture_dir(g) / f'{name}.json').read_text())
+    return meta | {'path': capture_dir(g) / f'{name}.nvncap'}
+
+
+def cmd_capture(a):
+    tree = Tree(a.rev); games = select(a, smoke=True)
+    rep = new_report(a, 'capture', baseline=tree, candidate=None)
+    for g in games:
+        t0 = time.time(); gr = rep['games'][g.id] = {'name': g.name, 'status': 'PASS', 'reasons': [], 'known': [], 'secs': {}}
+        try:
+            route = g.route()
+            if g.kind != 'nvn' or not route or not route.get('capture'):
+                gr['known'].append('nothing to capture: an NVN game whose route (dm/games/<id>/smoke.tsv) has a capture frame'); continue
+            art = artifacts(tree, g, a, rewrite=a.rewrite)
+            frame = route['capture']; cd = capture_dir(g); cd.mkdir(parents=True, exist_ok=True)
+            name = f'{tree.id}-f{frame}'; cap = cd / f'{name}.nvncap'; cap.unlink(missing_ok=True)
+            outdir = game_root(g) / 'runs' / f'{datetime.datetime.now():%Y%m%d-%H%M%S}-capture'
+            env, _ = run_env(g, art, route, outdir, a)
+            # the wall clock (DM_DETCLOCK stops some games, waiting for guest time); no pipeline prebuild, and no stand-in pipelines, whose draws would differ from the replay's
+            env.update(DM_KEYS=route['keys'], DM_PSO_PREBUILD='0', DM_PSO_HYBRID='0', DM_NVN_CAPTURE=f'{frame}:1:{cap}')
+            say(f'  {g.id}: capturing frame {frame} with {tree.id} → {cap}')
+            r = run_watched([art['host'], art['modules']], env, outdir, outdir / 'log.txt', a, limit=a.capture_limit, hang=max(route['hang'], 300), kind='nvn',
+                            what=f'{g.id} capture', frames=outdir / 'frames.tsv', until=r'DM_NVN_CAPTURE: frame \d+: [^\n]*')
+            if not r['until'] or not cap.is_file():
+                raise HarnessError(f'frame {frame} was not captured within {a.capture_limit:g} s (the game reached frame {r["max_frame"]}; see {outdir / "log.txt"})')
+            gr['secs']['capture'] = round(time.time() - t0, 1); t1 = time.time()
+            res = replay_runs(replayer_for(tree, g, a), cap, art['lib'], art['profile'], a.repeat, 1 << 40, g, a, f'{g.id} replay')
+            if res['exit'] != 0 or len(res['replays']) != a.repeat or any(x['pixels'] is None for x in res['replays']):
+                raise HarnessError(f"the new capture does not replay ({(res['red'] or ['exit ' + str(res['exit'])])[0]}; see {res['log']})")
+            noise = max(x['pixels'] for x in res['replays'])
+            meta = {'frame': frame, 'tree': tree.id, 'commit': tree.commit, 'chain': chain_version(tree.path), 'repeat': a.repeat, 'noise_px': noise,
+                    'matches': sum(x['same'] for x in res['replays']), 'live': res['replays'][0]['live'][:16], 'date': datetime.date.today().isoformat()}
+            (cd / f'{name}.json').write_text(json.dumps(meta, indent=1)); (cd / 'current.json').write_text(json.dumps({'name': name}))
+            gr['capture'] = meta | {'replays': public_replay(res)['replays']}; gr['secs']['replay'] = round(time.time() - t1, 1)
+            say(f"  {g.id}: frame {frame} captured; {meta['matches']} of {a.repeat} fresh replays equal the live frame, noise {noise} pixels")
+        except HarnessError as e:
+            gr['status'] = 'ERROR'; gr['reasons'].append(str(e)); say(f'  {g.id}: [RED] {e}')
+        except Exception as e:   # a bug in the harness: reported as an error of this game, the others go on
+            gr['status'] = 'ERROR'; gr['reasons'].append(f'{type(e).__name__}: {e}'); traceback.print_exc()
+    return finish(rep, a)
+
+
+def cmd_replay(a):
+    base = Tree(a.baseline or git('merge-base', 'HEAD', 'main')); cand = Tree(a.candidate)
+    games = select(a, smoke=False)
+    if not a.games: games = [g for g in games if capture_meta(g)]   # named games without a capture are reported as errors
+    rep = new_report(a, 'replay', baseline=base, candidate=cand)
+    for g in games:
+        t0 = time.time(); gr = rep['games'][g.id] = {'name': g.name, 'status': 'PASS', 'reasons': [], 'known': [], 'secs': {}}
+        levels = collections.defaultdict(list)
+        try:
+            meta = capture_meta(g)
+            if not meta: raise HarnessError('no capture: regress.py capture records one (its route needs a capture frame)')
+            out = {}
+            for label, tree in (('baseline', base), ('candidate', cand)):
+                m, lib = chain_build(tree, g, a)
+                out[label] = replay_runs(replayer_for(tree, g, a), meta['path'], lib, profile_tables(tree, g, m, lib), a.repeat, replay_tolerance(meta['noise_px']), g, a, f'{g.id} replay {label}')
+            lv, known = replay_grade(out['baseline'], out['candidate'], meta['noise_px'])
+            for k, v in lv.items(): levels[k] += v
+            gr['known'] += known
+            gr['replay'] = {'capture': {k: meta[k] for k in ('frame', 'tree', 'chain', 'noise_px', 'date')}, 'baseline': public_replay(out['baseline']), 'candidate': public_replay(out['candidate'])}
+            gr['secs']['replay'] = round(time.time() - t0, 1)
+        except HarnessError as e:
+            levels['ERROR'].append(str(e)); say(f'  {g.id}: [RED] {e}')
+        except Exception as e:
+            levels['ERROR'].append(f'{type(e).__name__}: {e}'); traceback.print_exc()
+        gr['status'] = worst(*[k for k, v in levels.items() if v]) if any(levels.values()) else 'PASS'
+        gr['reasons'] = [f'{k}: {x}' for k in LEVELS for x in levels.get(k, [])]
+        say(f'  {g.id}: {gr["status"]}' + (' — ' + '; '.join(gr['reasons']) if gr['reasons'] else ''))
+    return finish(rep, a)
 
 
 def cmd_usage(a):
@@ -1249,6 +1444,15 @@ def report_md(rep):
                 L.append(f"  - {label}: exit {r.get('exit')}, first frame {r.get('first_frame_s')} s, max frame {r.get('max_frame')}, reached {r.get('reached')}, prepare {r.get('prepare_s')} s"
                          + (f", prebuild {pb.get('wall_s')} s ({pb.get('built', 0):g} built, {pb.get('failed', 0):g} failed)" if pb else '')
                          + f", fps {r.get('fps')}, p50/p99 {r.get('frame_p50')}/{r.get('frame_p99')} ms, peak {r.get('peak_footprint_mb')} MB" + (', busy Mac' if r.get('busy') else ''))
+        rp = g.get('replay')
+        if rp:
+            c = rp['capture']; L.append(f"  - replay of frame {c['frame']} (captured with {c['tree']}, chain {c['chain']}, {c['date']}; noise {c['noise_px']} pixels, tolerance {replay_tolerance(c['noise_px'])})")
+            for label in ('baseline', 'candidate'):
+                r = rp[label]; xs = r['replays']
+                L.append(f"  - {label}: exit {r['exit']}, {sum(x['same'] for x in xs)} of {len(xs)} equal the live frame, at most {max((x['pixels'] or 0 for x in xs), default=0)} pixels differ, {r['secs']} s"
+                         + (', busy Mac' if r.get('busy') else '') + ''.join(f"; `{t}`" for t in r['red'][:3]))
+        cp = g.get('capture')
+        if cp: L.append(f"  - capture: frame {cp['frame']}, chain {cp['chain']}; {cp['matches']} of {cp['repeat']} fresh replays equal the live frame, noise {cp['noise_px']} pixels")
         if g.get('secs'): L.append("  - time: " + ', '.join(f'{k} {v:g} s' for k, v in g['secs'].items()))
     return '\n'.join(L) + '\n'
 
@@ -1292,6 +1496,12 @@ def main():
     p = sub.add_parser('baseline', help='record the runs of a revision'); p.add_argument('--rev', default='main'); common(p)
     p = sub.add_parser('check', help='compare a candidate with the stored baseline'); p.add_argument('--baseline'); p.add_argument('--candidate', default='worktree'); common(p)
     p = sub.add_parser('chain', help='the static checks only'); p.add_argument('--baseline'); p.add_argument('--candidate', default='worktree'); common(p, smoke=False)
+    p = sub.add_parser('capture', help='capture one frame per game (the route\'s capture frame) and measure its replay noise'); p.add_argument('--rev', default='main')
+    p.add_argument('--repeat', type=int, default=8, help='fresh replays that measure the capture\'s noise (default 8)')
+    p.add_argument('--capture-limit', type=float, default=300, help='seconds the game may take to reach the frame and write it (default 300)'); common(p)
+    p = sub.add_parser('replay', help='replay each game\'s capture against a baseline and a candidate'); p.add_argument('--baseline'); p.add_argument('--candidate', default='worktree')
+    p.add_argument('--repeat', type=int, default=3, help='fresh replays per revision (default 3)')
+    p.add_argument('--wait-idle', type=float, default=900, help='seconds to wait for other builds to end before replaying (default 900)'); common(p, smoke=False)
     p = sub.add_parser('usage', help='write each game\'s usage manifest (names and counts)'); p.add_argument('--rev', default='worktree'); common(p)
     p.add_argument('--write', action='store_true', help='also write it to dm/games/<id>/usage.tsv of this checkout')
     p = sub.add_parser('impact', help='the games a change can affect'); p.add_argument('range', help='<base>..<head>, or one commit')
@@ -1309,11 +1519,12 @@ def main():
         if a.cmd == 'impact': return cmd_impact(a)
         ROOT.mkdir(parents=True, exist_ok=True); (ROOT / 'tmp').mkdir(exist_ok=True)
         if a.cmd == 'chain': a.quick = False; a.no_smoke = True; a.rewrite = False
+        if a.cmd == 'replay': a.quick = False
         a.lock = a.pause_lock = Path(a.lock) if a.lock else None
         a.jobs = a.jobs or os.cpu_count() or 8
         a.tools_fp = toolchain_fp()
         free = check_disk(a.min_free_gb, clean=True); say(f'internal disk: {free:.1f} GB free; root {ROOT}; {a.jobs} workers')
-        return {'baseline': cmd_baseline, 'check': cmd_check, 'usage': cmd_usage, 'chain': lambda a: cmd_check(a, smoke=False)}[a.cmd](a)
+        return {'baseline': cmd_baseline, 'check': cmd_check, 'usage': cmd_usage, 'chain': lambda a: cmd_check(a, smoke=False), 'capture': cmd_capture, 'replay': cmd_replay}[a.cmd](a)
     except HarnessError as e:
         print(f'[RED] regress.py: {e}', file=sys.stderr); return 2
 

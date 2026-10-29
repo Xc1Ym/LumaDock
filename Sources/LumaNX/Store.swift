@@ -32,6 +32,7 @@ final class WorkerOutput: @unchecked Sendable {
     private var requestedStartupEnvironmentCheck = false
     private var attemptedBundledEngineInitialization = false
     private var lastWorkerEvent: [String:Date] = [:]
+    private var deletedTaskIDs = Set<String>()
     private var documentationWindow:NSWindow?
     @Published var canUninstallMetal = false
     @Published var engineSupportsInput = false
@@ -374,7 +375,7 @@ final class WorkerOutput: @unchecked Sendable {
             self.keyStatus = keys["message"] as? String ?? "尚未导入 prod.keys"
             if let records = Self.decode([TaskRecord].self,r["jobs"]) {
                 for rec in records where rec.state=="failed" || ["backupSave","restoreSave","activateRelease","setup","clean","remove","diagnostics","prepareEngine","import","build","exportIPA","convertFiles","launch","migrate","keys","installMetal","uninstallMetal"].contains(rec.operation) {
-                    if !self.tasks.contains(where: { $0.id == rec.id }) { self.tasks.append(rec) }
+                    if !self.deletedTaskIDs.contains(rec.id),!self.tasks.contains(where: { $0.id == rec.id }) { self.tasks.append(rec) }
                 }
                 self.tasks.sort { ($0.started ?? 0) > ($1.started ?? 0) }
             }
@@ -470,7 +471,7 @@ final class WorkerOutput: @unchecked Sendable {
         return id
     }
     func event(_ e: [String:Any], visible: Bool) {
-        guard e["schema"] as? Int == 1, let id = e["taskId"] as? String else { return }
+        guard e["schema"] as? Int == 1, let id = e["taskId"] as? String,!deletedTaskIDs.contains(id) else { return }
         if e["type"] as? String == "result",e["state"] as? String == "failed",!tasks.contains(where:{$0.id==id}) {
             tasks.insert(.init(id:id,operation:e["operation"] as? String ?? "worker",state:"failed",gameId:e["gameId"] as? String,started:(e["started"] as? NSNumber)?.doubleValue ?? Date().timeIntervalSince1970),at:0)
         }
@@ -608,10 +609,27 @@ final class WorkerOutput: @unchecked Sendable {
     }
     func reveal(_ url: URL) { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     func persistTask(_ task: TaskRecord) {
+        guard !deletedTaskIDs.contains(task.id) else {return}
         let folder=privateRoot.appendingPathComponent("jobs")
         let path=folder.appendingPathComponent(task.id+".json")
         try? FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
         if let data=try? JSONEncoder().encode(task) {try? data.write(to:path,options:.atomic);try? FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:path.path)}
+    }
+    func canDeleteTask(_ task:TaskRecord)->Bool {
+        guard let current=tasks.first(where:{$0.id==task.id}) else {return false}
+        return !current.active && executionTask != current.id && processes[current.id]?.isRunning != true
+    }
+    func deleteTask(_ task:TaskRecord) {
+        guard canDeleteTask(task),task.id.range(of:"^[A-Za-z0-9_-]+$",options:.regularExpression) != nil else {return}
+        let path=privateRoot.appendingPathComponent("jobs").appendingPathComponent(task.id+".json")
+        do {
+            if FileManager.default.fileExists(atPath:path.path) {try FileManager.default.removeItem(at:path)}
+            deletedTaskIDs.insert(task.id)
+            tasks.removeAll{$0.id==task.id}
+        } catch {
+            errorDiagnostic=nil
+            self.error="无法删除任务记录。"
+        }
     }
     func nativeDiagnostic(code: String, summary: String, detail: String, logPath: String? = nil) -> TaskDiagnostic {
         let paths=[(preferences.library,"[LIBRARY]"),(privateRoot.path,"[PRIVATE]"),(preferences.engineDir ?? "","[ENGINE]"),(NSHomeDirectory(),"~")]

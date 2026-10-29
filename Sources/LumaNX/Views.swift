@@ -72,15 +72,18 @@ struct ContentView: View {
             VStack(alignment:.leading,spacing:18) {
                 VStack(alignment:.leading,spacing:6) { Text(L("随时，开启下一段旅程。")).font(.system(size:26,weight:.bold)); Text(L("让喜爱的游戏，在 Mac 上继续。")).foregroundStyle(.secondary) }.padding(.top,8)
                 if store.refreshingLibrary {ProgressView(L("正在读取游戏库…")).progressViewStyle(.linear)}
-                ImportFlowView()
                 GlassEffectContainer(spacing:16) {
                     HStack(spacing:12) {
                         LibraryStat(title:L("款游戏"),value:store.games.count,symbol:"square.stack.3d.up")
+                            .fixedSize()
                         LibraryStat(title:L("可启动"),value:store.games.filter{$0.ready==true}.count,symbol:"play.fill")
-                        Spacer(minLength:0)
+                            .fixedSize()
+                        HStack(spacing:10) {
+                            Image(systemName:"magnifyingglass").foregroundStyle(.secondary)
+                            TextField(L("搜索游戏或 Title ID"),text:$search).textFieldStyle(.plain).accessibilityLabel(L("搜索游戏"))
+                        }.padding(.horizontal,12).frame(minWidth:140,maxWidth:.infinity).libraryControlSurface()
                     }
                 }
-                HStack(spacing:10) { Image(systemName:"magnifyingglass").foregroundStyle(.secondary); TextField(L("搜索游戏或 Title ID"),text:$search).textFieldStyle(.plain).accessibilityLabel(L("搜索游戏")) }.padding(12).glassSurface(14)
                 if store.games.isEmpty {
                     VStack(spacing:16) {
                         BrandMark(size:104)
@@ -115,36 +118,6 @@ struct ContentView: View {
         }
     }
 }
-struct ImportFlowView: View {
-    @EnvironmentObject var store:Store
-    private var current:Int {
-        if !store.environmentReady { return 0 }
-        if store.preferences.library.isEmpty { return 1 }
-        if !store.hasImportedKeys { return 2 }
-        if store.games.isEmpty { return 3 }
-        return store.selected?.ready == true ? 5 : 4
-    }
-    var body:some View {
-        VStack(alignment:.leading,spacing:10) {
-            HStack(spacing:5) {
-                ForEach(Array([L("环境"),L("游戏库"),L("密钥"),L("游戏"),L("准备"),L("启动")].enumerated()),id:\.offset) { i,title in
-                    HStack(spacing:4) {
-                        Image(systemName:i<current ? "checkmark.circle.fill" : "\(i+1).circle")
-                        Text(L(title)).lineLimit(1)
-                    }.foregroundStyle(i<=current ? Brand.accent : Color.secondary)
-                    if i<5 {Image(systemName:"chevron.right").font(.system(size:9)).foregroundStyle(.tertiary)}
-                }
-            }.font(.caption.weight(.medium))
-            if !store.environmentReady || !store.hasImportedKeys {
-                HStack {
-                    Text(store.environmentReady ? L("先导入 prod.keys，才能读取和添加游戏。") : L("先完成环境检查和安装，再导入玩家内容。")).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button(L("继续设置"),action:store.openOnboarding).font(.caption)
-                }
-            }
-        }.padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(14)
-    }
-}
 struct GameCover: View {
     let game:Game
     var body:some View {
@@ -159,12 +132,13 @@ struct GameDetail: View {
     @State private var cleanKind="cache"
     @State private var confirmClean=false
     @State private var managementExpanded=false
-    @State private var detailsExpanded=false
+    @State private var detailsExpanded=true
     var body:some View {
         ScrollView {
-        VStack(alignment:.leading,spacing:14) {
+        GlassEffectContainer(spacing:12) {
+        VStack(alignment:.leading,spacing:12) {
             HStack(alignment:.top,spacing:12) {
-                GameCover(game:game).frame(width:76,height:76).clipShape(RoundedRectangle(cornerRadius:12)).accessibilityHidden(true)
+                GameCover(game:game).frame(width:64,height:64).clipShape(RoundedRectangle(cornerRadius:12)).accessibilityHidden(true)
                 VStack(alignment:.leading,spacing:6) {
                     Text(game.name).font(.headline).lineLimit(3).fixedSize(horizontal:false,vertical:true)
                     Text(displayedVersion).font(.callout).foregroundStyle(.secondary)
@@ -183,40 +157,49 @@ struct GameDetail: View {
                         .help((game.missing ?? []).map {L($0)}.joined(separator:"\n"))
                 }
             }
-            gameTools
             DisclosureGroup(isExpanded:$detailsExpanded) {
-                VStack(alignment:.leading,spacing:12) {
-                    LabeledContent("Title ID") {Text(game.id).font(.caption.monospaced()).textSelection(.enabled)}
-                    LabeledContent(L("兼容性"),value:game.compatibilityName)
-                    if game.ready==true {LabeledContent(L("当前运行版本"),value:displayedVersion)}
+                VStack(alignment:.leading,spacing:10) {
+                    HStack(alignment:.top,spacing:16) {
+                        GameDetailField(title:"Title ID",value:game.id,monospaced:true)
+                        if game.ready==true {GameDetailField(title:"当前运行版本",value:displayedVersion)}
+                    }
                     if !(game.missing ?? []).isEmpty {
                         Label(L("准备条件未满足"),systemImage:"exclamationmark.triangle").font(.subheadline).foregroundStyle(.orange)
                         ForEach(game.missing ?? [],id:\.self){Text(L($0)).font(.caption)}
                         Text(L("当前 nxnative 配置要求指定版本及着色器素材；这与 DLC 或本体是否完整无关。")).font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !game.packages.isEmpty {
                         Divider()
-                    }
-                    Text(L("导入内容")).font(.subheadline.bold())
-                    ForEach(game.packages){package in
-                        VStack(alignment:.leading,spacing:3){
-                            HStack(spacing:8){
-                                Text(package.kindName).font(.subheadline.weight(.medium))
-                                Spacer(minLength:8)
-                                Text(package.display.isEmpty ? "v\(package.version)" : package.display).font(.caption.monospacedDigit())
+                        VStack(alignment:.leading,spacing:6) {
+                            Text(L("导入内容")).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                            VStack(alignment:.leading,spacing:12) {
+                                ForEach(game.packages){package in
+                                    VStack(alignment:.leading,spacing:4){
+                                        HStack(alignment:.firstTextBaseline,spacing:8){
+                                            Text(package.kindName)
+                                            Spacer(minLength:8)
+                                            Text(package.display.isEmpty ? "v\(package.version)" : package.display).monospacedDigit()
+                                        }.font(.callout.weight(.medium))
+                                        HStack(alignment:.firstTextBaseline,spacing:8){
+                                            Text(package.titleId).monospaced().textSelection(.enabled)
+                                            Spacer(minLength:8)
+                                            Text(ByteCountFormatter.string(fromByteCount:package.size,countStyle:.file)).fixedSize()
+                                        }.font(.caption).foregroundStyle(.secondary)
+                                    }.frame(maxWidth:.infinity,alignment:.leading)
+                                }
                             }
-                            HStack(spacing:8){
-                                Text(package.titleId).font(.caption2.monospaced()).textSelection(.enabled)
-                                Spacer(minLength:8)
-                                Text(ByteCountFormatter.string(fromByteCount:package.size,countStyle:.file)).font(.caption2).fixedSize()
-                            }.foregroundStyle(.secondary)
-                        }.padding(.horizontal,10).padding(.vertical,7).frame(maxWidth:.infinity,alignment:.leading).background(.quaternary,in:RoundedRectangle(cornerRadius:8))
+                        }
                     }
-                }.font(.callout).padding(12).frame(maxWidth:.infinity,alignment:.leading)
+                }.padding(.horizontal,12).padding(.bottom,12).frame(maxWidth:.infinity,alignment:.leading)
                 .id(Localization.language)
             } label:{GameToolLabel(title:"游戏详情",symbol:"info.circle")}
                 .disclosureGroupStyle(GameToolDisclosureStyle()).buttonStyle(GameToolButtonStyle())
-        }.padding(20)
+                .modifier(GameToolCardStyle())
+            gameTools
+        }.padding(16)
         }
-        .onChange(of:game.id) {managementExpanded=false;detailsExpanded=false}
+        }
+        .onChange(of:game.id) {managementExpanded=false;detailsExpanded=true}
         .sheet(isPresented:$store.showingRecovery,onDismiss:store.applicationSheetDismissed) {GameRecoveryView(game:game).environmentObject(store)}
         .alert(cleanKind=="sources" ? L("删除托管 NSP 副本？") : L("清理构建缓存？"),isPresented:$confirmClean) {
             Button(L("取消"),role:.cancel){}
@@ -274,11 +257,25 @@ struct GameDetail: View {
             }
         } label:{GameToolLabel(title:"管理游戏",symbol:"slider.horizontal.3")}
         .disclosureGroupStyle(GameToolDisclosureStyle()).buttonStyle(GameToolButtonStyle())
-        .background(Brand.accent.opacity(0.045),in:RoundedRectangle(cornerRadius:14))
-        .clipShape(RoundedRectangle(cornerRadius:14))
-        .overlay {RoundedRectangle(cornerRadius:14).strokeBorder(.primary.opacity(0.07))}
+        .modifier(GameToolCardStyle())
     }
     private var toolDivider:some View {Divider().padding(.leading,44)}
+}
+private struct GameDetailField:View {
+    let title:String
+    let value:String
+    var monospaced=false
+    var body:some View {
+        VStack(alignment:.leading,spacing:4) {
+            Text(L(title)).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(value).font(monospaced ? .callout.monospaced().weight(.medium) : .callout.weight(.medium)).textSelection(.enabled)
+        }.frame(maxWidth:.infinity,alignment:.leading)
+    }
+}
+private struct GameToolCardStyle:ViewModifier {
+    func body(content:Content)->some View {
+        content.clipShape(RoundedRectangle(cornerRadius:14)).glassSurface(14)
+    }
 }
 private struct GameToolLabel:View {
     let title:String
@@ -292,7 +289,7 @@ private struct GameToolLabel:View {
                 .foregroundStyle(destructive ? Color.red : Color.primary)
             Spacer(minLength:4)
             if let accessory {Image(systemName:accessory).font(.system(size:10,weight:.semibold)).foregroundStyle(.tertiary)}
-        }.padding(.horizontal,12).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
+        }.padding(.horizontal,12).padding(.vertical,10).frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
     }
 }
 private struct GameToolButtonStyle:ButtonStyle {
@@ -323,8 +320,8 @@ struct TasksView: View {
     private var attention: [TaskRecord] {store.tasks.filter {!$0.active && (["failed","interrupted"].contains($0.state) || $0.hasWarnings)}}
     private var history: [TaskRecord] {store.tasks.filter {!$0.active && !["failed","interrupted"].contains($0.state) && !$0.hasWarnings}}
     var body: some View {
-        WorkspacePage {
-            WorkspaceHeading(title:"准备任务",subtitle:"准备队列串行执行；准备游戏时可以继续导入文件和修改映射。",symbol:"checklist") {
+        WorkspacePage(maxWidth:820) {
+            WorkspaceHeading(title:"准备任务",subtitle:"",symbol:"checklist") {
                 Button(L("打开日志")) {store.reveal(store.privateRoot.appendingPathComponent("logs"))}.buttonStyle(.glass)
             }
             HStack(spacing:8) {
@@ -334,8 +331,8 @@ struct TasksView: View {
             }
             if store.tasks.isEmpty && store.queue.isEmpty {
                 GlassPanel {
-                    ContentUnavailableView(L("暂无任务"),systemImage:"checklist",description:Text(L("导入后，文件齐全的游戏会自动加入准备队列；也可在详情中手动准备。")))
-                        .frame(minHeight:250)
+                    ContentUnavailableView(L("暂无任务"),systemImage:"checklist")
+                        .frame(minHeight:160)
                 }
             }
             ForEach(store.tasks.filter(\.active)) {task in TaskCard(task:task)}
@@ -368,12 +365,12 @@ struct TaskCard: View {
     var embedded=false
     var body: some View {
         Group {
-            if embedded {content.padding(14).contentCard(14)}
-            else {GlassPanel {content}}
+            if embedded {content.padding(10).contentCard(14)}
+            else {content.padding(12).frame(maxWidth:.infinity,alignment:.leading).glassSurface(16)}
         }
     }
     private var content:some View {
-        VStack(alignment:.leading,spacing:12) {
+        VStack(alignment:.leading,spacing:8) {
             HStack(spacing:10) {
                 Image(systemName:task.state=="failed" || task.hasWarnings ? "exclamationmark.triangle.fill" : task.state=="completed" ? "checkmark.circle.fill" : "circle.dotted")
                     .foregroundStyle(task.state=="failed" || task.hasWarnings ? Color.orange : WorkspacePalette.accent)
@@ -382,24 +379,30 @@ struct TaskCard: View {
                     if let name=store.games.first(where:{$0.id==task.gameId})?.name {Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)}
                 }
                 Spacer()
+                if let started=task.started {
+                    Text(Date(timeIntervalSince1970:started),format:.dateTime.month().day().hour().minute())
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().fixedSize()
+                }
                 StatusPill(title:task.stateName,symbol:task.active ? "circle.dotted" : "circle.fill",color:task.hasWarnings || task.state=="failed" ? .orange : .secondary)
                 if task.active {
                     Button(task.operation=="launch" ? L("结束游戏") : L("取消任务")) {store.cancel(task)}.disabled(task.state=="cancelling").controlSize(.small)
                 } else if ["failed","interrupted","cancelled"].contains(task.state),task.gameId != nil || task.conversion != nil || task.importPaths != nil {
                     Button(L("重试")) {store.retry(task)}.disabled(store.executionBusy).controlSize(.small)
                 }
-            }
-            if task.active {TaskProgressView(task:task,compact:true)}
-            ForEach(task.diagnostics ?? []) {diagnostic in TaskDiagnosticCard(diagnostic:diagnostic)}
-            if task.stage != nil || task.message?.isEmpty == false || !(task.milestones ?? []).isEmpty {
-                CompactDisclosure(title:"任务详情",subtitle:task.active ? "阶段与构建信息" : "处理记录",symbol:"list.bullet.rectangle") {
-                    if let stage=task.stage {Text(L(stage)).font(.callout)}
-                    if let msg=task.message,!msg.isEmpty,msg != task.stage,!(task.diagnostics ?? []).contains(where:{$0.summary==msg}) {
-                        Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
-                    if task.active,!(task.milestones ?? []).isEmpty {TaskProgressView(task:task)}
+                if !task.active {
+                    Button(L("删除"),role:.destructive) {store.deleteTask(task)}
+                        .controlSize(.small).disabled(!store.canDeleteTask(task))
+                        .accessibilityLabel(L("删除任务记录")).help(L("仅删除任务记录，保留日志和生成文件。"))
                 }
+            }.buttonStyle(.glass)
+            if let msg=task.message,!msg.isEmpty,msg != task.stage,(task.diagnostics ?? []).isEmpty {
+                Text(L(msg)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
+            if task.active {
+                if task.milestone == nil,let stage=task.stage,!stage.isEmpty {Text(L(stage)).font(.caption).foregroundStyle(.secondary)}
+                TaskProgressView(task:task,compact:true)
+            }
+            ForEach(task.diagnostics ?? []) {diagnostic in TaskDiagnosticCard(diagnostic:diagnostic)}
             if task.operation=="exportIPA",task.state=="completed",let path=task.outputPath {
                 Button(L("在访达中查看 IPA")) {store.reveal(URL(fileURLWithPath:path))}
             }
@@ -416,46 +419,46 @@ struct TaskCard: View {
 struct TaskDiagnosticCard: View {
     @EnvironmentObject var store: Store
     let diagnostic: TaskDiagnostic
+    @State private var expanded=false
     var body: some View {
-        VStack(alignment:.leading,spacing:10) {
+        VStack(alignment:.leading,spacing:6) {
             Label(L(diagnostic.summary),systemImage:diagnostic.isWarning ? "exclamationmark.triangle" : "xmark.octagon")
-                .font(.callout.bold()).foregroundStyle(diagnostic.isWarning ? .orange : .red)
-            Text(L(diagnostic.suggestion)).font(.callout).textSelection(.enabled)
-            DisclosureGroup(L("诊断详情")) {
+                .font(.callout.weight(.medium)).foregroundStyle(diagnostic.isWarning ? .orange : .red)
+            DisclosureGroup(L("诊断详情"),isExpanded:$expanded) {
                 VStack(alignment:.leading,spacing:6) {
+                    if !diagnostic.suggestion.isEmpty {Text(L(diagnostic.suggestion)).font(.caption).textSelection(.enabled)}
                     Text(diagnostic.code).font(.caption.monospaced()).foregroundStyle(.secondary)
                     if let stage=diagnostic.stage,!stage.isEmpty {Text(L("失败阶段：")+L(stage)).font(.caption).foregroundStyle(.secondary)}
                     if !diagnostic.detail.isEmpty {
                         Text(L("编译器输出（已脱敏）")).font(.caption).foregroundStyle(.secondary)
                         ScrollView {Text(diagnostic.detail).font(.caption.monospaced()).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}.frame(maxHeight:160)
                     }
-                }.padding(.top,6)
-            }.font(.caption)
-            HStack {
+                }.frame(maxWidth:.infinity,alignment:.leading).padding(.top,4)
+            }.disclosureGroupStyle(InlineGlassDisclosureStyle {
                 Button(L("打开对应日志")) {store.reveal(store.diagnosticLogURL(diagnostic))}
                 Button(L("复制错误摘要")) {store.copyDiagnostic(diagnostic)}
-            }
-        }.padding(12).frame(maxWidth:.infinity,alignment:.leading)
-            .background(diagnostic.isWarning ? Color.orange.opacity(0.08) : Color.red.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
+                Spacer(minLength:0)
+            }).font(.caption)
+        }.padding(10).frame(maxWidth:.infinity,alignment:.leading)
+            .glassSurface(12)
     }
 }
 struct SettingsView: View {
     @EnvironmentObject var store: Store
     var body: some View {
         WorkspacePage {
-            WorkspaceHeading(title:"设置",subtitle:"按你的习惯，准备下一次启动。",symbol:"slider.horizontal.3") {
+            WorkspaceHeading(title:"设置",subtitle:"",symbol:"slider.horizontal.3") {
                 Button(L("导出诊断包…"),action:store.exportDiagnostics).buttonStyle(.glass)
             }
             HStack(alignment:.top,spacing:16) {
                 GlassPanel(title:"语言与外观",symbol:"paintpalette") {
-                    VStack(alignment:.leading,spacing:6) {Text(L("语言")).font(.caption).foregroundStyle(.secondary);LanguagePicker().labelsHidden()}
-                    VStack(alignment:.leading,spacing:6) {Text(L("外观")).font(.caption).foregroundStyle(.secondary);AppearancePicker().labelsHidden()}
+                    VStack(alignment:.leading,spacing:6) {Text(L("语言")).font(.caption).foregroundStyle(.secondary);LanguagePicker().labelsHidden().controlSize(.large)}
+                    VStack(alignment:.leading,spacing:6) {Text(L("外观")).font(.caption).foregroundStyle(.secondary);AppearancePicker().labelsHidden().controlSize(.large)}
                     Divider()
-                    GameLanguagePicker()
-                    CompactDisclosure(title:"语言说明",symbol:"character.bubble") {
-                        Text(L("界面语言立即生效；系统文件对话框的内置按钮跟随 macOS 语言。"))
-                        Text(L("与界面语言独立；可在游戏详情中单独设置启动语言。下次启动生效，无需重新准备或导入固件。所选语言需游戏自身支持。"))
-                    }.font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment:.leading,spacing:6) {
+                        Text(L("默认游戏语言")).font(.caption).foregroundStyle(.secondary)
+                        GameLanguagePicker().labelsHidden().controlSize(.large).frame(maxWidth:.infinity,alignment:.leading)
+                    }
                 }
                 GlassPanel(title:"游戏库与玩家数据",symbol:"externaldrive") {
                     HStack {
@@ -471,68 +474,91 @@ struct SettingsView: View {
                     }
                     Divider()
                     Toggle(L("导入后自动准备支持的游戏"),isOn:Binding(get:{store.prepareAfterImport},set:{store.prepareAfterImport=$0})).toggleStyle(.switch).controlSize(.small)
-                    CompactDisclosure(title:"存储与导入说明",symbol:"folder.badge.gearshape") {
-                        LabeledContent(L("存储位置"),value:store.preferences.library.isEmpty ? L("未选择") : store.preferences.library).textSelection(.enabled)
-                        Text(L("先准备环境，再选择游戏库、导入密钥和游戏。密钥通常只需导入一次，可供多款游戏共用；仅保存在本机私有目录，不随诊断包导出。"))
-                        Text(L("仅将本体、所需更新及构建标识均匹配的游戏加入队列。准备完成后由你点击启动。"))
-                    }.font(.caption).foregroundStyle(.secondary)
                 }
             }
             GlassPanel {
                 HStack {
                     Label(L("运行与构建环境"),systemImage:"cpu").font(.headline)
                     Spacer()
+                    Button(L("重新打开首次运行向导"),action:store.openOnboarding).controlSize(.small)
                     Button(L("重新检查")) {store.savePreferences();store.checkEnvironment()}.disabled(store.checkingEnvironment || store.executionBusy).controlSize(.small)
                 }
-                EnvironmentSummary()
-                CompactDisclosure(title:"环境详情与工具",subtitle:store.checks.isEmpty ? "Xcode · Metal · nxnative" : "\(store.checks.filter{!$0.ok}.count) 项检查待处理",symbol:"wrench.and.screwdriver") {
-                    ToolChecks()
-                    Divider()
-                    EnvironmentToolsView(showsRecheck:false)
-                }
+                EnvironmentToolsView(showsRecheck:false)
+                EnvironmentDetailsView()
             }
             GlassPanel {
                 ViewThatFits(in:.horizontal) {
                     HStack(spacing:12) {
-                        Label(L("控制与诊断"),systemImage:"gamecontroller").font(.headline)
+                        Label(L("键鼠与手柄映射"),systemImage:"gamecontroller").font(.headline)
                         Spacer()
-                        controlActions
+                        inputMappingAction
                     }
                     VStack(alignment:.leading,spacing:12) {
-                        Label(L("控制与诊断"),systemImage:"gamecontroller").font(.headline)
-                        controlActions
+                        Label(L("键鼠与手柄映射"),systemImage:"gamecontroller").font(.headline)
+                        inputMappingAction
                     }
                 }.controlSize(.small)
             }
             GlassPanel {
-                CompactDisclosure(title:"关于 LumaNX",subtitle:"LumaNX · \(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))",symbol:"info.circle") {
-                    Text(L("LumaNX 是 nxnative 的第三方图形界面，支持 Switch 游戏准备、macOS 启动及 iPhone / iPad 未签名 IPA 导出。与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
-                    Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}
+                HStack(spacing:12) {
+                    Label {
+                        Text(L("关于 LumaNX"))
+                    } icon:{Image(systemName:"info.circle").foregroundStyle(WorkspacePalette.accent)}.font(.headline)
+                    Text("LumaNX · \(Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? L("开发版本"))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer(minLength:0)
+                    Button(L("开源许可与版权说明")){store.openDocumentation(.licenses)}.controlSize(.small)
                 }
+                Text(L("LumaNX 是 nxnative 的第三方图形界面，支持 Switch 游戏准备、macOS 启动及 iPhone / iPad 未签名 IPA 导出。与 Nintendo 无隶属或认可关系。")).font(.caption).foregroundStyle(.secondary)
             }
-        }.navigationTitle(L("设置"))
+        }.buttonStyle(.glass).disclosureGroupStyle(GlassDisclosureStyle()).navigationTitle(L("设置"))
     }
-    @ViewBuilder private var controlActions:some View {
+    private var inputMappingAction:some View {
         Button(L("设置全局键鼠与手柄映射")) {store.inputGame=nil;store.editingInput=true}
-        Button(L("重新打开首次运行向导"),action:store.openOnboarding)
     }
 
 }
 
+struct EnvironmentDetailsView:View {
+    @EnvironmentObject var store:Store
+    @State private var expanded=false
+    var body:some View {
+        DisclosureGroup(isExpanded:$expanded) {
+            ToolChecks(flattened:true).padding(.top,12)
+        } label:{
+            HStack(spacing:10) {
+                Image(systemName:"checkmark.shield").foregroundStyle(WorkspacePalette.accent).frame(width:20)
+                Text(L("环境检查详情")).font(.callout.weight(.semibold)).fixedSize()
+                EnvironmentSummary(compact:true)
+                Spacer(minLength:8)
+                if !store.checks.isEmpty {
+                    Text(L("\(store.checks.filter{!$0.ok}.count) 项检查待处理")).font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }.padding(.vertical,2)
+        }.tint(WorkspacePalette.accent)
+    }
+}
+
 struct ToolChecks: View {
     @EnvironmentObject var store: Store
+    var flattened=false
     @State private var showPassed=false
     private let groups=[("system","Mac 与图形"),("apple","Apple 工具链"),("engine","内置引擎"),("bundled","应用内置组件"),("storage","游戏库存储")]
     var body: some View {
         let passed=store.checks.filter(\.ok)
         VStack(alignment:.leading,spacing:12) {
-            checkGroups(store.checks.filter{!$0.ok})
-            if !passed.isEmpty {
-                DisclosureGroup(isExpanded:$showPassed) {
-                    VStack(alignment:.leading,spacing:12) {checkGroups(passed)}.padding(.top,8)
-                } label: {
-                    Label(L("已通过的检查（\(passed.count) 项）"),systemImage:"checkmark.circle.fill")
-                        .font(.callout).foregroundStyle(.teal)
+            if flattened {
+                checkGroups(store.checks)
+            } else {
+                checkGroups(store.checks.filter{!$0.ok})
+                if !passed.isEmpty {
+                    DisclosureGroup(isExpanded:$showPassed) {
+                        VStack(alignment:.leading,spacing:12) {checkGroups(passed)}.padding(.top,8)
+                    } label: {
+                        Label(L("已通过的检查（\(passed.count) 项）"),systemImage:"checkmark.circle.fill")
+                            .font(.callout).foregroundStyle(.teal)
+                    }
                 }
             }
         }.id(Localization.language)
@@ -547,7 +573,7 @@ struct ToolChecks: View {
             if !items.isEmpty {
                 VStack(alignment:.leading,spacing:12) {
                     Text(L(title)).font(.headline)
-                    ForEach(items) {check in EnvironmentCheckRow(check:check)}
+                    ForEach(items) {check in EnvironmentCheckRow(check:check,flattened:flattened)}
                 }
             }
         }
@@ -556,6 +582,7 @@ struct ToolChecks: View {
 struct EnvironmentCheckRow: View {
     @EnvironmentObject var store: Store
     let check: ToolCheck
+    var flattened=false
     private var actionTitle:String {
         switch check.action {
         case "chooseEngine":return "选择 nxnative 目录…"
@@ -579,53 +606,69 @@ struct EnvironmentCheckRow: View {
                     Text(L(check.required(for:"launch") ? "准备与启动" : check.required(for:"prepare") ? "准备时需要" : "首次准备工具时需要")).font(.caption2).foregroundStyle(.secondary)
                 }
                 Text(L(check.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                if let location=check.location {
-                    DisclosureGroup(L("组件位置")) {
-                        VStack(alignment:.leading,spacing:4) {
-                            Text(L(check.group == "engine" ? "内置引擎或其私有工具缓存的当前位置。" : "随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
-                            Text(location).font(.caption.monospaced()).textSelection(.enabled)
-                        }.padding(.top,4)
-                    }.font(.caption)
-                }
-                if let help=check.help {
-                    DisclosureGroup(L("安装与修复方法")) {
-                        VStack(alignment:.leading,spacing:8) {
-                            Text(L(help)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                            if !actionTitle.isEmpty,let action=check.action {
-                                Button(L(actionTitle)){store.repairEnvironment(action)}
-                                    .disabled(store.checkingEnvironment || store.executionBusy || action=="installMetal" && (!store.xcodeInitialized || store.metalInstalled) || action=="library" && !store.queue.isEmpty)
-                            }
-                            if let detail=check.detail,!detail.isEmpty {Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)}
-                            if let command=check.repairCommand,!command.isEmpty {
-                                Text(command).font(.caption.monospaced()).textSelection(.enabled)
-                                Button(L("复制修复命令")) {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(command,forType:.string)
-                                    store.notice="已复制修复命令，请在终端中手动执行。"
-                                }
-                            }
-                        }.padding(.top,6)
-                    }.font(.caption)
+                if flattened {
+                    if let location=check.location,!location.isEmpty {
+                        Text(location).font(.caption.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled).help(location)
+                    }
+                    if !check.ok {repairDetails}
+                } else {
+                    if let location=check.location {
+                        DisclosureGroup(L("组件位置")) {
+                            VStack(alignment:.leading,spacing:4) {
+                                Text(L(check.group == "engine" ? "内置引擎或其私有工具缓存的当前位置。" : "随应用安装位置动态解析，以下是当前完整路径。")).font(.caption).foregroundStyle(.secondary)
+                                Text(location).font(.caption.monospaced()).textSelection(.enabled)
+                            }.padding(.top,4)
+                        }.font(.caption)
+                    }
+                    if check.help != nil {
+                        DisclosureGroup(L("安装与修复方法")) {
+                            repairDetails.padding(.top,6)
+                        }.font(.caption)
+                    }
                 }
             }
         }
     }
+    private var repairDetails:some View {
+        VStack(alignment:.leading,spacing:8) {
+            if let help=check.help,!help.isEmpty {Text(L(help)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)}
+            if !actionTitle.isEmpty,let action=check.action {
+                Button(L(actionTitle)){store.repairEnvironment(action)}
+                    .disabled(store.checkingEnvironment || store.executionBusy || action=="installMetal" && (!store.xcodeInitialized || store.metalInstalled) || action=="library" && !store.queue.isEmpty)
+            }
+            if let detail=check.detail,!detail.isEmpty {Text(detail).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)}
+            if let command=check.repairCommand,!command.isEmpty {
+                Text(command).font(.caption.monospaced()).textSelection(.enabled)
+                Button(L("复制修复命令")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command,forType:.string)
+                    store.notice="已复制修复命令，请在终端中手动执行。"
+                }
+            }
+        }.controlSize(.small)
+    }
 }
 struct EnvironmentSummary: View {
     @EnvironmentObject var store:Store
+    var compact=false
     var body:some View {
         HStack {
             if store.checkingEnvironment {
-                VStack(alignment:.leading,spacing:6) {
-                    Text(L("正在逐项验证环境，请稍候…"))
-                    if let task=store.tasks.first(where:{$0.operation=="preflight" && $0.active}) {TaskProgressView(task:task,compact:true)}
-                    else {ProgressView().progressViewStyle(.linear)}
+                if compact {
+                    Label(L("正在逐项验证环境，请稍候…"),systemImage:"circle.dotted").foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment:.leading,spacing:6) {
+                        Text(L("正在逐项验证环境，请稍候…"))
+                        if let task=store.tasks.first(where:{$0.operation=="preflight" && $0.active}) {TaskProgressView(task:task,compact:true)}
+                        else {ProgressView().progressViewStyle(.linear)}
+                    }
                 }
             }
             else if store.environmentReady {Label(L("构建与启动环境均已就绪"),systemImage:"checkmark.shield.fill").foregroundStyle(.teal)}
             else if store.runtimeReady {Label(L("可启动已准备的游戏，构建环境仍需修复"),systemImage:"checkmark.circle").foregroundStyle(.secondary)}
             else {Label(L("完成环境检查后再导入游戏"),systemImage:"wrench.and.screwdriver").foregroundStyle(.secondary)}
-        }.font(.callout)
+        }.font(compact ? .caption : .callout)
     }
 }
 struct EnvironmentSetupView: View {

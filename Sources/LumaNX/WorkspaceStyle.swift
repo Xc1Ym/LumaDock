@@ -11,12 +11,13 @@ enum WorkspacePalette {
 
 /// Shared by utility pages. The library keeps its existing layout and surfaces.
 struct WorkspacePage<Content: View>: View {
+    var maxWidth:CGFloat = 1020
     @ViewBuilder var content: Content
     var body: some View {
         ScrollView {
             GlassEffectContainer(spacing: 16) {
                 VStack(alignment: .leading, spacing: 16) { content }
-                    .frame(maxWidth: 1020, alignment: .leading)
+                    .frame(maxWidth: maxWidth, alignment: .leading)
                     .frame(maxWidth: .infinity)
                     .padding(24)
             }
@@ -35,8 +36,10 @@ struct WorkspaceHeading<Actions: View>: View {
                 .frame(width: 44, height: 44).glassSurface(14)
             VStack(alignment: .leading, spacing: 4) {
                 Text(L(title)).font(.title2.bold()).lineLimit(2)
-                Text(L(subtitle)).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !subtitle.isEmpty {
+                    Text(L(subtitle)).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 12)
             actions.controlSize(.small)
@@ -80,6 +83,44 @@ struct CompactDisclosure<Content: View>: View {
                 }
             }.padding(.vertical, 2)
         }.tint(WorkspacePalette.accent)
+    }
+}
+
+struct GlassDisclosureStyle:DisclosureGroupStyle {
+    func makeBody(configuration:Configuration)->some View {
+        VStack(alignment:.leading,spacing:0) {
+            Button {withAnimation(.easeInOut(duration:0.18)){configuration.isExpanded.toggle()}} label:{
+                HStack(spacing:10) {
+                    configuration.label.frame(maxWidth:.infinity,alignment:.leading)
+                    Image(systemName:"chevron.right").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                }.padding(10).frame(maxWidth:.infinity,alignment:.leading).contentShape(RoundedRectangle(cornerRadius:12))
+                    .glassSurface(12,interactive:true)
+            }.buttonStyle(.plain).accessibilityValue(configuration.isExpanded ? L("已展开") : L("已折叠"))
+            if configuration.isExpanded {configuration.content.frame(maxWidth:.infinity,alignment:.leading)}
+        }
+    }
+}
+
+struct InlineGlassDisclosureStyle<Actions:View>:DisclosureGroupStyle {
+    var controlSize:ControlSize = .small
+    @ViewBuilder var actions:Actions
+    func makeBody(configuration:Configuration)->some View {
+        VStack(alignment:.leading,spacing:8) {
+            GlassEffectContainer(spacing:8) {
+                HStack(spacing:8) {
+                    Button {withAnimation(.easeInOut(duration:0.18)){configuration.isExpanded.toggle()}} label:{
+                        HStack(spacing:5) {
+                            Image(systemName:"chevron.right").font(.system(size:9,weight:.semibold))
+                                .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                            configuration.label
+                        }
+                    }.accessibilityValue(configuration.isExpanded ? L("已展开") : L("已折叠"))
+                    actions
+                }.buttonStyle(.glass).controlSize(controlSize)
+            }
+            if configuration.isExpanded {configuration.content.frame(maxWidth:.infinity,alignment:.leading)}
+        }
     }
 }
 

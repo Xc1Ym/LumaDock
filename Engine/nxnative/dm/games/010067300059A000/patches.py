@@ -17,3 +17,6 @@ CUTS = {
         (0xea21f4, 'e5031032', '05009052', 'Large allocator maximum 64 KB page count: 65536 to 32768, matching its 2 GB range'),
     ],
 }
+
+# Whether a general rule could replace these patches (dm/tools/docs_patches.py lists it in docs/agents/game-patches.md)
+GENERALIZE = "Partly: Mario + Rabbids Kingdom Battle and Sparks of Hope cut the same Snowdrop three-pool allocator; one function-matched rule could serve both only if their code matches (not checked). The cause, an iPhone's address space, cannot be fixed in the host"

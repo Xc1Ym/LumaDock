@@ -15,6 +15,9 @@ from bundled_engine import inventory, verify_bundle
 
 UPSTREAM = 'https://github.com/seedds/nxnative.git'
 OMIT_SUFFIXES = {'.jpg', '.jpeg', '.png', '.webp', '.pdb'}
+# Binary parser fuzz inputs are not runtime sources. Keep the bundle's strict
+# private/generated-asset checks intact for every other upstream path.
+OMIT_TREES = (Path('dm/tools/fuzz/corpus'),)
 
 
 def patch_controller(root):
@@ -46,6 +49,8 @@ def sync(checkout, target):
         paths = subprocess.check_output(['git', '-C', checkout, 'ls-files', '-z']).decode().split('\0')
         for name in filter(None, paths):
             rel = Path(name)
+            if any(tree == rel or tree in rel.parents for tree in OMIT_TREES):
+                continue
             if rel.parts[0] not in {'dm', 'scripts', 'docs', 'LICENSE', 'README.md'} or rel.name == 'AGENTS.md' or rel.suffix.lower() in OMIT_SUFFIXES:
                 continue
             if (checkout/rel).is_symlink(): raise RuntimeError('Upstream symlink is not allowed: '+name)

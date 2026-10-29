@@ -20,3 +20,6 @@ CUTS = {
 
 # Offered only for the verified rewrite with native scale/UV publication intact.
 CAPABILITIES = {"3c10ec35c5ef4c3686b4053afb0e58e7": ("DYNAMIC_RESOLUTION",)}
+
+# Whether a general rule could replace these patches (dm/tools/docs_patches.py lists it in docs/agents/game-patches.md)
+GENERALIZE = "No: the game's own dynamic-resolution constants. The Asian build's cuts are the global build's 0x13c0 further on, so one function-matched rule could serve both releases"

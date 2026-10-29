@@ -156,7 +156,8 @@ def adapt_snapshot(repo):
         if count != 1: raise Failure('所选 nxnative 的 NSP 读取器入口不兼容。')
         program.write_text(text)
     shutil.copy2(Path(__file__).parent/'NspMetadata.cs', program.parent/'LumaNXMetadata.cs')
-    chain = repo/'dm/gfx/tools/dmsh_chain.py'
+    chain = repo/'dm/gfx/tools/tool_lock.py'
+    if not chain.is_file(): chain = repo/'dm/gfx/tools/dmsh_chain.py'
     text = chain.read_text()
     if 'DM_MAC_ONLY' not in text:
         tree = ast.parse(text)

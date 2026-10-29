@@ -17,6 +17,25 @@ class GlslSources(unittest.TestCase):
         self.assertEqual(pg.glsl_sources(image), 2)
 
 
+class Npdm(unittest.TestCase):
+    def npdm(self, flags):
+        d = bytearray(0x80); d[:4] = b'META'; d[0xc] = flags
+        p = Path(self.tmp.name) / 'main.npdm'; p.write_bytes(d); return p
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
+
+    def test_64bit_flag(self):
+        self.assertTrue(pg.aarch64(self.npdm(0x3f)))   # 64-bit, 39-bit address space
+
+    def test_32bit_program(self):
+        self.assertFalse(pg.aarch64(self.npdm(0x04)))   # Pikmin 3 Deluxe: 32-bit, no reserved region
+
+    def test_no_npdm(self):
+        self.assertTrue(pg.aarch64(Path(self.tmp.name) / 'missing.npdm'))
+
+
 class UnrealMemory(unittest.TestCase):
     def test_initial_heap_fits_beside_the_engine_region(self):
         facts = {
@@ -61,8 +80,27 @@ class AddressRegions(unittest.TestCase):
         later = alone + '0x304000000\t0x60000000\tmain+0x40\t0x40000000\t0\t0x60000000\t0x2010\n'
         red, text = pg.region_findings(later, 0x118000000, self.SYMS)[-1]
         self.assertTrue(red)
-        self.assertIn('the regions made after the one returning to main+0x10 take 1.50 GB, more than the 0.25 GB the host leaves them: stdalloc_cap 0xb0000000 (2.75 GB)', text)
+        # the value leaves them room and the host's own 256 MB for what the run did not see: 4.38 - 0.06 - 1.5 - 0.25 GB (Absolum: 2.56 GB, between the 2.5 and 2.72 GB that both play)
+        self.assertIn('the regions made after the one returning to main+0x10 take 1.50 GB, more than the 0.25 GB the host leaves them: stdalloc_cap 0xa4000000 (2.56 GB)', text)
         self.assertNotIn('main+0x40 takes', text)   # it fits once the region before it is capped
+        self.assertEqual(pg.stdalloc_cap_needed(pg.region_rows(later, self.SYMS), 0x118000000), 0xa4000000)
+        self.assertIsNone(pg.stdalloc_cap_needed(pg.region_rows(alone, self.SYMS), 0x110000000))   # the host's own cap does
+
+    def test_the_profiles_stdalloc_cap(self):
+        later = (self.HEAD + '0x4000000\t0xa00000000\tmain+0x10\t0x60000000\t0\t0xa00000000\t0x1010\n'
+                 '0xa04000000\t0x60000000\tmain+0x40\t0x40000000\t0\t0x60000000\t0x2010\n')
+        f = pg.region_findings(later, 0x118000000, self.SYMS, cap=0xa0000000)   # Absolum's 2.5 GB
+        self.assertFalse(any(red for red, _ in f), f)
+        self.assertIn("the profile's stdalloc_cap gives it 2.50 GB, which leaves the 1.50 GB of regions made after it room", f[0][1])
+        red, text = pg.region_findings(later, 0x118000000, self.SYMS, cap=0xc0000000)[-1]
+        self.assertTrue(red); self.assertIn("the profile's stdalloc_cap 0xc0000000 leaves the 1.50 GB of regions made after the one returning to main+0x10 too little room: stdalloc_cap 0xa4000000", text)
+
+    def test_no_room_at_all(self):
+        t = (self.HEAD + '0x4000000\t0x300000000\tmain+0x10\t0x60000000\t0\t0x300000000\t0x1010\n'
+             '0x304000000\t0xe0000000\tmain+0x40\t0\t-\t-\t0x2010\n')
+        red, text = pg.region_findings(t, 0x118000000, self.SYMS)[-1]
+        self.assertTrue(red); self.assertIn('take 3.50 GB, which leaves it no room', text)
+        self.assertIsNone(pg.stdalloc_cap_needed(pg.region_rows(t, self.SYMS), 0x118000000))
 
     def test_a_region_too_big_by_itself(self):
         # the game's own allocator through AllocateAddressRegion (Smash's engine): red, and it does not count as room the StandardAllocator region must leave

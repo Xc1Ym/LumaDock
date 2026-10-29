@@ -20,3 +20,6 @@ CUTS = {
 
 # The dynamic-resolution control (DM_DYNAMIC_RESOLUTION, hle_fpslock.c k_nier_dr): the native scale/UV path and both preset bounds verified for this build.
 CAPABILITIES = {'98397a10419894652f372d4dc1b6fc2c': ('DYNAMIC_RESOLUTION',)}
+
+# Whether a general rule could replace these patches (dm/tools/docs_patches.py lists it in docs/agents/game-patches.md)
+GENERALIZE = "No: the game's own dynamic-resolution constants. The Asian build's cuts are the global build's 0x13c0 further on, so one function-matched rule could serve both releases"

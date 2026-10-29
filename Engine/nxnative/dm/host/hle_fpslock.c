@@ -44,6 +44,8 @@ static const struct { const char *build, *what; uint64_t ptr_off; uint32_t field
     // (BaseSwitchDeviceProfiles.ini). Registered at main+0x33a4dec (float, IConsoleManager slot 2; AsVariableFloat stored at +0x10) and main+0x149e0bc (int, slot 1; AsVariableInt at +0x10)
     { "84e182f72ee1da4f477804bd05b54c15", "Unreal t.MaxFPS", 0x8c29af0 + 0x10, 0, FPS_F32, 2 },
     { "84e182f72ee1da4f477804bd05b54c15", "Unreal rhi.SyncInterval", 0x8adca10 + 0x10, 0, VSYNCS_I32, 2 },
+    // Asian release 1.0.1: PR #289 verified the registering constructor at main+0x149e0a0 and its object at main+0x8adca10.
+    { "b7f965b9d7227db8e29f04e84ea7331b", "Unreal rhi.SyncInterval", 0x8adca10 + 0x10, 0, VSYNCS_I32, 2 },
     // OCTOPATH TRAVELER II 1.1.1: Unreal Engine 4.27's t.MaxFPS and rhi.SyncInterval, the same layout (names in UTF-16). The game's Switch device profile sets t.MaxFPS=30 and
     // rhi.syncinterval=2 (Majesty/Config/Switch/SwitchDeviceProfiles.ini; its Windows, PS4 and PS5 profiles set t.MaxFPS=60). Registered at main+0x2e50444 (float, AsVariableFloat stored at
     // +0x10) and main+0x134d380 (int, AsVariableInt at +0x10)

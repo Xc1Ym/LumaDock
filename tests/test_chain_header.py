@@ -41,6 +41,17 @@ class Runner:
             (self.repo/HEADER).write_text(CHAIN)
 
 class ChainHeaderTests(unittest.TestCase):
+    def test_split_tool_lock_updates_and_verifies_before_using_chain_header(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo=Path(directory);tools=repo/'dm/gfx/tools';tools.mkdir(parents=True)
+            (tools/'tool_lock.py').write_text('# Synthetic split tool interface')
+            calls=[]
+            def run(args,log,env):
+                calls.append((Path(args[1]).name,args[-1]))
+                if args[-1]=='--update-lock': (tools/'dmsh_chain.lock').write_text('synthetic lock')
+            build.chain_tools(SimpleNamespace(run=run),repo,{},repo)
+            self.assertEqual(calls,[('tool_lock.py','--update-lock'),('dmsh_chain.py','--header'),('tool_lock.py','--check-tools')])
+
     def test_shared_header_wins_over_stale_profile_header(self):
         with tempfile.TemporaryDirectory() as directory:
             repo=Path(directory); profile=repo/'dm/games'/GAME; profile.mkdir(parents=True)

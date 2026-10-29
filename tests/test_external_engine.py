@@ -70,6 +70,20 @@ class ExternalEngineTests(unittest.TestCase):
             with self.assertRaisesRegex(Failure,'SDK'):engine.prepare(self.c)
         self.assertEqual(before,engine.source_hash(self.source))
         self.assertFalse(list(self.c.private.glob('engines/.partial-*')))
+
+    def test_split_tool_lock_adapter_keeps_mac_and_ios_sdk_selection(self):
+        tools=self.source/'dm/gfx/tools'
+        (tools/'dmsh_chain.py').rename(tools/'tool_lock.py')
+        (tools/'dmsh_chain.py').write_text('# Synthetic chain version module\n')
+        engine.adapt_snapshot(self.source)
+        text=(tools/'tool_lock.py').read_text()
+        engine.adapt_snapshot(self.source)
+        self.assertEqual((tools/'tool_lock.py').read_text(),text)
+        for value,expected in [('1',['macosx']),('0',['macosx','iphoneos'])]:
+            scope={'seen':[]}
+            with patch.dict(os.environ,{'DM_MAC_ONLY':value}):
+                exec(text.replace('pass','seen.append(sdk)'),scope);scope['tools_now']()
+            self.assertEqual(scope['seen'],expected)
     def test_complete_cache_is_reused_without_sdk_or_compilation(self):
         mark_prepared(self.c)
         with patch('engine.find_sdk') as sdk,patch.object(self.c,'run') as run,contextlib.redirect_stdout(io.StringIO()):

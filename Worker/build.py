@@ -94,9 +94,11 @@ def refresh_engine(c,root,tc):
 
 def chain_tools(c,repo,env,root):
     # Tool changes produce a new private lock, chain, shader output, c1 table and host together.
-    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--update-lock'],root/'logs/toolchain.log',env)
+    lock_tool=repo/'dm/gfx/tools/tool_lock.py'
+    if not lock_tool.is_file(): lock_tool=repo/'dm/gfx/tools/dmsh_chain.py'
+    c.run([sys.executable,lock_tool,'--update-lock'],root/'logs/toolchain.log',env)
     c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--header'],root/'logs/toolchain.log',env)
-    c.run([sys.executable,repo/'dm/gfx/tools/dmsh_chain.py','--check-tools'],root/'logs/toolchain.log',env)
+    c.run([sys.executable,lock_tool,'--check-tools'],root/'logs/toolchain.log',env)
     lock=repo/'dm/gfx/tools/dmsh_chain.lock'
     if not lock.is_file() or 'missing' in lock.read_text(): raise Failure('Metal 工具链不可用，无法创建一致的着色器链。')
 

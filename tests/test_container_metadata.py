@@ -220,7 +220,7 @@ class ContainerSelectionTests(unittest.TestCase):
         repo=Path(__file__).resolve().parents[1]/'Engine/nxnative'
         with tempfile.TemporaryDirectory() as temp:
             root=make_engine(Path(temp)/'engine')
-            for name in ('dm/tools/nx_extract/Program.cs','dm/gfx/tools/dmsh_chain.py'):
+            for name in ('dm/tools/nx_extract/Program.cs','dm/gfx/tools/dmsh_chain.py','dm/gfx/tools/tool_lock.py'):
                 (root/name).write_text((repo/name).read_text())
             engine.adapt_snapshot(root)
             path=root/'dm/tools/nx_extract/Program.cs';code=path.read_text()

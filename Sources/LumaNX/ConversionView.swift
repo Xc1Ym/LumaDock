@@ -14,7 +14,7 @@ struct ConversionView:View {
                 StatusPill(title:L("共 \(store.conversion.paths.count) 个文件"),symbol:"doc.on.doc",color:.secondary)
                 Menu {
                     Button(L("导入转换密钥…")){store.chooseConversionKeys()}.disabled(busy || store.checkingConverter)
-                    Button(L("重新检查"),action:store.checkConverter).disabled(store.checkingConverter)
+                    Button(L("重新检查"),action:store.checkConverter).disabled(busy || store.checkingConverter)
                 } label:{Label(L("更多工具"),systemImage:"ellipsis.circle").labelStyle(.iconOnly)}
                     .menuStyle(.borderlessButton).fixedSize().help(L("更多工具"))
             }

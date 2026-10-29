@@ -38,18 +38,20 @@ struct LibraryBackdrop: View {
 struct GlassSurface: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var radius: CGFloat
+    var interactive=false
     func body(content:Content)->some View {
         if reduceTransparency {
             content.background(Color(nsColor:.windowBackgroundColor),in:RoundedRectangle(cornerRadius:radius))
                 .overlay(RoundedRectangle(cornerRadius:radius).strokeBorder(.primary.opacity(0.12)))
         } else {
-            content.glassEffect(.regular,in:RoundedRectangle(cornerRadius:radius))
+            content.glassEffect(interactive ? .regular.interactive() : .regular,in:RoundedRectangle(cornerRadius:radius))
         }
     }
 }
 
 extension View {
-    func glassSurface(_ radius:CGFloat=18)->some View {modifier(GlassSurface(radius:radius))}
+    func glassSurface(_ radius:CGFloat=18,interactive:Bool=false)->some View {modifier(GlassSurface(radius:radius,interactive:interactive))}
+    func libraryControlSurface()->some View {frame(height:42).glassSurface(21)}
     func contentCard(_ radius:CGFloat=18)->some View {
         background(Color(nsColor:.controlBackgroundColor).opacity(0.75),in:RoundedRectangle(cornerRadius:radius))
             .overlay(RoundedRectangle(cornerRadius:radius).strokeBorder(.primary.opacity(0.06)))
@@ -65,6 +67,6 @@ struct LibraryStat: View {
             Image(systemName:symbol).foregroundStyle(Brand.accent)
             Text("\(value)").font(.callout.bold().monospacedDigit())
             Text(title).font(.caption).foregroundStyle(.secondary)
-        }.padding(.horizontal,14).padding(.vertical,10).glassSurface(22)
+        }.padding(.horizontal,14).libraryControlSurface()
     }
 }

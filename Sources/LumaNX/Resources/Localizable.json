@@ -3386,5 +3386,45 @@
   {
     "source": "内置引擎首次使用时自动初始化，无需下载或手动准备。初始化失败时，可从“更多工具”选择“修复内置引擎”；组件缺失或版本不匹配时需重新安装完整应用。源码开发时首次编译读取器需要 .NET 10 SDK。",
     "en": "The bundled engine initializes automatically on first use, with no download or manual preparation. If initialization fails, choose Repair bundled engine under More tools. Reinstall the complete app if components are missing or mismatched. Source development requires the .NET 10 SDK to compile the reader initially."
+  },
+  {
+    "source": "拖入文件，或点击添加文件。",
+    "en": "Drop files here or add them."
+  },
+  {
+    "source": "请选择同一游戏的本体、更新或 DLC。",
+    "en": "Select the base game, updates, or DLC for the same game."
+  },
+  {
+    "source": "输出位置",
+    "en": "Output location"
+  },
+  {
+    "source": "每次转换会在所选位置新建结果文件夹。",
+    "en": "Each conversion creates a new results folder in this location."
+  },
+  {
+    "source": "正在检查转换工具…",
+    "en": "Checking conversion tools…"
+  },
+  {
+    "source": "转换工具未就绪",
+    "en": "Conversion tools are unavailable"
+  },
+  {
+    "source": "支持的格式：{0}",
+    "en": "Supported formats: {0}"
+  },
+  {
+    "source": "删除任务记录",
+    "en": "Delete task record"
+  },
+  {
+    "source": "仅删除任务记录，保留日志和生成文件。",
+    "en": "Delete only the task record. Keep logs and generated files."
+  },
+  {
+    "source": "无法删除任务记录。",
+    "en": "Could not delete the task record."
   }
 ]

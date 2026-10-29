@@ -5,10 +5,18 @@ struct ConversionView:View {
     @EnvironmentObject var store:Store
     @State private var dropTargeted=false
     private var busy:Bool {store.executionBusy || store.importingConversionKeys || !store.queue.isEmpty}
+    private var supportedFormats:String {
+        ["nsp","xci","nsz","xcz"].filter{store.conversion.mode.extensions.contains($0)}.map{$0.uppercased()}.joined(separator:" / ")
+    }
     var body:some View {
         WorkspacePage {
-            WorkspaceHeading(title:"文件转换",subtitle:"转换、压缩与合并，在一处完成。",symbol:"doc.zipper") {
+            WorkspaceHeading(title:"文件转换",subtitle:"",symbol:"doc.zipper") {
                 StatusPill(title:L("共 \(store.conversion.paths.count) 个文件"),symbol:"doc.on.doc",color:.secondary)
+                Menu {
+                    Button(L("导入转换密钥…")){store.chooseConversionKeys()}.disabled(busy || store.checkingConverter)
+                    Button(L("重新检查"),action:store.checkConverter).disabled(store.checkingConverter)
+                } label:{Label(L("更多工具"),systemImage:"ellipsis.circle").labelStyle(.iconOnly)}
+                    .menuStyle(.borderlessButton).fixedSize().help(L("更多工具"))
             }
             GlassPanel {
                 Picker(L("转换操作"),selection:$store.conversion.mode) {
@@ -25,7 +33,8 @@ struct ConversionView:View {
                 if store.conversion.paths.isEmpty {
                     VStack(spacing:10) {
                         Image(systemName:"doc.badge.plus").font(.system(size:32,weight:.light)).foregroundStyle(WorkspacePalette.accent)
-                        Text(L("拖入文件，或点击添加文件。原始文件不会被修改。")).font(.callout).foregroundStyle(.secondary)
+                        Text(L("拖入文件，或点击添加文件。")).font(.callout).foregroundStyle(.secondary)
+                        Text(L("支持的格式：\(supportedFormats)")).font(.caption).foregroundStyle(.secondary)
                         Button(L("添加文件…"),action:store.chooseConversionFiles).buttonStyle(.glass)
                     }.frame(maxWidth:.infinity,minHeight:170)
                         .background(WorkspacePalette.accent.opacity(dropTargeted ? 0.12 : 0.035),in:RoundedRectangle(cornerRadius:14))
@@ -46,36 +55,44 @@ struct ConversionView:View {
                     }.frame(height:min(230,CGFloat(store.conversion.paths.count)*48))
                 }
                 if store.conversion.mode == .merge {
-                    Text(L("一次选择同一游戏的文件；同一内容有多个版本时由后端保留最新版本。")).font(.caption).foregroundStyle(.secondary)
+                    Text(L("请选择同一游戏的本体、更新或 DLC。")).font(.caption).foregroundStyle(.secondary)
                 }
                 if !store.conversion.paths.isEmpty && !store.conversion.validSelection {
                     Label(L("所选文件格式与转换操作不匹配。"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
                 }
                 Divider()
-                HStack(spacing:16) {
+                HStack(alignment:.bottom,spacing:16) {
                     if store.conversion.mode == .convert || store.conversion.mode == .merge {
-                        Text(L("输出格式")).font(.callout).foregroundStyle(.secondary)
-                        Picker(L("输出格式"),selection:$store.conversion.target) {Text("NSP").tag("nsp");Text("XCI").tag("xci")}
-                            .pickerStyle(.segmented).labelsHidden().frame(width:160)
+                        VStack(alignment:.leading,spacing:6) {
+                            Text(L("输出格式")).font(.caption).foregroundStyle(.secondary)
+                            Picker(L("输出格式"),selection:$store.conversion.target) {Text("NSP").tag("nsp");Text("XCI").tag("xci")}
+                                .pickerStyle(.segmented).labelsHidden().controlSize(.large).frame(width:140)
+                        }
                     }
                     if store.conversion.mode == .compress {
                         Stepper(L("压缩等级：\(store.conversion.level)"),value:$store.conversion.level,in:1...22).fixedSize()
                         Toggle(L("压缩后校验"),isOn:$store.conversion.verify).toggleStyle(.switch).controlSize(.small)
                     }
-                    Spacer(minLength:0)
+                    VStack(alignment:.leading,spacing:6) {
+                        Text(L("输出位置")).font(.caption).foregroundStyle(.secondary)
+                        Button(action:store.chooseConversionOutput) {
+                            HStack(spacing:8) {
+                                Image(systemName:"folder").foregroundStyle(WorkspacePalette.accent)
+                                Text((store.conversion.outputDirectory as NSString).abbreviatingWithTildeInPath)
+                                    .foregroundStyle(.primary).lineLimit(1).truncationMode(.middle)
+                                Spacer(minLength:0)
+                                Image(systemName:"ellipsis").foregroundStyle(.secondary)
+                            }.padding(.horizontal,12).frame(maxWidth:.infinity,minHeight:32,alignment:.leading).glassSurface(12)
+                        }.buttonStyle(.plain)
+                            .help(store.conversion.outputDirectory)
+                            .accessibilityLabel(L("输出位置")).accessibilityValue(store.conversion.outputDirectory)
+                    }.frame(minWidth:180,maxWidth:.infinity)
                     Button(L("开始转换")){store.startConversion()}.buttonStyle(.glassProminent).controlSize(.large)
                         .disabled(!store.conversion.validSelection || store.converterStatus?.ready(for:store.conversion.mode) != true || busy)
                 }
-                CompactDisclosure(title:"输出位置与说明",subtitle:URL(fileURLWithPath:store.conversion.outputDirectory).lastPathComponent,symbol:"folder") {
-                    HStack {
-                        Text(store.conversion.outputDirectory).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                        Spacer()
-                        Button(L("输出文件夹…"),action:store.chooseConversionOutput).controlSize(.small)
-                    }
-                    Text(L("结果写入新的独立文件夹，不覆盖已有输出；转换成功不代表游戏可运行。")).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(L("每次转换会在所选位置新建结果文件夹。")).font(.caption).foregroundStyle(.secondary)
+                conversionRequirements
             }.disabled(busy)
-            backend
             if let task=store.tasks.first(where:{$0.id==store.executionTask && $0.operation=="convertFiles"}) {TaskCard(task:task)}
             if let task=store.latestConversion,task.id != store.executionTask {
                 GlassPanel {
@@ -91,29 +108,23 @@ struct ConversionView:View {
             group.notify(queue:.main){store.addConversionFiles(urls.result())};return true
         }
     }
-    private var backend:some View {
-        GlassPanel {
-            HStack(spacing:10) {
-                Image(systemName:"key").foregroundStyle(WorkspacePalette.accent)
-                Text(L(store.converterStatus?.keysReady == true ? "转换密钥已就绪" : "尚未准备转换密钥")).font(.callout)
-                Spacer()
-                if store.checkingConverter {ProgressView().controlSize(.small)}
-                Button(L("导入转换密钥…")){store.chooseConversionKeys()}.disabled(busy || store.checkingConverter).controlSize(.small)
-            }
-            CompactDisclosure(title:"转换工具",subtitle:"NSC_BUILDER · nsz",symbol:"shippingbox") {
+    @ViewBuilder private var conversionRequirements:some View {
+        if store.checkingConverter {
+            ProgressView(L("正在检查转换工具…")).controlSize(.small).font(.caption)
+        } else if let status=store.converterStatus {
+            if !status.keysReady {
                 HStack {
-                    StatusPill(title:store.converterStatus?.conversionReady == true ? "格式转换就绪" : "格式转换后端未就绪",symbol:store.converterStatus?.conversionReady == true ? "checkmark.circle" : "exclamationmark.circle",color:store.converterStatus?.conversionReady == true ? WorkspacePalette.accent : .orange)
-                    StatusPill(title:store.converterStatus?.compressionReady == true ? "压缩解压就绪" : "压缩解压后端未就绪",symbol:store.converterStatus?.compressionReady == true ? "checkmark.circle" : "exclamationmark.circle",color:store.converterStatus?.compressionReady == true ? WorkspacePalette.accent : .orange)
+                    Label(L("尚未准备转换密钥"),systemImage:"key").font(.caption).foregroundStyle(.orange)
                     Spacer()
-                    Button(L("重新检查"),action:store.checkConverter).disabled(store.checkingConverter).controlSize(.small)
+                    Button(L("导入转换密钥…")){store.chooseConversionKeys()}.controlSize(.small)
                 }
-                Text(L("SAK-Mac 转换后端与依赖已内置，无需额外安装 Python、Xcode 或 nxnative。导入自己的密钥后即可转换。")).font(.caption).foregroundStyle(.secondary)
-                if store.converterStatus?.keysReady == true {Text(L(store.converterStatus?.keySource ?? "")).font(.caption).foregroundStyle(.secondary)}
-                Text(L("转换功能参考 SAK-Mac，内置 NSC_BUILDER / nsz；第三方来源与许可可在设置中查看。")).font(.caption).foregroundStyle(.secondary)
-                Link(L("SAK-Mac 项目"),destination:URL(string:"https://github.com/ggaoph-lab/SAK-Mac")!)
             }
-            if let status=store.converterStatus,!(store.conversion.mode == .compress || store.conversion.mode == .decompress ? status.compressionReady : status.conversionReady) {
-                Label(L("当前转换工具未就绪，请展开检查。"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+            if !(store.conversion.mode == .compress || store.conversion.mode == .decompress ? status.compressionReady : status.conversionReady) {
+                HStack {
+                    Label(L("转换工具未就绪"),systemImage:"exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+                    Spacer()
+                    Button(L("重新检查"),action:store.checkConverter).controlSize(.small)
+                }
             }
         }
     }

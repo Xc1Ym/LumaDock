@@ -8,13 +8,12 @@ struct EnvironmentToolsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 10) { primaryActions; secondaryActions }
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) { primaryActions }
-                    HStack(spacing: 10) { secondaryActions }
-                }
-            }.controlSize(.regular)
+            GlassEffectContainer(spacing:10) {
+                HStack(spacing:10) {
+                    primaryActions
+                    secondaryActions
+                }.controlSize(.regular)
+            }
 
             if let task = store.tasks.first(where: {
                 $0.id == store.executionTask && ["prepareEngine", "installMetal", "uninstallMetal"].contains($0.operation)
@@ -23,17 +22,6 @@ struct EnvironmentToolsView: View {
                     Text(L(task.stage ?? task.title)).font(.caption)
                     TaskProgressView(task: task, compact: true)
                 }
-            }
-
-            CompactDisclosure(title: "引擎与高级设置", subtitle: "nxnative · Xcode · Metal", symbol: "slider.horizontal.3") {
-                Text(L("引擎随应用提供，无需单独下载。Switch Pro、Xbox 与 PS 手柄自动识别，无需配置按键映射。引擎更新随新版应用发布。"))
-                    .font(.caption).foregroundStyle(.secondary)
-                TextField(L("Xcode Developer 目录"), text: $store.preferences.developerDir)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { store.savePreferences(); store.checkEnvironment() }
-                    .onChange(of: store.preferences.developerDir) { _, _ in store.checks = [] }
-                Text(L("准备游戏需要完整工具链；启动已准备好的游戏只需要标有“启动”的项目。首次安装请先完成全部检查。"))
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }.tint(WorkspacePalette.accent)
         .alert(L("卸载 Metal 编译组件？"), isPresented: $confirmUninstall) {
@@ -47,7 +35,7 @@ struct EnvironmentToolsView: View {
     @ViewBuilder private var primaryActions: some View {
         Button(action: store.chooseXcode) {
             Label(L("选择 Xcode.app…"), systemImage: "folder")
-        }.buttonStyle(EnvironmentActionStyle()).disabled(store.checkingEnvironment || store.executionBusy)
+        }.buttonStyle(.glass).disabled(store.checkingEnvironment || store.executionBusy).help(store.preferences.developerDir)
     }
 
     @ViewBuilder private var secondaryActions: some View {
@@ -56,8 +44,9 @@ struct EnvironmentToolsView: View {
                 store.savePreferences(); store.checkEnvironment()
             } label: {
                 Label(L("重新检查"), systemImage: "arrow.clockwise")
-            }.buttonStyle(EnvironmentActionStyle()).disabled(store.checkingEnvironment || store.executionBusy)
+            }.buttonStyle(.glass).disabled(store.checkingEnvironment || store.executionBusy)
         }
+        Spacer(minLength:0)
         Menu {
             Button(L("修复内置引擎"),action:store.prepareEngine).disabled(!store.canManageToolchain)
             Divider()
@@ -78,32 +67,5 @@ struct EnvironmentToolsView: View {
         } label: {
             Label(L("更多工具"), systemImage: "ellipsis.circle")
         }.menuStyle(.borderlessButton).buttonStyle(.glass).fixedSize()
-    }
-}
-
-/// Keep action boundaries and contrast clear even when the window is inactive.
-private struct EnvironmentActionStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
-    var prominent = false
-
-    private var foreground: Color {
-        guard isEnabled else { return .secondary }
-        return prominent ? (colorScheme == .dark ? .black : .white) : .primary
-    }
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.callout.weight(.semibold))
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(
-                isEnabled ? WorkspacePalette.accent.opacity(prominent ? 1 : 0.10) : Color.secondary.opacity(0.08),
-                in: RoundedRectangle(cornerRadius: 10)
-            )
-            .glassSurface(10)
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(
-                isEnabled ? WorkspacePalette.accent.opacity(prominent ? 0.7 : 0.35) : Color.secondary.opacity(0.15)
-            ))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.55)
     }
 }

@@ -56,11 +56,25 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Reader:** `shader_split.py` scans each archive entry as a file of its own (`bea_members`).
 - **Found on:** [Big Brain Academy: Brain vs. Brain](../../dm/games/0100620012D6E000/README.md) (NintendoWare Bezel Engine 1.56): 2,125 shaders in about 90 s.
 
+### Bezel Engine 2.9 archives keep their entries inline
+
+- **Symptom:** the split finds almost no shaders and reports `[RED] /Archive/<name>.bea: entry 0 @0x4854535341 is not an ASST entry (its shaders are left out)` for every archive (`… file(s) could not be read`); the "offset" is the bytes `ASSTH`.
+- **Cause:** the 1.56 form (version 0x10100 at +8) has at +0x28 the offset of an array of entry offsets; the 2.9 form (version 0x60000) has the entries themselves there, back to back, each 0x48 bytes (its size the u32 at `ASST` +4), with an 8-byte type tag (`_G3DSHA`, `_TEXDATA`, …) at +0x1c and a 16-byte hash before the data and name offsets, which are the last two u64 of an entry in both forms.
+- **Fix:** `bea_members` reads the entries in place when the array starts with `ASST`.
+- **Found on:** [Super Mario Party Jamboree](../../dm/games/0100965017338000/README.md) (Bezel Engine 2.9, 949 archives, 127,203 entries): 25,693 shaders, against 246 (those in `main`) before, most of them in the 13,839 `.fshb` (`_G3DSHA`) entries; the split takes about 10 minutes.
+
 ### BNSH entries of GFPAK archives
 
 - **Symptom:** a provisional split finds only a fraction of the shaders (3,126 of Pokémon Sword's 41,516).
 - **Fix:** `shader_split.py` `gfpak_members` reads the BNSH entries of GFPAK archives (LZ4 entries, [01](../agents/01-extract.md)).
 - **Found on:** [Pokémon Sword](../../dm/games/0100ABF008968000/README.md): 41,516 shaders, nearly all BNSH entries of the 7,699 GFPAK archives under `bin/archive` (the models' and effects' shader archives), beside loose BNSH files (`bin/battle/waza/model/**/*.bnsh_vsh` / `_fsh`, `bin/graphics`, `system_resource/shader`) and two in `main`. The YEBIS shaders it also draws are in `main` ([Shaders in a zlib stream in main](#shaders-in-a-zlib-stream-in-main-yebis-tfxo)).
+
+### Oodle entries of GFPAK archives
+
+- **Symptom:** the split counts hundreds of files as unreadable (678 on Pokémon Legends: Arceus), each with `[RED] <file>.gfpak: entry 0 has compression 3 (Oodle), which this reader does not decode`, and leaves their shaders out.
+- **Cause:** every entry of Arceus's GFPAKs is compression 3, Oodle Kraken, where every entry of Sword's is LZ4 ([BNSH entries of GFPAK archives](#bnsh-entries-of-gfpak-archives)).
+- **Fix:** `shader_split.py` `gfpak_members` decodes compression 3 with the game's own decoder, as it decodes [Trinity packs](#bnsh-in-trinity-packs) (`oodle`, `DM_OODLE_HOST` / `DM_OODLE_MODULES`). `profile_guess.py` `build_sources` counts the GFPAKs that hold an Oodle entry, so the NSP script sets that decoder up for the split (`oodle_packs`). `dm/gfx/tests/test_gfpak.py` covers each compression. The Mac path was checked without Arceus's files: a GFPAK of 300 Kraken streams from Pokémon Scarlet's packs (28 MB raw), read by `gfpak_members` through the Mac host, decodes the same with Scarlet's and Z-A's `OodleLZ_Decompress`, and `build_sources` sets `oodle_packs` for it but not for an LZ4-only GFPAK.
+- **Found on:** Pokémon Legends: Arceus 1.0.2 (`01001F5010DFA000`, no profile yet; `main` has `OodleLZ_Decompress`): all 678 GFPAKs under `bin/archive`, Oodle in every entry. The provisional split finds 12,851 shaders with them, 69 more than without. 73 shader map rows first appear in a GFPAK: `field/resident_release.gfpak` 40, `appli/battle_resident.gfpak` 26, `appli/system_resident.gfpak` 5, `appli/poke_dex.gfpak` 2.
 
 ### BNSH in Trinity packs
 
@@ -174,11 +188,12 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 
 ### Monolith ARH1, XBC1 and HCPS/SLCT shader containers
 
-- **Symptom:** archive shaders are absent from the map; the two boot shaders in `main` are reported as raw controls with no identified code area.
+- **Symptom:** archive or loose asset shaders are absent from the map; only boot shaders in `main` are found, sometimes reported as raw controls with no identified code area.
 - **Cause:** Monolith uses ARH1/ARD archives and XBC1 streams. HCPS shader containers live inside models, map streams and standalone shader files; a standalone SLCT in `main` omits the HCPS header.
 - **Fix:** `shader_split.py` reconstructs paths from the ARH1 XOR trie, reads bounded archive entries in parallel, and decodes stored/zlib/zstd XBC1 streams recursively. The ARH stored size excludes an XBC1 wrapper's 48 bytes. Decoded members are searched for both HCPS and complete GLSLC outputs (effect asset packs); compressed literals are visited only after decoding. HCPS's SLCT/NVSD descriptors locate each variant's control and code ranges; a vertex bundle can include geometry, so stages are split by each control's own lengths. Text-bearing controls advance at eight-byte alignment. Standalone SLCT sections use offsets relative to their own start. Source-only HCPS containers with empty code/control ranges hold no NVN binaries. Pairs stay within their program variant. Synthetic fixtures cover wrapper bounds, embedded geometry, variants, standalone offsets and compressed streams containing literal container magics.
 - **Nested effect compression:** Firehawk WIPAC resources can wrap their `BlShaderArchive` GLSLC programs in `cmp\0zlib`: an eight-byte signature, little-endian stored/raw u32 lengths, then zlib. This layer lives inside the decoded XBC1 entry. The recursive reader checks both lengths and the end of the stream; it excludes these compressed ranges from raw container scans too. The four initially missing geometry/pixel keys and two additional vertex/pixel keys from Xenoblade Chronicles 3's opening match `/effect/fld/ma01a.wipac` after this decoding. Synthetic tests cover nested literal streams and incorrect sizes.
-- **Found on:** [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md#files-and-shaders), whose note records the census and runtime key checks; [Xenoblade Chronicles 2](../../dm/games/0100E95004038000/README.md#files-and-shaders), with the same archive and standalone SLCT layouts on SDK 3.5.0.
+- **Loose containers:** HCPS programs, XBC1 streams, DRSM model streams and compressed effect resources also occur outside ARH/ARD archives. Both the file scanner and nested-container scanner dispatch their headers to the same recursive decoder, before the generic shader-magic filter. Otherwise even a complete loose HCPS program is discarded. Synthetic file scans cover direct programs, compressed programs and several embedded streams, independent of filename suffix.
+- **Found on:** [Xenoblade Chronicles 3](../../dm/games/010074F013262000/README.md#files-and-shaders), whose note records the census and runtime key checks; [Xenoblade Chronicles 2](../../dm/games/0100E95004038000/README.md#files-and-shaders), with the same archive and standalone SLCT layouts on SDK 3.5.0; [Xenoblade Chronicles: Definitive Edition](../../dm/games/0100FF500E34A000/README.md#files-and-shaders), with loose containers.
 - **Format references:** [ARH1 layout](https://github.com/roccodev/ard-tools/blob/master/docs/arh1.md), [xc3_lib shader structures](https://github.com/ScanMountGoat/xc3_lib/blob/main/xc3_lib/src/spch.rs). The reader's lengths and keys were checked against the supplied game files.
 
 ### Needle shader containers in main and GFD archives
@@ -218,6 +233,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Reader:** the reader parses every effect to its end, which checks the layout; in `main`, four bytes `MGFX` count only when version 8 and a control section follow.
 - **Pairing:** a pass names its vertex and pixel shader by index, 255 for none, and 10 of the 13 effects have no vertex shader: SpriteBatch binds its own and the effect's pass only replaces the pixel shader. Vertex and pixel shaders therefore combine across effects, and they are paired as single-stage programs.
 - **Found on:** [Celeste](../../dm/games/01002B30028F6000/README.md) (MonoGame for the Switch, its C# compiled to C++ by Sickhead's BRUTE): 26 shaders (20 pixel, 6 vertex), all with Mario's binding layout; every binding decodes. [Stardew Valley](../../dm/games/0100E65002BB8000/README.md) (compressed XNB).
+
+### MGFX version 5 effects (MonoGame 3.0)
+
+- **Symptom:** the NSP script's split stops with `[RED] 24 file(s) could not be read`, each `an XNB effect without an MGFX version 8 effect of NVN shaders`.
+- **Cause:** MonoGame 3.0's EffectReader (`MonoGame.Framework, Version=3.0.0.0` in the XNB) writes MGFX version 5: `MGFX`, u8 version, u8 profile and no effect key; constant buffers without names (i16 size, u8 count, {u8 parameter, u16 offset}); each shader's bytecode is a whole GLSLC output of one stage (magic 0x19866891, its +0x44 length equal to the shader's), not a control section and a code area; and the shaders are in MonoGame's DirectX layout: samplers without names and no attribute list. The parameters and techniques are version 8's. The length in front of `MGFX` in the XNB runs about 0xff0 bytes past the effect, all zeros.
+- **Fix:** `mgfx_effect` reads version 5 too, taking each shader through `glslc_shaders`; an XNB effect may end in zeros. The 7 `.dx11.mgfxo` files in `Resources` (MonoGame's stock effects) are version 5 as well: 5 hold GLSLC outputs and are read the same way, `EnvironmentMapEffect` and `SkinnedEffect` hold only DirectX bytecode and give no shader.
+- **Found on:** [Bastion](../../dm/games/010038600B27E000/README.md): 72 shaders, 24 pixel shaders in `Content/Effects` (no vertex shader: SpriteBatch's own pairs with them) and 48 in `Resources`.
 
 ### Unity 2020.3 Shader objects in UnityFS bundles
 
@@ -302,6 +324,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Reader:** `uepak.py` writes them out as version 2 archives, so the split reads them as any other.
 - **Found on:** [FINAL FANTASY RESONANCE](../../dm/games/0100606026F12000/README.md) (Unreal Engine 5.6.1): 73,496 unique shaders (9,253 vertex, 61,305 pixel, 2,934 compute, 4 geometry).
 
+### IoStore patch containers keep their shader groups in the base container
+
+- **Symptom:** `ValueError: …/Glow-Switch_0_P.utoc: shader group 0 has no chunk` from `uepak.py io_archive` while the NSP script decodes the shaders (`decode_ue_shaders`, after `[4/8] UE shader decode`).
+- **Cause:** an update's IoStore container is a patch: its shader libraries have the base game's chunk IDs (so they replace their tables), and an unchanged shader group is listed with the base container's chunk ID. `io_archive` looked every group up in the container the library chunk came from.
+- **Fix:** `uepak.py` reads every `.utoc` under the RomFS (`io_tocs`, in mount order: the base game's containers, then `_P` patches and numbered `_0_P`, `_1_P`, … patches, `mount_order`, case-insensitive `_P` marker) and resolves a group's chunk ID in any of them; a library chunk ID two containers share is taken from the later (patch) one, whose tables are the current set. TOC metadata is read without a key; `Toc.read` refuses encrypted data without a key only when the selected library or group needs it, so an encrypted group-only container is refused and a fully superseded encrypted library is never read.
+- **Found on:** LEGO Horizon Adventures (update v262144, Unreal Engine 5; provisional profile): the update's `Glow/Content/Paks/Glow-Switch_0_P.utoc` over the base's `Glow-Switch.utoc`; 20,889 shaders in its two libraries, 20,880 unique after the split.
+
 ### Unreal Engine 4.18 shaders inline in cooked packages
 
 - **How it is stored:** legacy version 4 paks with LZ5-compressed blocks ([01](../agents/01-extract.md)) and no shader code archive. Each material's shader map is serialized in its `.uexp` (38 to 87 shaders in the ones looked at) and the engine's global shaders in `Engine/GlobalShaderCache-GLSL_SWITCH.bin` (945: 597 pixel, 104 vertex, 241 compute, 3 geometry). Each shader's code is a byte array (`i32` length, then the bytes) holding one zlib stream that inflates to the same `LSLG` record as Unreal Engine 5's.
@@ -314,6 +343,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **How it is stored:** a version 11 pak (Zlib blocks, index not encrypted) with no `.ushaderbytecode`: the project turned `bShareMaterialShaderCode` off, so each material keeps its shaders in its own `.uexp` and the engine's global shaders are in `Engine/GlobalShaderCache-SF_GLSL_SWITCH.bin`, as in [Unreal Engine 4.18](#unreal-engine-418-shaders-inline-in-cooked-packages). Unreal 4.27 serializes each one as an entry of `FShaderMapResourceCode`: the code (`i32` length, then an LZ4 block, the engine's shader compression since 4.26), the raw size (`i32`) and the frequency (`u8`).
 - **Reader:** `uepak.py` `inline_shaders` tells such a pak from one with archives by its directory index (cooked packages and no `.ushaderbytecode`; an encrypted index is taken for one with archives), and `shader_split.py` `ue_legacy_jobs` reads it file by file, Zlib and LZ4 blocks decoded in Python (`Pak.read`), so no host runs. `ue_inline_shaders` finds each LZ4 block by its first literals, the record's `LSLG`, with the token and literal length bytes in front of it, and takes it when it decodes to exactly the raw size after the block.
 - **Found on:** [OCTOPATH TRAVELER II](../../dm/games/0100A3501946E000/README.md): 13,980 unique shaders (1,910 vertex, 11,346 pixel, 694 compute, 30 geometry) from the 3.3 GB pak in 13 s.
+
+### Unreal Engine 3 shader caches (Oodle packages)
+
+- **Symptom:** `the shader split found no shaders in main or the RomFS`; the survey lists the RomFS as cooked packages (`.xxx`) and `.usm` movies only.
+- **How it is stored:** the engine's global shaders are in `GlobalShaderCache-Switch.bin` (magic `BMSG`, not compressed), the materials' in `CombinedShaderCache-Switch.xxx`, an Unreal Engine 3 package (tag `0x9E2A83C1`, a positive file version after it: 864; Unreal Engine 4's is a negative legacy version). After the package summary come compressed chunks, each {tag, block size, compressed and raw size of the chunk, then each block's two sizes} and the blocks: 0x20000 bytes of Oodle Mermaid each (`8C 0A`), a block stored whole having its two sizes equal. Each shader is a record {`u32` length, `u32` code area length, `u32` control length (0x880), in the global cache one more `u32`}, then its code area and right after it its control section.
+- **Reader:** `shader_split.py` `ue3_package` / `ue3_body` decode a package's chunks (Zlib in Python, Oodle with the game's own decoder through the Mac host's tool mode, `DM_OODLE_SERVE`), and `ue3_shaders` finds each record by its control section's magic, its code area length (+0x704) back to the code area's magic, and the two lengths in front. `profile_guess.py` counts the packages whose first block is Oodle, so the NSP script gives the split the host. All of the game's 4,058 packages are decoded (the whole split took about a minute); none of 68 packages sampled besides the combined cache holds a shader.
+- **Found on:** [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md): 1,847 records in the global cache and 22,874 in the combined one, 21,923 shaders with the profile's [`shader_key_skip`](#control-sections-shared-among-shaders-that-differ-only-in-their-compile-information). Vertex and pixel shaders are paired as single-stage programs.
 
 ## Control sections and code
 
@@ -335,6 +371,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Cause:** NVN lets the caller free a program's control section once `nvnProgramSetShaders` returns; Unity does, and the host used to hash it at the first draw, so keys computed later hashed freed memory.
 - **Fix:** the keys are now computed inside `SetShaders` (`hle_nvn.c` `prog_key`). Mario calls `SetShaders` for some programs with a code address that is not mapped yet, so a stage whose code is not in a registered memory pool at that moment is hashed at its first draw, as before.
 - **Found on:** [Fire Emblem Engage](../../dm/games/0100A6301214E000/README.md) and Unity games in general (the source names no other); [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md) (the unmapped code addresses).
+
+### Control sections shared among shaders that differ only in their compile information
+
+- **Symptom:** `[RED] shader … is not in the shader map` for shaders whose control section and code area are both in the game files, but in different records: dumped (`DM_NVN_SHDUMP`), the control section is one record's and the code area another's.
+- **Cause:** the engine shares one control section among shaders whose sections differ only in GLSLC's compile information (+0x778..+0x791 and +0x7d0..+0x7e7): `DM_NVN_PROGTRACE` showed the same control pointer set first with its own code area and later with another shader's. The GPU does not read those bytes, so on hardware it makes no difference; the host's key hashes them. Masked, Batman: Arkham Knight's 24,721 control sections are 5,615; the tools read nothing there (`dmsh_build.py` reads up to +0x75f).
+- **Fix:** the profile key `shader_key_skip <offset>+<length>` (`0x770+0x78`): the key hashes that range as zeros, in `shader_split.py` (`key_ctl`, and `same_shader` ignores it) and in the host (`hle_nvn.c` `keys_hash`). Without the key, every game's keys are as before. It is a profile input of the shader chain, so the libraries follow it.
+- **Found on:** [Batman: Arkham Knight](../../dm/games/0100ACD0163D0000/README.md): 40 shaders missing in the first 45 s before the key. With `0x7d0+0x18` alone the opening cutscene still met one whose section differed at +0x778, as [pull request #340](https://github.com/seedds/nxnative/pull/340) had found, so the range starts at +0x770.
 
 ### Compute code with and without a header
 
@@ -644,6 +687,8 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 
 ## Bindings and handles
 
+- **Note:** the layout of NVN's driver segments `c0` and `c2` (the handle tables, the storage and uniform buffer tables, the words the host fills) and the binding kinds of the reflection JSON have one definition, `dm/gfx/nvn/dmsh_abi.h`. The host includes it (`nvn_mtl.m`, `nvn_refl.m`, `nvn_obj.h`); `dmsh_build.py` reads it through `dm/gfx/tools/dmsh_abi.py`, which stops on any line it cannot read. Both files are part of the chain version. `dm/tools/tests/test_dmsh_abi.py` checks that the tables fit together, that the host converts every kind the build may write, that the translator's own copy of the `c2` layout (`Program.cs`) agrees, and that the values do not come back as literals in the host or the build. The entries below cite the offsets.
+
 ### Driver-segment reads outside fragment shaders
 
 - **Symptom:** a vertex or compute shader reads zeros from NVN's driver segment `c0`.
@@ -689,6 +734,13 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 - **Fix:** `encode_args` writes the draw's base instance there for graphics stages and does not reuse a stage's argument block across draws with different base instances. The word before it, `0x640`, is added to the vertex ID by 58 of Z-A's shaders and stays 0 until what the driver puts there is known.
 - **Found on:** [Pokémon Legends: Z-A](../../dm/games/0100F43008C44000/README.md): from the first step on, the player's legs stuck straight out behind her at hip height, and the rival's forward in a later cutscene; standing still beforehand looked right. The bone palette the game computes on the CPU was already bent. The cause was six occlusion queries a frame, one 36-vertex box each (`a793f436dcabd350`, base instance 61, 62, …), drawn against mip level 2 of the depth pyramid: every box was box 0, every query came back with 0 samples, and the game took its characters for hidden and posed their legs that way. Forcing every result to visible fixed the legs, and depth testing with ALWAYS did not. 793 of the game's vertex shaders read the word.
 - **Note:** how it was found: the raycasts were logged with scratch observation gates (all correct), then `DM_HLECOUNT` showed nothing walking-specific, then the counter reports.
+
+### The base instance of indirect draws comes from Metal
+
+- **Symptom:** flat grey or background-coloured triangles with straight edges across part of the scene, changing shape from frame to frame while the camera stands still; dropping the colour pass's fragment shaders in groups (`DM_NVN_SKIP_FS`) did not remove them, as the instances are misplaced in the depth pre-pass too, whose depth the colour pass tests for equality.
+- **Cause:** for an indirect draw (`DrawElementsIndirect` / `DrawArraysIndirect`) the base instance is in the argument record, which the game's GPU culling writes earlier in the same submission; `encode_args` could only write the command's base instance into `c0 + 0x644`, 0 for an indirect draw. A vertex shader whose instance is (instance index − base instance) + `c0[0x644]` then read its transforms from the first records for every indirect draw.
+- **Fix:** the translation reads the word from Metal's `[[base_instance]]`, which holds every draw's base instance, direct, indirect or masked (`dmsh_build.py` `vs_base_instance`: in vertex functions `c0[100].y` becomes the base instance's bits, and `main0` gets the parameter when it lacks it). `encode_args` still writes the word for the other stages.
+- **Found on:** [Super Mario Party Jamboree](../../dm/games/0100965017338000/README.md): every board. Its culling (`2b5485a2a731a231`, 62 points with rasterization off) writes 80-byte transforms per visible instance into a 30 KB buffer and counts them, `276504dc5c987ecf` writes nine indirect records from the count, and the instanced draws (`5a805bbb08421b86` in the depth pre-pass, `4b05556737e9535f` and `eaa3a44ba28f0744` in the colour pass) draws them, both reading record = instance + `c0[0x644]`. 5,249 of its vertex shaders read the word.
 
 ### Texture and sampler pools with overlapping IDs
 
@@ -870,11 +922,11 @@ Finding, keying and translating shaders (`dm/gfx/tools/shader_split.py`, `dmsh_b
 
 ### Metal's build folders left by pipeline archive flushes
 
-- **Symptom:** the user cache folder (`getconf DARWIN_USER_CACHE_DIR`, then `com.apple.gpuarchiver/`) fills with `gpuarchiver-*` folders of 0.3–5 MB each, one per pipeline archive flush (456 folders, 2.5 GB after two days). A later compile can fail with `cannot open '…/gpuarchiver-…/PersistentState': No such file or directory`.
+- **Symptom:** the user cache folder (`getconf DARWIN_USER_CACHE_DIR`, then `com.apple.gpuarchiver/`) fills with `gpuarchiver-*` folders of 0.3–5 MB each, one per pipeline archive flush (456 folders, 2.5 GB after two days). Later folders are larger, up to about 127 MB (an M4 Pro, 2026-10-29: 19 GB in 423 folders after a day of Mac runs and regression checks); why they grew is **open**. A later compile can fail with `cannot open '…/gpuarchiver-…/PersistentState': No such file or directory`.
 - **Cause:** the Metal 4 serializer (`MTL4PipelineDataSetSerializer`) creates private working folders. The former cleanup inferred ownership from the sole new directory between two snapshots. The mutex protected only this process: if its serializer already had a folder and another compiler created one during the capture or flush, the foreign folder was claimed and deleted. Serialization success concerns the requested output archive, not the lifetime of Metal's private files. The public serializer/compiler API exposes neither a scratch-directory selector nor an ownership token; an empty open-file list does not prove a folder is unused.
-- **Fix:** `nvn_mtl.m` leaves Metal's working folders alone during capture, flush and exit. Only caller-owned archive files are removed by compaction. The iOS cold start can remove folders from previous runs in its app-private cache, before this run captures anything. Mac cache reclamation belongs to Metal or an explicit cleanup while no Metal program is running. This may retain cache files; disk growth is preferable to deleting another live compiler's state.
+- **Fix:** `nvn_mtl.m` leaves Metal's working folders alone during capture, flush and exit. Only caller-owned archive files are removed by compaction. The iOS cold start can remove folders from previous runs in its app-private cache, before this run captures anything. Mac cache reclamation belongs to Metal or an explicit cleanup outside the host: `scripts/clean_metal_cache.py` removes a folder only when nothing in it changed for an hour (`--idle-min`) and its last change is older than the start of every running `dmhost`, so a running host keeps its own; `scripts/regress.py` runs it at its start and when the disk falls under its limit. A folder of another program's live compiler that stayed idle for an hour would still go; none is known. Folders kept this way may still grow between cleanups; disk growth is preferable to deleting another live compiler's state.
 - **Found on:** [Pokémon Scarlet](../../dm/games/0100A3D008C5C000/README.md#pipeline-cache-ownership): the ownership defect is reproduced with an isolated foreign-folder fixture. Its longer house run had 20 missing-`PersistentState` failures, but the deleting process was not observed, so that run's attribution remains open. Earlier cache-growth report: MacNativeGames (`1eff989`, `110e6c6`, Metal 3's `MTLBinaryArchive`, 25 GB overnight on Tears of the Kingdom).
-- **Check:** the ownership fixture reproduces the former deletion of a foreign `PersistentState`. `t_pso_archive` exercises base reuse, archive lookup and compaction with real Metal pipelines and preserves a foreign compiler fixture created during a compiler call through the subsequent flush.
+- **Check:** the ownership fixture reproduces the former deletion of a foreign `PersistentState`. `t_pso_archive` exercises base reuse, archive lookup and compaction with real Metal pipelines and preserves a foreign compiler fixture created during a compiler call through the subsequent flush. `dm/tools/tests/test_clean_metal_cache.py` keeps folders changed within the idle time or since a running host started, and removes the rest.
 
 ### A compaction flush that crashes, then crashes every start
 

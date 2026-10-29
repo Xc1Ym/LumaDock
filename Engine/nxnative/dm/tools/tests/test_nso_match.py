@@ -15,6 +15,7 @@ from pathlib import Path
 import struct
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -194,7 +195,7 @@ class Matching(unittest.TestCase):
                     img = bytearray(self.original)
                     out = root / 'out' / gid / name / bid; out.mkdir(parents=True)
                     ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-                              d=bytes(0x40) + bytes.fromhex(bid), IMG=img, TEXT_END=0x2000, NAME=name, outdir=str(out))
+                              MOD=SimpleNamespace(build_id=bytes.fromhex(bid)), IMG=img, TEXT_END=0x2000, NAME=name, outdir=str(out))
                     with patch.dict(os.environ, DM_GAME=gid, DM_GAMES_DIR='/derived/profile', DM_GAMES_FIRST='1'):
                         exec(code, ns)
                     self.assertEqual(struct.unpack_from('<I', img, 0x108)[0], expected)
@@ -217,13 +218,13 @@ class Matching(unittest.TestCase):
             (g / 'game.tsv').write_text(f'build\tv65536\t1.0.1\tmain={known}\tsdk={"cd" * 16}\n')
             img = bytearray(self.original)
             ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-                      d=bytes(0x40) + bytes(16), IMG=img, TEXT_END=0x2000, NAME='main', outdir=str(root / 'out'))
+                      MOD=SimpleNamespace(build_id=bytes(16)), IMG=img, TEXT_END=0x2000, NAME='main', outdir=str(root / 'out'))
             with patch.dict(os.environ, DM_GAME=gid): exec(code, ns)
             self.assertEqual(bytes(img), bytes(self.original))
             rows = [l.split('\t') for l in (root / 'out/main.match.tsv').read_text().splitlines()[1:]]
             self.assertEqual(rows, [['registered', known, '1.0.1', '2']])
             # the game's own build (a build row without CUTS) is no loss: no file
-            ns.update(d=bytes(0x40) + bytes.fromhex('cd' * 16), NAME='sdk', outdir=str(root / 'own'))
+            ns.update(MOD=SimpleNamespace(build_id=bytes.fromhex('cd' * 16)), NAME='sdk', outdir=str(root / 'own'))
             with patch.dict(os.environ, DM_GAME=gid): exec(code, ns)
             self.assertFalse((root / 'own').exists())
 
@@ -243,7 +244,7 @@ class Matching(unittest.TestCase):
                 with self.subTest(module=name, build=bid, game=gamed):
                     img, out = bytearray(self.original), root / 'out' / f'{name}{bid}{gamed}'
                     ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-                              d=bytes(0x40) + bytes.fromhex(bid), IMG=img, TEXT_END=0x2000, NAME=name, outdir=str(out))
+                              MOD=SimpleNamespace(build_id=bytes.fromhex(bid)), IMG=img, TEXT_END=0x2000, NAME=name, outdir=str(out))
                     with patch.dict(os.environ, DM_GAME=gamed): exec(code, ns)
                     self.assertEqual(struct.unpack_from('<I', img, 0x108)[0], expected)
                     if expected == ADD:
@@ -251,7 +252,7 @@ class Matching(unittest.TestCase):
             printed = io.StringIO()
             with contextlib.redirect_stdout(printed):
                 ns = dict(__file__=str(root / 'tools/patch_nso.py'), os=os, glob=glob, importlib=importlib,
-                          d=bytes(0x40) + bytes(16), IMG=bytearray(image({0x100: [RET]})), TEXT_END=0x2000, NAME='sdk', outdir=str(root / 'miss'))
+                          MOD=SimpleNamespace(build_id=bytes(16)), IMG=bytearray(image({0x100: [RET]})), TEXT_END=0x2000, NAME='sdk', outdir=str(root / 'miss'))
                 with patch.dict(os.environ, DM_GAME=gid): exec(code, ns)
             self.assertIn("function patch 'heap' skipped", printed.getvalue())
             self.assertNotIn('[RED]', printed.getvalue())

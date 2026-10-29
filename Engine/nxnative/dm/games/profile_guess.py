@@ -38,15 +38,10 @@ def glsl_sources(img):
 
 
 def nso(path):
-    """An NSO module: its three segments decompressed (the image without bss), build ID, segment sizes and bss size"""
-    import lz4.block
-    d = Path(path).read_bytes(); flags = struct.unpack_from('<I', d, 0xc)[0]
-    segs = [struct.unpack_from('<III', d, 0x10 + i * 0x10) for i in range(3)]; csz = struct.unpack_from('<III', d, 0x60)
-    img = bytearray(segs[2][1] + segs[2][2])
-    for i, (fo, mo, sz) in enumerate(segs):
-        raw = d[fo:fo + csz[i]]
-        img[mo:mo + sz] = lz4.block.decompress(raw, uncompressed_size=sz) if flags >> i & 1 else raw
-    return bytes(img), d[0x40:0x50].hex(), [sz for _, _, sz in segs], struct.unpack_from('<I', d, 0x3c)[0]
+    """An NSO module: its three segments decompressed (the image without bss, dm/tools/nso.py), build ID, segment sizes and bss size; nso.Error (a ValueError) on a damaged file"""
+    import nso
+    m = nso.load(Path(path).read_bytes(), str(path))
+    return bytes(m.image), m.build_id[:0x10].hex(), [sz for _, sz in m.segments], m.bss
 
 
 def kind(m):   # a short name for what a module is: its NintendoSDK component, GLSLC, or the nn:: namespace most of its exports are in
@@ -74,6 +69,12 @@ def npdm(path):   # (system resource size, program ID) from main.npdm; a non-zer
     if not Path(path).exists(): return 0, None
     d = Path(path).read_bytes(); a = d.find(b'ACI0')
     return (struct.unpack_from('<I', d, 0x14)[0] if d[:4] == b'META' else 0), (struct.unpack_from('<Q', d, a + 0x10)[0] if a >= 0 else None)
+
+
+def aarch64(path):   # main.npdm's flags (META +0xc) bit 0, Is64BitInstruction; clear = a 32-bit ARM program (Pikmin 3 Deluxe), which Apple silicon cannot run; True without the file
+    if not Path(path).exists(): return True
+    d = Path(path).read_bytes()
+    return d[:4] != b'META' or bool(d[0xc] & 1)
 
 
 def facts_of(exefs, romfs):
@@ -209,12 +210,12 @@ def nro_modules(exefs, nros, modules, hooks=None):
 
 
 # ---- Shader sources: decided from the game files at every build, not kept in the profile (scripts/build_ipa_from_nsp.py; shader_split.py reads what those steps write) ----
-def shader_sources(imports, glsl_src, glslc_mods, spirv, unreal_paks, trinity_packs=0, legacy_paks=0, gl_names=0, gl_src=0, gl_files=0, oodle_pkz=0, nro_imports=frozenset()):
+def shader_sources(imports, glsl_src, glslc_mods, spirv, unreal_paks, trinity_packs=0, legacy_paks=0, gl_names=0, gl_src=0, gl_files=0, oodle_pkz=0, nro_imports=frozenset(), oodle_gfpak=0, oodle_ue3=0):
     """{name: (value, reason)}: graphics (vulkan when main imports Vulkan functions and not nvnBootstrapLoader; gl when it imports eglCreateWindowSurface and names glShaderSource, so it compiles
     GLSL through OpenGL (gl_names: how often main has that name; Absolum imports the same EGL functions for SDL3 but renders with NVN and names no GL function); else nvn; vkGetInstanceProcAddr
     alone is SDL's Vulkan loader, which Balatro's LÖVE links and never uses), vk_capture (a Vulkan game without SPIR-V files generates its shaders at run time), gl_capture (an OpenGL game with no
     GLSL source where gl_shaders.py looks, gl_src strings in main and gl_files files in the RomFS: it puts its shaders together at run time, LÖVE from its Lua), glslc_capture (main holds GLSL sources and calls glslcCompile in a module the game loads: it compiles some shaders at run time), ue_decode (Unreal paks keep the shaders Oodle-compressed
-    in their shader code archives, which only the game's own Oodle decodes), oodle_packs (Trinity packs, or oodle_pkz PlatinumGames PKZ archives with Oodle Kraken entries:
+    in their shader code archives, which only the game's own Oodle decodes), oodle_packs (Trinity packs, oodle_pkz PlatinumGames PKZ archives, oodle_gfpak Game Freak GFPAK archives with Oodle Kraken entries or oodle_ue3 Unreal Engine 3 packages with Oodle chunks:
     Oodle-compressed file by file, which the shader split decodes with the game's own decoder in the Mac host's tool mode), ue_legacy (Unreal paks whose shaders are inline in the cooked packages:
     legacy paks, version 4, which the shader split reads through the game's own decoder the same way, and version 11 paks without shader code archives, Zlib, read by uepak.py itself).
     unreal_paks counts the paks with shader code archives, legacy_paks those with inline shaders (uepak.inline_shaders). Checked against every profile: Hades and Super Mario Galaxy Vulkan, Galaxy alone with no SPIR-V file, Three Houses alone compiling
@@ -236,8 +237,10 @@ def shader_sources(imports, glsl_src, glslc_mods, spirv, unreal_paks, trinity_pa
                               f'the NROs the game loads call glslcCompile in {", ".join(glslc_mods)}: shaders compiled at run time (Portal), captured by booting it on the Mac' if nro_glslc and not (glsl_src and 'glslcCompile' in imports) else
                               f'main holds {glsl_src} GLSL sources and calls glslcCompile in {", ".join(glslc_mods) or "no module it loads"}: shaders compiled at run time (Fire Emblem: Three Houses), captured by booting it on the Mac'),
             'ue_decode': (not vulkan and not gl and bool(unreal_paks), f'{unreal_paks} Unreal pak(s): the shaders are Oodle-compressed in their shader code archives (Octopath Traveler 0), decoded by booting the game on the Mac'),
-            'oodle_packs': (not vulkan and not gl and bool(trinity_packs or oodle_pkz), (f'{trinity_packs} Trinity pack file(s) (ONEPACK, arc/data.trpfs: Pokémon Legends: Z-A)' if trinity_packs else
-                            f'{oodle_pkz} PlatinumGames PKZ archive(s) with Oodle Kraken entries (Bayonetta 3)') + ', Oodle-compressed: the shader split decodes them with the game\'s own decoder in the Mac host (dm/host/hle_oodle.c DM_OODLE_SERVE)'),
+            'oodle_packs': (not vulkan and not gl and bool(trinity_packs or oodle_pkz or oodle_gfpak or oodle_ue3), (f'{trinity_packs} Trinity pack file(s) (ONEPACK, arc/data.trpfs: Pokémon Legends: Z-A)' if trinity_packs else
+                            f'{oodle_pkz} PlatinumGames PKZ archive(s) with Oodle Kraken entries (Bayonetta 3)' if oodle_pkz else
+                            f'{oodle_gfpak} Game Freak GFPAK archive(s) with Oodle Kraken entries (Pokémon Legends: Arceus)' if oodle_gfpak else
+                            f'{oodle_ue3} Unreal Engine 3 package(s) with Oodle-compressed chunks (Batman: Arkham Knight, its combined shader cache among them)') + ', Oodle-compressed: the shader split decodes them with the game\'s own decoder in the Mac host (dm/host/hle_oodle.c DM_OODLE_SERVE)'),
             'ue_legacy': (not vulkan and not gl and bool(legacy_paks), f'{legacy_paks} Unreal pak(s) with the shaders inline in the cooked packages (legacy, version 4, UE 4.18: DRAGON QUEST XI S, LZ5, decoded by the game\'s own decoder in the Mac host, dm/host/hle_oodle.c DM_OODLE_SERVE; '
                           'version 11 without shader code archives, UE 4.27: OCTOPATH TRAVELER II, Zlib): the shader split reads them file by file')}
 
@@ -250,6 +253,9 @@ def romfs_nro_imports(romfs):   # the names the loose NROs in a RomFS import (th
                 b = Path(d, n).read_bytes()
                 if b[0x10:0x14] == b'NRO0': out |= {s for s, defined, _ in nso_syms.dynsyms(b) if not defined}
     return out
+
+
+UE3_TAG = bytes.fromhex('c1832a9e')   # an Unreal package's tag (shader_split.py ue3_package)
 
 
 def build_sources(exefs, romfs, modules):
@@ -279,7 +285,26 @@ def build_sources(exefs, romfs, modules):
                     h = f.read(0x20)
                     if h[:4] == b'pkzl':
                         cnt, eo, nl = struct.unpack_from('<III', h, 0x10); f.seek(eo + 0x20 * cnt); oodle_pkz += b'OodleKraken\0' in f.read(nl)
-    return shader_sources(imports, glsl_src, glslc_mods, spirv, len(uepak.unreal_paks(str(romfs), inline=False)), trinity, len(uepak.unreal_paks(str(romfs), inline=True)), gl_names, gl_src, gl_files, oodle_pkz, nro_imp)
+    oodle_gfpak = 0   # Game Freak GFPAK archives with an Oodle Kraken entry (compression 3: Pokémon Legends: Arceus; Pokémon Sword's are LZ4): decoded with the game's own decoder
+    for d, _, names in os.walk(romfs):
+        for n in names:
+            if n.endswith('.gfpak'):
+                with open(os.path.join(d, n), 'rb') as f:
+                    h = f.read(0x20)
+                    if h[:8] == b'GFLXPACK':
+                        cnt, _, tab = struct.unpack_from('<IIQ', h, 0x10); f.seek(tab); t = f.read(0x18 * cnt)   # the file table: 0x18 bytes per file, u16 compression at +2 (shader_split.py gfpak_members)
+                        oodle_gfpak += any(struct.unpack_from('<H', t, 0x18 * i + 2)[0] == 3 for i in range(len(t) // 0x18))
+    oodle_ue3 = 0   # Unreal Engine 3 packages (shader_split.py ue3_package) whose first compressed block, found within the first 4 KB, is an Oodle one (8C; Batman: Arkham Knight): decoded with the game's own decoder
+    for d, _, names in os.walk(romfs):
+        for n in names:
+            with open(os.path.join(d, n), 'rb') as f: h = f.read(0x1000)
+            if h[:4] != UE3_TAG or not 0 < struct.unpack_from('<H', h, 4)[0] < 0x8000: continue
+            i = h.find(UE3_TAG, 4)
+            if 0 < i and i + 16 <= len(h):
+                nb = (struct.unpack_from('<I', h, i + 12)[0] + max(struct.unpack_from('<I', h, i + 4)[0], 1) - 1) // max(struct.unpack_from('<I', h, i + 4)[0], 1)
+                oodle_ue3 += h[i + 16 + 8 * nb:i + 17 + 8 * nb] == b'\x8c'
+    return shader_sources(imports, glsl_src, glslc_mods, spirv, len(uepak.unreal_paks(str(romfs), inline=False)), trinity, len(uepak.unreal_paks(str(romfs), inline=True)), gl_names, gl_src, gl_files, oodle_pkz, nro_imp,
+                          oodle_gfpak=oodle_gfpak, oodle_ue3=oodle_ue3)
 
 
 def va_heap(sysres, imports):   # virtual address memory (an NPDM system resource) and a heap: the alias / heap split is a starting point the heap check corrects (Wonder, Tears of the Kingdom; Engage's pool is its own measurement)
@@ -304,47 +329,68 @@ def demangle(name):   # a nested Itanium name's parts (_ZN2nn3mem17StandardAlloc
     return '::'.join(parts) or name
 
 
-def region_findings(table, alias, sdk_syms=None, secs=15):
-    """[(red, text)] from the host's address region table (DM_REGIONS, hle_svc.c "Address regions") of a run with a Switch-sized alias region, against the profile's alias
-    region (the layout an iPhone runs): where the regions reach, and for each of 256 MB or more where the request returns to in the game (the first return address outside the
-    sdk: the function that asked, or its caller when it tail-called the SDK API), through which SDK API (sdk_syms: the sdk's nso_syms.defined) and how much of it the game used.
-    The run covers the game's first secs seconds in nnMain: what it takes later in play is not in the table, so a reach within the alias region is a lower bound. Where a region stands depends on who lays it out, not on where it is used (Pokémon Legends: Z-A's StandardAllocator puts its 3.15 GB
-    startup block at the top of its region). One the SDK's StandardAllocator lays out the host makes fit at run time (hle_svc.c "StandardAllocator's address space": what the alias
-    region has room for, less 256 MB for the regions made after it); when those need more, the profile key stdalloc_cap sets the size, which this computes from them (Absolum: its
-    .NET garbage collector's region). One the game's own allocator takes with nn::os::AllocateAddressRegion works smaller only if that allocator places nothing by fixed offsets
-    (memory.md, A 62 GB page allocator behind nu::VirtualAllocHook)"""
+def region_rows(table, sdk_syms=None):
+    """The rows of the host's address region table (DM_REGIONS, hle_svc.c "Address regions"), each with the SDK API its request came through (api: sdk_syms, the sdk's
+    nso_syms.defined; None when unknown)"""
     rows = []
     for l in table.splitlines():
         c = l.split('\t')
         if l.startswith('#') or len(c) != 7: continue
         rows.append(dict(off=int(c[0], 0), size=int(c[1], 0), who=c[2], mapped=int(c[3], 0), end=None if c[5] == '-' else int(c[5], 0), via=int(c[6], 0)))
+    for r in rows:
+        r['api'] = next((demangle(name) for name, (a, n) in (sdk_syms or {}).items() if r['via'] and a <= r['via'] < a + max(n, 4)), None)
+    return rows
+
+
+def stdalloc_room(rows, r, alias):
+    """For a StandardAllocator region r past the alias region: (later, need). later = the size of the regions made after it that fit the alias region by themselves; need = the
+    stdalloc_cap that leaves them room and the same 256 MB the host's own cap leaves for regions the check does not see (made later in play), in the host's 32 MB steps, or None when
+    that is not even what r mapped in the run"""
+    later = sum(x['size'] for x in rows if x['off'] > r['off'] and x['size'] <= alias - NODE_AREA)
+    room = (alias - r['off'] - later - STDALLOC_LATER) & ~0x1ffffff
+    return later, room if room > max(r['mapped'], 0x2000000) else None
+
+
+def stdalloc_cap_needed(rows, alias):   # the stdalloc_cap the regions need (the smallest when several StandardAllocator regions need one), or None when the host's own cap does
+    need = [stdalloc_room(rows, r, alias) for r in rows if r['api'] and 'StandardAllocator' in r['api'] and r['off'] + r['size'] > alias]
+    caps = [n for later, n in need if later > STDALLOC_LATER and n]
+    return min(caps) if caps else None
+
+
+def region_findings(table, alias, sdk_syms=None, secs=15, cap=0):
+    """[(red, text)] from the host's address region table (DM_REGIONS, hle_svc.c "Address regions") of a run with a Switch-sized alias region, against the profile's alias
+    region (the layout an iPhone runs): where the regions reach, and for each of 256 MB or more where the request returns to in the game (the first return address outside the
+    sdk: the function that asked, or its caller when it tail-called the SDK API), through which SDK API (sdk_syms: the sdk's nso_syms.defined) and how much of it the game used.
+    The run covers the game's first secs seconds in nnMain: what it takes later in play is not in the table, so a reach within the alias region is a lower bound. Where a region stands depends on who lays it out, not on where it is used (Pokémon Legends: Z-A's StandardAllocator puts its 3.15 GB
+    startup block at the top of its region). One the SDK's StandardAllocator lays out the host makes fit at run time (hle_svc.c "StandardAllocator's address space": what the alias
+    region has room for, less 256 MB for the regions made after it); when those need more, the profile key stdalloc_cap (cap: the profile's, 0 when it sets none) sets the size,
+    which this computes from them (stdalloc_room; Absolum: its .NET garbage collector's region). One the game's own allocator takes with nn::os::AllocateAddressRegion works
+    smaller only if that allocator places nothing by fixed offsets (memory.md, A 62 GB page allocator behind nu::VirtualAllocHook)"""
+    rows = region_rows(table, sdk_syms)
     if not rows: return []
-    def via(off):
-        for name, (a, n) in (sdk_syms or {}).items():
-            if a <= off < a + max(n, 4): return demangle(name)
-        return None
     gb = lambda n: f'{n / 2**30:.2f} GB'
     out, red, own = [], [], []
     for r in sorted((r for r in rows if r['size'] >= 0x10000000), key=lambda r: r['off']):
-        api = r['api'] = via(r['via']) if r['via'] else None
+        api = r['api']
         use = 'not used yet' if r['end'] is None else f'opened up to +{gb(r["end"])}'
         line = f'{gb(r["size"])} at alias +{gb(r["off"])}' + (f' through {api}' if api else '') + f', returning to {r["who"]}: {gb(r["mapped"])} mapped, {use}'
         if r['off'] + r['size'] <= alias: out.append((False, line)); continue
         if api and 'StandardAllocator' in api:
             # placed after it, they need room past its end on the iPhone (one too big by itself is reported as such)
-            later = sum(x['size'] for x in rows if x['off'] > r['off'] and x['size'] <= alias - NODE_AREA)
-            cap = (alias - r['off'] - later - 0x4000000) & ~0x1ffffff if alias > r['off'] + later + 0x4000000 else 0
-            if later <= STDALLOC_LATER: out.append((False, line + f'; on the iPhone layout the host gives it {gb((alias - r["off"] - STDALLOC_LATER) & ~0x1ffffff)}, what the alias region has room for'))
-            elif cap: red.append(f'the regions made after the one returning to {r["who"]} take {gb(later)}, more than the {gb(STDALLOC_LATER)} the host leaves them: stdalloc_cap {cap:#x} ({gb(cap)})')
+            later, need = stdalloc_room(rows, r, alias); note = ''
+            if cap and r['off'] + cap + later <= alias: note = f'; the profile\'s stdalloc_cap gives it {gb(cap)}, which leaves the {gb(later)} of regions made after it room'
+            elif cap: red.append(f'the profile\'s stdalloc_cap {cap:#x} leaves the {gb(later)} of regions made after the one returning to {r["who"]} too little room' + (f': stdalloc_cap {need:#x} ({gb(need)})' if need else ''))
+            elif later <= STDALLOC_LATER: note = f'; on the iPhone layout the host gives it {gb((alias - r["off"] - STDALLOC_LATER) & ~0x1ffffff)}, what the alias region has room for'
+            elif need: red.append(f'the regions made after the one returning to {r["who"]} take {gb(later)}, more than the {gb(STDALLOC_LATER)} the host leaves them: stdalloc_cap {need:#x} ({gb(need)})')
             else: red.append(f'the regions made after the one returning to {r["who"]} take {gb(later)}, which leaves it no room')
-            if later > STDALLOC_LATER: out.append((False, line))
+            out.append((False, line + note))
         else:
             out.append((False, line))
             if r['size'] > alias - NODE_AREA: own.append(r)   # too big by itself; a smaller one placed after a capped StandardAllocator region moves down with it
     red += [f'the request returning to {r["who"]} takes {gb(r["size"])}' + (f' through {r["api"]}' if r['api'] else '') + ': a smaller one works only if its allocator places nothing by fixed offsets' for r in own]
     reach = max(r['off'] + r['size'] for r in rows)
     where = f'in its first {secs} s in nnMain the game\'s regions reach alias +{gb(reach)}'
-    capped = any(r.get('api') and 'StandardAllocator' in r['api'] and r['off'] + r['size'] > alias for r in rows)
+    capped = any(r['api'] and 'StandardAllocator' in r['api'] and r['off'] + r['size'] > alias for r in rows)
     if not red and reach > alias and not capped: red.append('no single region is too big, but together they need more room than the alias region has')
     if red: out.append((True, f'{where}, past the profile\'s {gb(alias)} alias region, the iPhone layout: ' + '; '.join(red) + ' (docs/reference/memory.md, Virtual address memory and the alias region)'))
     elif reach > alias: out.append((False, f'{where}, past the profile\'s {gb(alias)} alias region only by StandardAllocator regions, which the host makes fit (what it takes later in play is not measured here)'))
@@ -457,7 +503,9 @@ if __name__ == '__main__':
     if a[:1] == ['--check']:
         sys.exit(1 if check(a[1] if len(a) > 1 else '/Volumes/T7/nsp') else 0)
     if len(a) != 2: sys.exit(__doc__ or 'usage: profile_guess.py <ExeFS dir> <romfs_manifest.tsv | RomFS dir> | profile_guess.py --check [<NSP root>]')
-    F = facts_of(*a)
+    import nso as loader   # dm/tools/nso.py (nso here is this file's own reader)
+    try: F = facts_of(*a)
+    except loader.Error as e: sys.exit(f'[RED] {e}')
     for n, m in F['mods'].items():
         print(f'{n}: {m["kind"]}, build {m["bid"]}, bss {m["bss"] / MiB:.1f} MB{" (far)" if m["far"] else ""}, {len(m["imports"])} imports, {len(m["exports"])} exports')
     print(f'SDK {F["sdk"]}, system resource {F["sysres"] // MiB} MB, GLSLC outputs in main {F["glslc"]}, GLSL sources {F["glsl_src"]}, SPIR-V files {F["romfs"]["mags"]["SPIR-V"]}')

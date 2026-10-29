@@ -48,5 +48,27 @@ class EngineSyncTests(unittest.TestCase):
         self.assertEqual(inventory(self.target),before)
         verify_bundle(self.target)
 
+    def test_binary_fuzz_corpus_is_omitted_but_harness_is_preserved(self):
+        corpus=self.source/'dm/tools/fuzz/corpus/nso'
+        corpus.mkdir(parents=True)
+        (corpus/'huge-segment.nso').write_bytes(b'Synthetic parser input')
+        (corpus/'other.bin').write_bytes(b'Synthetic parser input')
+        harness=self.source/'dm/tools/fuzz/fuzz_nso.py'
+        harness.write_text('# Synthetic harness source\n')
+        self.commit()
+        record=sync(self.source,self.target)
+        self.assertFalse((self.target/'dm/tools/fuzz/corpus').exists())
+        self.assertEqual((self.target/'dm/tools/fuzz/fuzz_nso.py').read_text(),harness.read_text())
+        self.assertEqual(record,verify_bundle(self.target))
+
+    def test_private_asset_outside_corpus_still_rejects_sync(self):
+        sync(self.source,self.target);before=inventory(self.target)
+        (self.source/'dm/unexpected.nso').write_bytes(b'Synthetic forbidden input')
+        self.commit()
+        with self.assertRaisesRegex(ValueError,'Private/generated engine asset'):
+            sync(self.source,self.target)
+        self.assertEqual(inventory(self.target),before)
+        verify_bundle(self.target)
+
 
 if __name__=='__main__':unittest.main()

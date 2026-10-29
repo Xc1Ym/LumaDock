@@ -9,6 +9,13 @@
 - **Fix:** `scripts/build_ipa_from_nsp.py` `configure_dotnet` derives the root from the `Microsoft.NETCore.App` entry in `dotnet --list-runtimes`, using the build's environment, before any extraction or survey. It exports `DOTNET_ROOT` both to that environment and to `os.environ`, for tools launched with an explicit environment and those that inherit it. Caller-supplied roots, including architecture-specific overrides, retain precedence. A failed or malformed probe leaves the environment unchanged rather than guessing the wrapper's directory.
 - **Found on:** [Balatro](../../dm/games/0100CD801CE5E000/README.md), first extraction with Homebrew .NET ([PR #284](https://github.com/seedds/nxnative/pull/284)). Applies to every game's build on that installation setup.
 
+### The shader step stops with an empty `xlate_source`
+
+- **Symptom:** the extraction and captures succeed, then the shader step stops with `translation chain tools do not match the lock file: xlate_source: lock … / actual` and nothing after `actual`, which reads like a stale translator.
+- **Cause:** the translator (`dmsh_xlate_bin/dmsh_xlate`) is a universal framework-dependent apphost. When it finds no .NET 10 runtime for the slice it starts as, it exits 131 with an empty stdout. A Python under Rosetta (an Intel Homebrew's) starts it as x86_64, and it finds only the arm64 .NET; extraction is not affected, because `nx_extract` is built for the SDK's own architecture only. An Intel .NET on Apple silicon, or a `DOTNET_ROOT` that names one, fails the same way. `tools_now` (then in `dmsh_chain.py`) kept only the stdout of `dmsh_xlate --source-sha`, without its exit code or stderr, so the apphost's own message was lost.
+- **Fix:** the NSP script checks the environment before extracting anything: `check_native_python` stops under Rosetta (`sysctl.proc_translated`), and `check_prereqs` starts the translator once with `--source-sha` and stops with its first message line (`check_translator`). It also checks glslang and, for an iPhone build, the iOS SDK (`check_ios_sdk`, before the Metal check, whose message would blame the Metal toolchain). `own_compilers.py` no longer asks a Mac-only shader build (`DMSH_TARGETS=mac`) for the iOS Metal compiler. `tool_lock.py` records `--source-sha`'s failure instead of its empty stdout (`xlate_embedded`: `does not run (<first message line>)`), so `dmsh_build.py` run directly and `--update-lock` stop with the same message as the NSP script, without the lock and rebuild lines. The tool checks used to be in `dmsh_chain.py`, which is part of the chain version and of every shader's cache key, so that fix rebuilt every library; they now live in `tool_lock.py`, outside both, and a change to them rebuilds nothing.
+- **Found on:** NX2Apple builds ([LNPANDY/NX2Apple#31](https://github.com/LNPANDY/NX2Apple/issues/31), item 3; [PR #477](https://github.com/seedds/nxnative/pull/477), [PR #487](https://github.com/seedds/nxnative/pull/487)); reproduced with `arch -x86_64`. Applies to every game.
+
 ## IPA archives
 
 ### A streamed file changes size and the IPA fails its CRC check
@@ -56,6 +63,15 @@
 - **Cause:** Mac `launcher.json` reused iOS defaults from `settings.tsv`. `rec_on` in `nvn_rec.h` defaults off on Mac and on on iOS; `pso4_on` in `nvn_mtl.m` defaults on on Mac and follows the profile on iOS. The exported defaults instead enabled the encode thread everywhere and followed the profile for Metal 4 everywhere. A front end applying those values changed the Mac host's behavior without a player override.
 - **Fix:** a setting's default may be `<ios>|<mac>`, selected before resolving a profile macro or build variable. Metal 4 uses `DM_GAME_PSO_MTL4|1`, the encode thread `1|0`. The generator validates the platform and the pair. Tests cover a profile with Metal 4 on and one with it off, and both platforms; the host and shader chain are unchanged.
 - **Found on:** synthetic metadata generation for [Super Mario Bros. Wonder](../../dm/games/010015100B514000/README.md) while reviewing [PR #352](https://github.com/seedds/nxnative/pull/352); checked against the native defaults, without a gameplay run.
+
+## External drives
+
+### A game folder on an exFAT drive reads one update as two, or fails to remove a folder
+
+- **Symptom:** with the NSP folder on an exFAT or FAT drive, the build leaves out an update whose name has no `[v…]` tag (the folder seems to hold two), or a stage stops with `FileNotFoundError` on a `._<name>` path inside `<id>_build/` and the next run fails on the half-deleted folder.
+- **Cause:** these file systems have no extended attributes, so macOS keeps a file's attributes (a download's quarantine flag) in an AppleDouble file `._<name>` beside it, and deletes it with the file. `scan_nsps` took `._Update [<title ID>800].nsp`, 4 KB of metadata, for an update: its name carries the title ID. Deleting `x` takes `._x` with it, so `shutil.rmtree`'s later unlink of the listed `._x` found it gone; before Python 3.13 that error ended the removal.
+- **Fix:** `scripts/build_ipa_from_nsp.py` `scan_nsps` takes a file only when its header is one nx_extract opens (`is_package`: `PFS0` at 0, or an XCI's `HEAD` at 0x100), and says which files it skips. The name tag alone no longer counts, so the same check also rejects any other tagged file that is not a package. Names that start with `._` are skipped without a line. The script's `rmtree` passes ENOENT from `shutil.rmtree` (the entry is gone, which is the goal) and raises every other error. `dm/tools/tests/test_nsp_external_drive.py` and `test_nsp_scan.py` cover both without game files.
+- **Found on:** the NX2Apple fork's users, who keep games on external drives ([PR #476](https://github.com/seedds/nxnative/pull/476), part of [issue #388](https://github.com/seedds/nxnative/issues/388)); reproduced on an exFAT disk image made with `hdiutil create -fs ExFAT`. Applies to every game.
 
 ## Compressed inputs
 

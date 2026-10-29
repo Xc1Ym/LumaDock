@@ -33,3 +33,6 @@ def frame_step(ctx):
     fs_put(0x2e77f8, [B(0x2e77f8, start)], 'frame step: the base clock steps by the host\'s vsyncs (state page target fps; 0 = the game\'s measured step)')
 
 FRAME_STEP = {'0effe4af1dec3a7966b934d4a7c3d2bf': frame_step}
+
+# Whether a general rule could replace these patches (dm/tools/docs_patches.py lists it in docs/agents/game-patches.md)
+GENERALIZE = "No: the game's own clock floor and step"

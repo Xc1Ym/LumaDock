@@ -80,7 +80,7 @@ usage = load_module('usage', REPO / 'dm/tools/usage.py')   # usage manifests and
 ROOT = Path(os.environ.get('REGRESS_ROOT', ''))
 GAMES = Path(os.environ.get('REGRESS_GAMES', ''))
 HOST_DIRS = ('dm/host', 'dm/gfx', 'dm/gfx/nvn', 'dm/gfx/nvn/include', 'dm/gfx/tex', 'dm/gfx/vk', 'dm/gfx/gl')   # as build_ipa_from_nsp.py: the host's sources and headers
-REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py')
+REWRITER = ('dm/tools/patch_nso.py', 'dm/tools/nso.py', 'dm/tools/nso_code.py', 'dm/tools/nso_asm.py', 'dm/tools/nso_match.py', 'dm/tools/sdk_patches.py')
 HEAVY_EXE = {'clang', 'make', 'xcodebuild', 'ld', 'ld64', 'swift-frontend', 'dotnet', 'metal', 'metal-tt', 'air-tt', 'applegpu-nt', 'dmsh_xlate', 'spirv-cross'}   # jobs that skew a measurement
 HEAVY_PY = r'(dmsh_build|shader_split|own_compilers|patch_nso|vk_shaders)\.py'   # (the shared measuring rule)
 # Tolerances, from runs of one revision against itself (docs/development.md, The regression harness)
@@ -174,8 +174,17 @@ def disk_free_gb(path='/System/Volumes/Data'):
     st = os.statvfs(path); return st.f_bavail * st.f_frsize / 1e9
 
 
-def check_disk(min_gb):
+def clean_metal_cache():   # Metal's idle build folders, which every host run adds to the internal disk (scripts/clean_metal_cache.py)
+    m = load_module('clean_metal_cache', REPO / 'scripts/clean_metal_cache.py')
+    try: n, size, _, _ = m.clean(say=say)
+    except OSError as e: say(f'[RED] Metal build folders not cleaned: {e}'); return
+    if n: say(f'Metal build folders: {n} idle ones removed, {size / 1e9:.1f} GB')
+
+
+def check_disk(min_gb, clean=False):
+    """clean: remove Metal's idle build folders first (at the start of a run); they are removed anyway when the disk is under the limit"""
     free = disk_free_gb()
+    if clean or free < min_gb: clean_metal_cache(); free = disk_free_gb()
     if free < min_gb: raise HarnessError(f'the internal disk has {free:.1f} GB free, under {min_gb} GB (Metal caches land there): stopped')
     return free
 
@@ -311,7 +320,7 @@ def toolchain_fp():
 def chain_key(tree, g, tools):
     if g.kind == 'nvn':
         v, inp = json.loads(tree.py("import sys, json; sys.path.insert(0, 'dm/gfx/tools'); import dmsh_chain as c; g = c.load_game(); print(json.dumps([c.version(), c.inputs(g)]))", g.env(tree)))
-        side = digest([tree.path / 'dm/gfx/tools' / f for f in ('c1_guard.py', 'cb_extent.py', 'dmsh_mtlcache.py', 'own_compilers.py')] + [tree.path / 'dm/games/game.py'])
+        side = digest([tree.path / 'dm/gfx/tools' / f for f in ('c1_guard.py', 'cb_extent.py', 'dmsh_mtlcache.py', 'own_compilers.py', 'tool_lock.py')] + [tree.path / 'dm/games/game.py'])
         pkg = g.build / 'shader/pkg'
         sources = digest(sorted(p for p in pkg.rglob('*') if p.is_file()), root=pkg)
         pairs = g.profile_dir(tree) / 'pso_pairs.tsv'
@@ -666,10 +675,15 @@ def footprint(pid):   # (current, lifetime peak) physical footprint in bytes (pr
 def normalize_red(line):
     s = line.split('[RED]', 1)[1].strip()
     s = re.sub(r'(/[^\s:;,()\'"]+)(\s+\S*/[^\s:;,()\'"]+)*', '<path>', s)   # a path, also one with spaces in its folder names
-    s = re.sub(r'\b0x[0-9a-fA-F]+\b', '<hex>', s)
+    s = re.sub(r'\b0x[0-9a-fA-F]+\b', '#', s)   # a hex number is a number as a decimal one is: a value printed with %#x reads 0 when it is zero ("x1=0" against "x1=0x1")
     s = re.sub(r'\b[0-9a-f]{16}\b', '<key>', s)
-    s = re.sub(r'\d+(\.\d+)?', '#', s).replace('<hex>', '0x#')
+    s = re.sub(r'\d+(\.\d+)?', '#', s)
     return s[:200]
+
+
+def red_kind(k):
+    """A [RED] kind as normalize_red makes it now: baselines stored before hex numbers became "#" hold them as "0x#\""""
+    return k.replace('0x#', '#')
 
 
 def read_log(text):
@@ -906,14 +920,14 @@ def smoke_diff(base, cand, route):
     for x in dict.fromkeys(cf_):
         (known if kind(x) in bf else newfail).append(x)
     d = {}
-    bred = set().union(*[r.get('red', {}).keys() for r in base]) if base else set()
+    bred = set(red_kind(k) for r in base for k in r.get('red', {})) if base else set()
     nr = collections.Counter()
     for r in cand:
         for k, n in r.get('red', {}).items():
-            if k not in bred: nr[k] += n
+            if red_kind(k) not in bred: nr[red_kind(k)] += n
     d['new_red'] = [{'text': k, 'count': n} for k, n in nr.most_common(30)]
     if nr: regress.append(f'{len(nr)} new [RED] line kinds')
-    gone = bred - set().union(*[r.get('red', {}).keys() for r in cand]) if cand else set()
+    gone = bred - set(red_kind(k) for r in cand for k in r.get('red', {})) if cand else set()
     if gone: changed.append(f'{len(gone)} [RED] line kinds gone'); d['gone_red'] = sorted(gone)[:30]
     def pct(k, invert=False):
         b, c = med(r.get(k) for r in base), med(r.get(k) for r in cand)
@@ -1262,7 +1276,7 @@ def main():
         p.add_argument('--games', help='title IDs, comma-separated (default: every game with a Mac build, and for the runs a smoke route)')
         p.add_argument('--jobs', type=int, help='workers for the shader builds (default: the cores; a build pauses while another process holds the measuring lock)')
         p.add_argument('--out', help='the report folder (default <root>/reports/<date-time>-<command>)')
-        p.add_argument('--min-free-gb', type=float, default=3.0, help='stop when the internal disk has less free (default 3)')
+        p.add_argument('--min-free-gb', type=float, default=3.0, help='stop when the internal disk has less free once Metal\'s idle build folders are removed (scripts/clean_metal_cache.py; default 3)')
         p.add_argument('--lock', default=os.environ.get('DM_MEASURE_LOCK', ''), help='the measuring lock shared with bench.py --lock (DM_MEASURE_LOCK): held while a game runs; shader builds pause while another process holds it')
         if smoke:
             p.add_argument('--quick', action='store_true', help='the chain checks and a short boot (the route\'s quick seconds, no prebuild)')
@@ -1298,7 +1312,7 @@ def main():
         a.lock = a.pause_lock = Path(a.lock) if a.lock else None
         a.jobs = a.jobs or os.cpu_count() or 8
         a.tools_fp = toolchain_fp()
-        free = check_disk(a.min_free_gb); say(f'internal disk: {free:.1f} GB free; root {ROOT}; {a.jobs} workers')
+        free = check_disk(a.min_free_gb, clean=True); say(f'internal disk: {free:.1f} GB free; root {ROOT}; {a.jobs} workers')
         return {'baseline': cmd_baseline, 'check': cmd_check, 'usage': cmd_usage, 'chain': lambda a: cmd_check(a, smoke=False)}[a.cmd](a)
     except HarnessError as e:
         print(f'[RED] regress.py: {e}', file=sys.stderr); return 2

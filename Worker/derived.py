@@ -55,7 +55,8 @@ def module(path, name):
 def detect_sources(up,repo,selected,gp):
     path=repo/'dm/games/profile_guess.py'
     if not path.is_file(): return {}   # Older external engines predate source detection.
-    sys.path.insert(0,str(repo/'dm/tools'))
+    tools=str(repo/'dm/tools')
+    if tools not in sys.path: sys.path.insert(0,tools)
     up.pg=module(path,'lumanx_profile_guess')
     return up.pg.build_sources(selected/'ExeFS',selected/'RomFS',gp.words('modules'))
 
@@ -69,7 +70,8 @@ def oodle_decoder(up,repo,root,env,gp,patched,sources):
 def prepare_profile(c, st, up, registered, root, repo, env, selected, version):
     folder=root/'profiles'/registered.id
     # Upstream initializes these modules in main(); LumaNX calls its stages directly.
-    sys.path.insert(0,str(repo/'dm/tools'))
+    tools=str(repo/'dm/tools')
+    if tools not in sys.path: sys.path.insert(0,tools)
     up.nacp=module(repo/'dm/tools/nacp.py','lumanx_nacp')
     up.pg=module(repo/'dm/games/profile_guess.py','lumanx_profile_guess')
     st.run(PROFILE_STAGE,[folder],lambda:up.derive_profile(registered,folder,version,selected,

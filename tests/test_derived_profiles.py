@@ -76,6 +76,17 @@ class DerivedPlanTests(unittest.TestCase):
             (root/'dm/gfx/tools/own_compilers.py').unlink();self.assertFalse(derived.supported(root))
 
 
+class SourceDetectionTests(unittest.TestCase):
+    def test_repeated_detection_keeps_one_tools_search_path(self):
+        with tempfile.TemporaryDirectory() as temp,patch.object(sys,'path',list(sys.path)):
+            repo=Path(temp);path=repo/'dm/games/profile_guess.py';path.parent.mkdir(parents=True)
+            path.write_text('def build_sources(exefs,romfs,modules): return {"modules":modules}\n')
+            profile=SimpleNamespace(words=lambda key:['main','sdk']);up=SimpleNamespace()
+            for _ in range(3):
+                self.assertEqual(derived.detect_sources(up,repo,repo/'extract',profile),{'modules':['main','sdk']})
+                self.assertEqual(sys.path.count(str(repo/'dm/tools')),1)
+
+
 class DerivedPipelineTests(unittest.TestCase):
     def pipeline(self,target='macos',fail=None):
         with tempfile.TemporaryDirectory(prefix='luma-derived-') as temp:
@@ -146,12 +157,13 @@ class DerivedPipelineTests(unittest.TestCase):
                 self.assertEqual(gp.get('package'),'v65536');self.assertEqual(gp.get('mem_used'),'42')
                 self.assertEqual(env['DM_GAMES_FIRST'],'1');derived.validate_tables(root/'shader/cache',gp,'test')
                 self.assertTrue((shaders/'b-test/new_b.metallib').is_file());return {'outputPath':'synthetic.ipa'}
-            with contextlib.redirect_stdout(io.StringIO()),patch('build.prepare',return_value=prepared),patch.object(c,'nx',return_value=Path('/nx_extract')),patch.object(c,'run',side_effect=run),patch('build.compile_host',side_effect=host),patch('build.shutil.disk_usage',return_value=SimpleNamespace(free=100*2**30)),patch('ipa.package',side_effect=pack):
+            with contextlib.redirect_stdout(io.StringIO()),patch.object(sys,'path',list(sys.path)),patch('build.prepare',return_value=prepared),patch.object(c,'nx',return_value=Path('/nx_extract')),patch.object(c,'run',side_effect=run),patch('build.compile_host',side_effect=host),patch('build.shutil.disk_usage',return_value=SimpleNamespace(free=100*2**30)),patch('ipa.package',side_effect=pack):
                 if fail:
                     with self.assertRaises(Cancelled if fail=='cancel' else Failure): build.build(c,target)
                     self.assertEqual(current.resolve(),old.resolve());self.assertEqual((old/'sentinel').read_text(),'keep')
                 result=build.build(c,target)
                 build.build(c,target)
+                self.assertEqual(sys.path.count(str(repo/'dm/tools')),1)
             self.assertEqual(calls.count('extract'),1);self.assertEqual(calls.count('derive'),1)
             self.assertEqual(calls.count('rewrite'),1);self.assertEqual(calls.count('split'),1)
             self.assertEqual(calls.count('shaders'),2 if fail else 1)

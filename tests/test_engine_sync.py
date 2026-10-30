@@ -88,6 +88,18 @@ class EngineSyncTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'phone motion interface changed'):sync(self.source,self.target)
         self.assertEqual(inventory(self.target),before);verify_bundle(self.target)
 
+    def test_reformatted_phone_motion_interface_preserves_previous_snapshot(self):
+        sync(self.source,self.target);before=inventory(self.target)
+        ios=self.source/'dm/ios/Sources/DmGamepad.m';original=ios.read_text()
+        for statement in ('g_motion.deviceMotionBody=body;',
+                          'g_motion.deviceMotionBody =\n    body;',
+                          'g_motion . deviceMotionBody = body;'):
+            with self.subTest(statement=statement):
+                ios.write_text(original+statement+'\n');self.commit()
+                with self.assertRaisesRegex(RuntimeError,'phone motion interface changed'):
+                    sync(self.source,self.target)
+                self.assertEqual(inventory(self.target),before);verify_bundle(self.target)
+
     @unittest.skipUnless(sys.platform=='darwin','Objective-C SDK compatibility check needs Apple clang')
     def test_phone_motion_compiles_with_and_without_sdk27_declaration(self):
         ios=self.source/'dm/ios/Sources/DmGamepad.m'

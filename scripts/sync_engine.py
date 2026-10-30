@@ -44,7 +44,7 @@ def patch_sdk_compatibility(root):
     # Runtime availability does not make SDK 27 declarations visible to Xcode 26.
     path=root/'dm/ios/Sources/DmGamepad.m'
     text=path.read_text()
-    if 'g_motion.deviceMotionBody = body' not in text: return
+    if 'deviceMotionBody' not in text: return
     guard='#if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000'
     old='    if (@available(iOS 27.0, *)) { g_motion.deviceMotionBody = body; g_motion_body = YES; LOG("front end: the phone\'s motion comes in the pad view\'s frame (deviceMotionBody)"); }'
     guarded=guard+'\n'+old+'\n#else\n    (void)body;   // Older SDKs keep the hardware-frame orientation fallback.\n#endif'

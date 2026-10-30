@@ -10,7 +10,7 @@ Brought up on the Mac: the ATLUS logo, the title, the puzzle type choice, the Go
 |---|---|---|
 | `mem_used 0x6000000` (96 MB) | [`game.tsv`](game.tsv) | the rewritten modules take 92 MB, more than the default 64 MB; see [Memory](#memory) |
 | 4 GB layout: `mem_reserve 0x100000000`, `mem_alias 0x10000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000` | `game.tsv` | the block of the other games without virtual address memory: 256 MB in front + 256 MB alias region + 256 MB stack region + 3.25 GB heap region |
-| Node area cut and 32 MB alignment for regions of 1 GB and more | `dm/tools/sdk_patches.py`, `sdk` build `5fd4f531…` | made for Super Smash Bros. Ultimate on the same build; this game has no virtual address memory and never makes an address region |
+| Node area cut and 32 MB alignment for regions of 1 GB and more | `dm/tools/sdk_patches.py` SDK-wide rules, `sdk` build `5fd4f531…` | made for Super Smash Bros. Ultimate on the same build, now from the SDK-wide rules; this game has no virtual address memory and never makes an address region |
 | The 2 shaders it compiles at boot | captured on the Mac (`hle_glslc.c`) | compiled at run time by its own GLSLC from GLSL sources in `main`, captured on the Mac as Three Houses' are ([010055D009F78000](../010055D009F78000/README.md)) |
 
 ## Frame rate

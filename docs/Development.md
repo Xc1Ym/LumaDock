@@ -57,6 +57,8 @@ Current packages use ad-hoc signing and are not notarized. CI does not run comme
 
 Daily upstream sync runs at 03:00 Asia/Shanghai (GitHub may delay schedules). `scripts/sync_engine.py` records the upstream SHA and file hashes, excludes screenshots/private files, and reapplies the shared Mac/iOS controller policy. Interface changes fail the sync. The candidate must pass the complete reusable CI, including packaging and relocation, before a normal push to main; a changed main rejects stale candidates. Failed checks preserve the previous engine. Daily runs do not create tags or Releases. Build the App/DMG above for the latest synchronized snapshot; Release packages are provided on demand. Branch protection may require repository administrators to allow the bot push; no force push or bypass is configured.
 
+The sync also guards the iOS 27 `deviceMotionBody` declaration at compile time so Xcode 26 can build the engine using the existing orientation fallback. SDK 27 builds retain the runtime availability check and the view-based motion frame. The guard is reapplied on every import; a changed patch interface fails before replacing the previous snapshot.
+
 ## Product identity
 
 The Swift package, source target, executable and repository are named **LumaNX**. The original icon is unchanged. `org.nsmac.launcher`, `Application Support/NSMac` and `.nsmac-library.json` remain stable for existing installations and libraries. Historical copyright and third-party notices retain their original names.

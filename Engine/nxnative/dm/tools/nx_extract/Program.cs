@@ -1,9 +1,11 @@
 // NSP extraction: nx_extract <prod.keys> <base NSP> <update NSP or -> <output dir> [base RomFS dir to compare against] [--manifest] [--romfs-image]
 // --romfs-image streams the merged RomFS directly to <output dir>/RomFS.img (the packing script's default); only ExeFS is expanded. Without it, legacy folder extraction remains available.
 // With a base RomFS dir in legacy mode, files whose content matches it become APFS clones (no new space).
-// --manifest: the RomFS is not written, only a list <output dir>/romfs_manifest.tsv (path, size, first 32 bytes), for surveying a new game (a large game's RomFS is well over 10 GB).
+// --manifest: the RomFS is not written, only a list <output dir>/romfs_manifest.tsv (path, size, first 32 bytes), for surveying a new game (a large game's RomFS is well over 10 GB),
+//   and its NRO modules under <output dir>/romfs_nro/ (small: their imports decide the graphics API and the modules, Portal 2's 21 NROs are 60 MB).
 // A damaged NSP (a file whose data fails the NCA's hash check, e.g. a copy cut short or a broken download) stops the extraction with exit code 3 after listing every damaged file;
 //   --allow-damaged writes those files as read instead and only lists them (Super Mario Galaxy's base NSP with 147 MB zeroed: its two prologue WebM movies).
+// A sparse base program (Minecraft Dungeons II: its Program NCA leaves out data that its update carries) can be read only with its update: without one, exit code 4.
 // Add-on content: nx_extract <prod.keys> --aoc <DLC NSP> <output dir> writes the RomFS of the DLC's data NCA to <output dir> (the packing script puts it at aoc/<index>/, the host mounts it through DM_AOC_DIR).
 // Title keys come from the common tickets (.tik) inside the NSPs, so only prod.keys is needed; key values are never printed.
 // The base game may also be a cartridge dump (.xci, Monster Hunter Rise): its secure partition holds the NCAs, which carry their keys in the key area (no ticket).
@@ -51,6 +53,10 @@ static class P {
             if (icon != null) { File.WriteAllBytes(Path.Combine(outDir, "icon.jpg"), icon); Console.WriteLine($"icon {lang} ({icon.Length} bytes)"); }
             else Console.WriteLine("no icon in the control data");
         }
+        if (updProg == null && Sparse(baseProg)) {   // Horizon mounts a sparse NCA only through its patch; alone, the left-out data fails the hash check
+            Console.WriteLine("[RED] the base game's program is sparse: it can be read only with its update NSP");
+            return 4;
+        }
         // Code section: the update's ExeFS is complete; opening it layered over the base gives the same result
         IFileSystem exefs = updProg != null ? baseProg.OpenFileSystemWithPatch(updProg, NcaSectionType.Code, IntegrityCheckLevel.ErrorOnInvalid) : baseProg.OpenFileSystem(NcaSectionType.Code, IntegrityCheckLevel.ErrorOnInvalid);
         Copy(exefs, Path.Combine(outDir, "ExeFS"), null);
@@ -76,6 +82,11 @@ static class P {
         else if (image) WriteImage(new RomFsFileSystem(romfs), Path.Combine(outDir, "RomFS.img"));
         else Copy(new RomFsFileSystem(romfs), Path.Combine(outDir, "RomFS"), cmpDir);
         return Damaged();
+    }
+
+    static bool Sparse(Nca n) {
+        for (int i = 0; i < 4; i++) if (n.Header.IsSectionEnabled(i) && n.Header.GetFsHeader(i).ExistsSparseLayer()) return true;
+        return false;
     }
 
     // Files whose data failed the hash check: listed at the end; exit code 3 unless --allow-damaged
@@ -299,7 +310,7 @@ static class P {
             o.Write(buf, 0, (int)got); off += got;
         }
     }
-    // List the RomFS only (path, size, first 32 bytes) without writing game files
+    // List the RomFS only (path, size, first 32 bytes) without writing game files, except the NRO modules (code the game loads with nn::ro, read like the ExeFS)
     static void Manifest(IFileSystem fs, string path) {
         long n = 0, bytes = 0; byte[] h = new byte[32];
         Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -314,6 +325,11 @@ static class P {
             catch (HorizonResultException x) when (HashError(x)) { g_damaged.Add(e.FullPath); got = 0; }   // the survey goes on; the file is listed as damaged
             o.WriteLine($"{e.FullPath}\t{e.Size}\t{Convert.ToHexString(h, 0, (int)got).ToLowerInvariant()}");
             n++; bytes += e.Size;
+            if (got == want && e.FullPath.EndsWith(".nro", StringComparison.OrdinalIgnoreCase)) {
+                string op = Path.Combine(Path.GetDirectoryName(path), "romfs_nro", e.FullPath.TrimStart('/'));
+                Directory.CreateDirectory(Path.GetDirectoryName(op));
+                try { Write(f.Get, op, e.Size, new byte[4 << 20]); } catch (HorizonResultException x) when (HashError(x)) { g_damaged.Add(e.FullPath); File.Delete(op); }
+            }
         }
         Console.WriteLine($"{path}: RomFS {n} files {bytes / 1048576.0:F1} MB (manifest only)");
     }

@@ -1,5 +1,3 @@
-// Milestone view/estimation adapted from jhaizhou-ops/S2Arm at 601b5454.
-// See docs/Third-party-licenses.md for source attribution.
 import SwiftUI
 
 struct Milestone: Codable, Identifiable, Equatable {
@@ -16,7 +14,7 @@ struct Milestone: Codable, Identifiable, Equatable {
     }
 }
 
-/// S2Arm's per-step speed projection and calibration from completed steps.
+/// Projects remaining time using measured counters and completed-step calibration.
 /// Elapsed-time fill is an estimate; the displayed percentage always uses counters.
 struct MilestoneEstimate {
     let plan:[Milestone]

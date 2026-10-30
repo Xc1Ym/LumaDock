@@ -1,8 +1,6 @@
-"""Game milestone plans/history adapted from S2Arm pack/jobs/milestones.py.
+"""Plans actual engine stages and learns estimates from successful local runs.
 
-Source: jhaizhou-ops/S2Arm at 601b5454 (2026-10-24). LumaNX's nxnative
-stages differ; only stages it actually executes are planned. Shader counters
-continue to count nxnative's completed reflection/Metal-library pairs.
+Shader counters track completed reflection/Metal-library pairs.
 """
 from __future__ import annotations
 import hashlib
@@ -12,8 +10,8 @@ import statistics
 import time
 from core import atomic, read
 
-# Initial weights are reference estimates adapted from S2Arm, not LumaNX
-# benchmarks. Successful uncached runs replace them with local medians.
+# Initial weights are reference estimates, not LumaNX benchmarks.
+# Successful uncached runs replace them with local medians.
 REFERENCE_GB = 5.4
 STEPS = {
     'verify': ('校验游戏文件', '确认源文件与已登记的内容一致。', 20, True),

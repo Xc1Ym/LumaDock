@@ -10,7 +10,7 @@ Status: brought up on the Mac through the opening movie, the title (name entry, 
 |---|---|---|
 | `fps_target 60` | [`game.tsv`](game.tsv), `hle_fpslock.c` | the host writes 60 into `t.MaxFPS` and 1 into `nvn.SyncInterval`; see [Frame rate](#frame-rate) |
 | `game_args -SwitchVirtualAddressSpaceSize=4064` | `game.tsv` | caps Unreal's one engine region (16 GB by default) at 4064 MB; the value is MB up to 4095, bytes above |
-| Node area cut 1 GB → 62 MB (`sdk+0x32c460` / `+0x32c500`) and 32 MB alignment for regions of 1 GB and more (`sdk+0x32c66c`) | `dm/tools/sdk_patches.py`, `sdk` build `fcf93a41…` | together they put the engine region 64 MB into the alias region; the 1 GB alignment would have put it 1 GB in; see [Memory](#memory) |
+| Node area cut 1 GB → 62 MB (`sdk+0x32c460` / `+0x32c500`) and 32 MB alignment for regions of 1 GB and more (`sdk+0x32c66c`) | `dm/tools/sdk_patches.py` SDK-wide rules, `sdk` build `fcf93a41…` | together they put the engine region 64 MB into the alias region; the 1 GB alignment would have put it 1 GB in; see [Memory](#memory) |
 | Engage's 5 GB block: `mem_reserve 0x140000000`, `mem_alias 0x118000000`, `mem_stack 0x10000000`, `app_pool 0xCD500000` | `game.tsv` | 256 MB in front + 4.375 GB alias region + 256 MB stack region + 128 MB heap region (the game sets no heap) |
 | `pad_layout full` | `game.tsv` | a 3D game: D-pad, right stick (camera) and L3 / R3 on the iPhone's virtual gamepad |
 

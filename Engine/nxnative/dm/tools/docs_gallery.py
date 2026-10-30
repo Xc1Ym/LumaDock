@@ -40,7 +40,8 @@ def cell(image, name, note, tid):
     image, name, note = (html.escape(s, quote=False).replace('"', '&quot;') for s in (image, name, note))
     caption = f'<a href="dm/games/{tid}/README.md">{name}</a>'
     detail = f'<br>{note}' if note else ''   # a game with no remark has only its caption
-    return f'<td align="center" valign="top" width="33%"><img src="docs/images/{image}" width="256" alt="{name}"><br><b>{caption}</b>{detail}</td>'
+    # <small> is one step below the body text; <sub> would be smaller still and lower the baseline.
+    return f'<td align="center" valign="top" width="33%"><img src="docs/images/{image}" width="256" alt="{name}"><br><small><b>{caption}</b>{detail}</small></td>'
 
 
 def gallery():

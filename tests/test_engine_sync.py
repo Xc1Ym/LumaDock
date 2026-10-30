@@ -9,7 +9,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(ROOT/'Worker'),str(ROOT/'scripts')]
 from bundled_engine import inventory, verify_bundle
 from engine_fixture import make_engine
-from sync_engine import sync
+from sync_engine import sync, patch_sdk_compatibility
 
 
 class EngineSyncTests(unittest.TestCase):
@@ -69,6 +69,40 @@ class EngineSyncTests(unittest.TestCase):
             sync(self.source,self.target)
         self.assertEqual(inventory(self.target),before)
         verify_bundle(self.target)
+
+    def test_phone_motion_sdk_guard_survives_sync_and_reapplication(self):
+        ios=self.source/'dm/ios/Sources/DmGamepad.m'
+        statement='    if (@available(iOS 27.0, *)) { g_motion.deviceMotionBody = body; g_motion_body = YES; LOG("front end: the phone\'s motion comes in the pad view\'s frame (deviceMotionBody)"); }'
+        ios.write_text(ios.read_text()+statement+'\n');self.commit()
+        sync(self.source,self.target)
+        imported=self.target/'dm/ios/Sources/DmGamepad.m';before=imported.read_text()
+        self.assertIn('#if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000\n'+statement,before)
+        self.assertIn('#else\n    (void)body;',before)
+        patch_sdk_compatibility(self.target);self.assertEqual(imported.read_text(),before)
+        verify_bundle(self.target)
+
+    def test_changed_phone_motion_interface_preserves_previous_snapshot(self):
+        sync(self.source,self.target);before=inventory(self.target)
+        ios=self.source/'dm/ios/Sources/DmGamepad.m'
+        ios.write_text(ios.read_text()+'g_motion.deviceMotionBody = body; // changed upstream interface\n');self.commit()
+        with self.assertRaisesRegex(RuntimeError,'phone motion interface changed'):sync(self.source,self.target)
+        self.assertEqual(inventory(self.target),before);verify_bundle(self.target)
+
+    @unittest.skipUnless(sys.platform=='darwin','Objective-C SDK compatibility check needs Apple clang')
+    def test_phone_motion_compiles_with_and_without_sdk27_declaration(self):
+        ios=self.source/'dm/ios/Sources/DmGamepad.m'
+        ios.write_text('    if (@available(iOS 27.0, *)) { g_motion.deviceMotionBody = body; g_motion_body = YES; LOG("front end: the phone\'s motion comes in the pad view\'s frame (deviceMotionBody)"); }\n')
+        patch_sdk_compatibility(self.source);guarded=ios.read_text()
+        for sdk in (260500,270000):
+            with self.subTest(sdk=sdk):
+                declaration='@property void *deviceMotionBody;' if sdk>=270000 else ''
+                source=(f'#define __IPHONE_OS_VERSION_MAX_ALLOWED {sdk}\n#define YES 1\n#define LOG(...) ((void)0)\n'
+                    '@interface CMMotionManager\n'+declaration+'\n@end\n'
+                    'static CMMotionManager *g_motion; static int g_motion_body;\n'
+                    'void phone_motion_start(void *body) {\n'+guarded+'}\n')
+                result=subprocess.run(['xcrun','clang','-target','arm64-apple-ios26.0','-x','objective-c','-fsyntax-only','-'],
+                    input=source,text=True,capture_output=True)
+                self.assertEqual(result.returncode,0,result.stderr)
 
 
 if __name__=='__main__':unittest.main()

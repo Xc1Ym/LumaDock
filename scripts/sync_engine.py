@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import a pinned public nxnative tree and reapply the local controller policy."""
+"""Import a pinned public nxnative tree and reapply controller and SDK compatibility patches."""
 import argparse
 import hashlib
 import json
@@ -40,6 +40,19 @@ def patch_controller(root):
         path.write_text(text)
 
 
+def patch_sdk_compatibility(root):
+    # Runtime availability does not make SDK 27 declarations visible to Xcode 26.
+    path=root/'dm/ios/Sources/DmGamepad.m'
+    text=path.read_text()
+    if 'g_motion.deviceMotionBody = body' not in text: return
+    guard='#if defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && __IPHONE_OS_VERSION_MAX_ALLOWED >= 270000'
+    old='    if (@available(iOS 27.0, *)) { g_motion.deviceMotionBody = body; g_motion_body = YES; LOG("front end: the phone\'s motion comes in the pad view\'s frame (deviceMotionBody)"); }'
+    guarded=guard+'\n'+old+'\n#else\n    (void)body;   // Older SDKs keep the hardware-frame orientation fallback.\n#endif'
+    if guarded in text: return
+    if text.count(old)!=1: raise RuntimeError('Upstream phone motion interface changed: '+str(path))
+    path.write_text(text.replace(old,guarded))
+
+
 def sync(checkout, target):
     checkout, target = Path(checkout).resolve(), Path(target).resolve()
     sha = subprocess.check_output(['git', '-C', checkout, 'rev-parse', 'HEAD'], text=True).strip()
@@ -59,6 +72,7 @@ def sync(checkout, target):
             dest = stage/rel; dest.parent.mkdir(parents=True, exist_ok=True); dest.write_bytes(data)
             if (checkout/rel).stat().st_mode & 0o111: dest.chmod(0o755)
         patch_controller(stage)
+        patch_sdk_compatibility(stage)
         record = dict(schema=1, repository=UPSTREAM, revision=sha,
                       controllerPatch=hashlib.sha256((ROOT/'scripts/patches/controller_native.h').read_bytes()).hexdigest(), files=inventory(stage))
         (stage/'manifest.json').write_text(json.dumps(record, indent=2, sort_keys=True)+'\n')

@@ -36,6 +36,9 @@ dm/gfx/nvn/nvn_mtl.m:warm_|prepare|prebuild|front_progress	present:pipeline_prep
 dm/gfx/nvn/nvn_mtl.m:pso_arch|arch_|pso_bundle	present:pipeline_archive	the pipeline archive
 dm/gfx/nvn/nvn_mtl.m:^tf_|xfb	shader:transform_feedback	transform feedback
 dm/gfx/nvn/nvn_mtl.m:^geo_|^gs_	shader:stage:gs	geometry shaders
+dm/gfx/nvn/nvn_mtl.m:^lo_|^lop_	nvn:nvnColorStateSetLogicOp	logic operations
+dm/gfx/nvn/nvn_mtl.m:prog_swrites|swrite_note	nvn:nvnCommandBufferBarrier	ordering barriers and shader writes in a draw pass
+dm/gfx/nvn/nvn_mtl.m:^at_|^atest_	nvn:nvnColorStateSetAlphaTest	the alpha test
 dm/gfx/nvn/nvn_mtl.m:pull_|hybrid	shader:pulling_vertex_inputs	pulling vertex inputs and the hybrid pipelines
 dm/gfx/nvn/nvn_mtl.m:fb_snap|fetch	shader:readable_tile	readable tiles and feedback snapshots
 dm/gfx/nvn/nvn_mtl.m:tbuf	shader:texture_buffer	texture buffers
@@ -61,6 +64,8 @@ dm/gfx/tools/dmsh_build.py	shader:stage:*	the shader build: every NVN game
 dm/gfx/tools/dmsh_vin.py	shader:integer_vertex_inputs	integer vertex inputs
 dm/gfx/tools/dmsh_pull.*	shader:pulling_vertex_inputs	pulling vertex inputs
 dm/gfx/tools/dmsh_fetch.py	shader:readable_tile	readable tiles
+dm/gfx/tools/dmsh_alpha.py	nvn:nvnColorStateSetAlphaTest	the alpha test libraries
+dm/gfx/tools/dmsh_logic.py	nvn:nvnColorStateSetLogicOp	the logic operation libraries
 dm/gfx/tools/dmsh_geometry.py	shader:stage:gs	geometry shaders
 dm/gfx/tools/dmsh_facts.py	shader:stage:*	the translator's answer table
 dm/gfx/tools/dmsh_chain.*	shader:stage:*	the chain version: every NVN game's libraries are rebuilt
@@ -94,17 +99,20 @@ dm/tools/romfs.py	*:*	RomFS image input: every game's build tools
 dm/tools/nro_collect.py	*:*	NRO discovery from game resources during packing
 dm/tools/nx_extract/*	*:*	NSP extraction: every game's resource inputs
 dm/mac/launcher.c	*:*	Mac app resource discovery and host launch
+dm/mac/Launcher.swift	*:*	the Mac settings window, linked into every Mac app
 dm/mac/pack_app.py	*:*	Mac app packaging: every game's bundled resources
 dm/gfx/tools/cpk.py	shader:stage:*	CRI archive input to shader scanning
 dm/gfx/tools/vbf.py	shader:stage:*	Virtuos archive input to shader scanning
 dm/gfx/tools/dmsh_mesh.py	shader:stage:gs	passthrough geometry composed into a mesh shader
 dm/host/hle_fpslock.c	present:*	build-gated engine frame limits and dynamic resolution
+dm/host/hle_uecvar.c	present:*	Unreal console variables found by name; the texture pool (profile ue_texture_pool)
 dm/gfx/tools/mvgl.py	api:gl	MVGL archive input to OpenGL shader scanning
 dm/gfx/tools/smash_arc.py	*:*	Smash archive input to shader and NRO scanning
 dm/gfx/tools/uepak.py	shader:stage:*	Unreal archive input to shader scanning
 dm/host/romfs_image.h	hle:*fs*	RomFS image index validation shared by mounts and iOS startup
 dm/host/romfs_identity.h	*:*	RomFS identity checks at iOS startup for every game's separate deployment
 dm/host/hle_fs.c	hle:*fs*	filesystem mounts, paths and file operations
+dm/host/save_sync.*	hle:*fs*	cloud saves: the first save mount and every Commit (hle_fs.c)
 dm/host/Makefile	*:*	the shared host build
 dm/host/hle_thread.c	svc:*	threads and synchronization
 dm/host/hle_svc.c	svc:*	SVCs

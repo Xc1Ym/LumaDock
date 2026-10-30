@@ -41,6 +41,8 @@ t_transform_feedback: t_transform_feedback.m $(MTL_T_DEP)
 .PHONY: check_t_transform_feedback
 check_t_transform_feedback: t_transform_feedback
 	DM_TEST_TRANSFORM_FEEDBACK=$(CURDIR)/t_transform_feedback MTL_DEBUG_LAYER=1 python3 -m unittest test_transform_feedback.py
+t_gfx_suspend: t_gfx_suspend.c ../nvn/hle_nvn.c ../../host/crash.c ../../host/hle_bigstack.c $(GFX) $(GFX_H)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_gfx_suspend.c ../../host/crash.c ../../host/hle_bigstack.c $(GFX) $(FW)
 t_nvn: t_nvn.c ../nvn/hle_nvn.c ../../host/crash.c ../../host/hle_bigstack.c $(GFX) $(GFX_H)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_nvn.c ../../host/crash.c ../../host/hle_bigstack.c $(GFX) $(FW)
 t_dirty_slots: t_dirty_slots.c ../nvn/nvn_dirty.c ../../host/crash.c ../nvn/nvn_dirty.h $(GAME_H)
@@ -202,6 +204,11 @@ t_upload_slots: t_upload_slots.m $(MTL_T_DEP)
 check_t_upload_slots: t_upload_slots
 	MTL_DEBUG_LAYER=1 ./t_upload_slots
 	DM_NVN_UPLOAD_REUSE=0 MTL_DEBUG_LAYER=1 ./t_upload_slots
+t_sbw: t_sbw.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_sbw.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_sbw
+check_t_sbw: t_sbw
+	./t_sbw
 t_direct_upload: t_direct_upload.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_direct_upload.m $(MTL_T_SRC) $(FW)
 .PHONY: check_t_direct_upload
@@ -275,6 +282,12 @@ t_pso_skey: t_pso_skey.m ../nvn/nvn_pso_skey.h ../nvn/nvn_obj.h
 t_view_swizzle: t_view_swizzle.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_view_swizzle.m $(MTL_T_SRC) $(FW)
 check_t_view_swizzle: RUN_ENV = MTL_DEBUG_LAYER=1
+t_border: t_border.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_border.m $(MTL_T_SRC) $(FW)
+.PHONY: check_t_border
+check_t_border: t_border
+	MTL_DEBUG_LAYER=1 ./t_border
+	DM_TEST_BORDER=$(CURDIR)/t_border MTL_DEBUG_LAYER=1 python3 -m unittest test_dmsh_border.py
 t_view_levels: t_view_levels.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_view_levels.m $(MTL_T_SRC) $(FW)
 check_t_view_levels: RUN_ENV = MTL_DEBUG_LAYER=1
@@ -351,3 +364,13 @@ check_t_vk_desc: RUN_ENV = MTL_DEBUG_LAYER=1
 t_float_pad: t_float_pad.m $(MTL_T_DEP)
 	clang $(CFLAGS) -fobjc-arc -o $@ t_float_pad.m $(MTL_T_SRC) $(FW)
 check_t_float_pad: RUN_ENV = MTL_DEBUG_LAYER=1
+# The alpha test through the replay (t_alpha.m), with its shaders from test_dmsh_alpha.py
+t_alpha: t_alpha.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_alpha.m $(MTL_T_SRC) $(FW)
+check_t_alpha: t_alpha
+	@set -e; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; python3 test_dmsh_alpha.py --fixture "$$work"; MTL_DEBUG_LAYER=1 ./t_alpha "$$work"
+# Logic operations through the replay (t_logic.m), with its shaders from test_dmsh_logic.py
+t_logic: t_logic.m $(MTL_T_DEP)
+	clang $(CFLAGS) -fobjc-arc -o $@ t_logic.m $(MTL_T_SRC) $(FW)
+check_t_logic: t_logic
+	@set -e; work=$$(mktemp -d); trap 'rm -rf "$$work"' EXIT; python3 test_dmsh_logic.py --fixture "$$work"; MTL_DEBUG_LAYER=1 ./t_logic "$$work"

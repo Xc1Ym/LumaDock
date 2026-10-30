@@ -52,6 +52,20 @@ def module(path, name):
     return result
 
 
+def detect_sources(up,repo,selected,gp):
+    path=repo/'dm/games/profile_guess.py'
+    if not path.is_file(): return {}   # Older external engines predate source detection.
+    sys.path.insert(0,str(repo/'dm/tools'))
+    up.pg=module(path,'lumanx_profile_guess')
+    return up.pg.build_sources(selected/'ExeFS',selected/'RomFS',gp.words('modules'))
+
+
+def oodle_decoder(up,repo,root,env,gp,patched,sources):
+    if not any(sources.get(key,(False,))[0] for key in ('oodle_packs','ue_legacy')): return None
+    return lambda:{'DM_OODLE_HOST':str(up.build_mac_host(repo,root/'tools/dmhost',env,root/'logs',gp)),
+                   'DM_OODLE_MODULES':str(patched)}
+
+
 def prepare_profile(c, st, up, registered, root, repo, env, selected, version):
     folder=root/'profiles'/registered.id
     # Upstream initializes these modules in main(); LumaNX calls its stages directly.
@@ -104,9 +118,7 @@ def shaders(c,st,up,repo,root,env,gp,selected,patched,dirs,sources,target):
                 validate_shaders(sh/'ios',gp,repo)
         st.run('转换并编译 Metal 着色器',paths,layer,milestone='shaders')
     else:
-        oodle=None
-        if sources['oodle_packs'][0] or sources['ue_legacy'][0]:
-            oodle=lambda:{'DM_OODLE_HOST':str(up.build_mac_host(repo,root/'tools/dmhost',env,logs,gp)), 'DM_OODLE_MODULES':str(patched)}
+        oodle=oodle_decoder(up,repo,root,env,gp,patched,sources)
         st.run('提取并核对着色器',[sh/'pkg',*[gp.table(t) for t in TABLES]],lambda:up.split_shaders(
             sys.executable,repo,[d/'RomFS' for d in dirs.values()],[d/'ExeFS/main' for d in dirs.values()],
             sh/'pkg',env,logs,gp,provisional=True,oodle=oodle),milestone='extract')

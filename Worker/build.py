@@ -295,7 +295,14 @@ def build(c,target='macos'):
                         validate_shaders(sh/'ios',gp,repo)
                 st.run('转换并编译 Vulkan 着色器',[sh/'vk']+([sh/'ios'] if target=='ios' else []),vulkan_shaders,milestone='shaders')
             else:
-                st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp),milestone='extract')
+                from derived import detect_sources, oodle_decoder
+                sources_info=detect_sources(up,repo,selected,gp)
+                if sources_info.get('ue_decode',(False,))[0]:
+                    st.run('解码游戏着色器',[selected/'ue_shaders'],lambda:up.decode_ue_shaders(repo,dirs,gp.get('package'),patched,root,env,logs,gp))
+                oodle=oodle_decoder(up,repo,root,env,gp,patched,sources_info)
+                # Keep the old split API for external engines without decoder support.
+                decoder={'oodle':oodle} if oodle else {}
+                st.run('提取并核对着色器',[sh/'pkg'],lambda:up.split_shaders(sys.executable,repo,[d/'RomFS' for d in dirs.values()]+[d/'glslc_capture' for d in dirs.values() if (d/'glslc_capture').exists()],[d/'ExeFS/main' for d in dirs.values()],sh/'pkg',env,logs,gp,**decoder),milestone='extract')
                 def shaders():
                     up.PROG.stage('iOS shaders' if target=='ios' else 'Mac shaders',poll=ShaderProgress(gp,repo,sh/'ios' if target=='ios' else sh/'cache'))
                     try: c.run([sys.executable,repo/'dm/gfx/tools/dmsh_build.py',sh/'pkg',sh/'cache'],logs/'dmsh_build.log',dict(env,IOSOUT=str(sh/'ios')) if target=='ios' else env)

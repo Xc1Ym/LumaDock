@@ -17,6 +17,7 @@ if __name__=='__main__':
         for i,result in enumerate(pool.map(one,files,chunksize=16),1):
             if result:keys.append(result)
             if i%64==0 or i==len(files):print('NSMAC_PROGRESS '+json.dumps({'done':i,'total':len(files),'unit':'shaders'}),flush=True)
-    # Preserve the upstream file convention exactly.
-    chain=Path(src).name
-    Path(out).write_text(f'# chain {chain} generated {datetime.datetime.now().isoformat()}\n'+''.join(k+'\n' for k in keys))
+    # Preserve the upstream file convention exactly: c1_guard.py's header is dmsh_chain.table_head (chain and inputs stamp), then the time.
+    init(module)
+    stamp=datetime.datetime.now().astimezone().isoformat(timespec='seconds')
+    Path(out).write_text(f'{GUARD.dmsh_chain.table_head(src)} {stamp}\n'+''.join(k+'\n' for k in keys))
